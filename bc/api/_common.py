@@ -370,10 +370,11 @@ def to_cartons(boxes, factor) -> float:
 
 
 # ─── Kế hoạch (plan) theo Item — cột tuỳ biến, đọc mềm ────────────────────────
-# [VERIFY tên cột kế hoạch trên site] — report "Tet Ma Hang"/"Quản lý sản xuất Hàng
+# Cột thật trên site: custom_kế_hoạch (fieldname CÓ DẤU — shipping-gotchas #3; dò cả NFC lẫn
+# NFD phòng lệch chuẩn Unicode khi tạo field). Các tên ASCII sau là dự phòng. Report "Tet Ma Hang"/"Quản lý sản xuất Hàng
 # Tết" có cột kế hoạch; whitelist ứng viên (identifier nội suy vào SQL nên KHÔNG lấy
 # từ input). Không cột nào tồn tại → plan = 0 và meta.plan_column = None.
-PLAN_COLUMNS = ("custom_ke_hoach", "custom_kehoach", "custom_ke_hoach_san_xuat", "custom_ke_hoach_sx",
+PLAN_COLUMNS = ("custom_kế_hoạch", "custom_kế_hoạch", "custom_ke_hoach", "custom_kehoach", "custom_ke_hoach_san_xuat", "custom_ke_hoach_sx",
 	"custom_plan", "custom_ke_hoach_tet")
 
 
