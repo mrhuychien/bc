@@ -1,0 +1,13 @@
+[
+ {
+  "doctype": "Role",
+  "name": "BC Viewer",
+  "role_name": "BC Viewer",
+  "desk_access": 0,
+  "disabled": 0,
+  "is_custom": 1,
+  "restrict_to_domain": null,
+  "home_page": "/bc",
+  "two_factor_auth": 0
+ }
+]

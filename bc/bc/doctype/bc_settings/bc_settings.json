@@ -1,0 +1,148 @@
+{
+ "actions": [],
+ "creation": "2026-10-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "general_section",
+  "fy_start_month",
+  "cache_ttl",
+  "column_break_general",
+  "tet_item_group",
+  "traditional_item_group",
+  "tet_section",
+  "tet_target_pct",
+  "tet_season_start_month",
+  "tet_compare_mode",
+  "column_break_tet",
+  "tet_dates",
+  "sx_section",
+  "sx_default_from",
+  "column_break_sx",
+  "sx_default_to"
+ ],
+ "fields": [
+  {
+   "fieldname": "general_section",
+   "fieldtype": "Section Break",
+   "label": "Chung"
+  },
+  {
+   "fieldname": "fy_start_month",
+   "fieldtype": "Int",
+   "label": "Tháng bắt đầu năm tài chính",
+   "default": "4",
+   "description": "1–12. Mặc định 4 (01/04 → 31/03)."
+  },
+  {
+   "fieldname": "cache_ttl",
+   "fieldtype": "Int",
+   "label": "Thời gian cache API (giây)",
+   "default": "300"
+  },
+  {
+   "fieldname": "column_break_general",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tet_item_group",
+   "fieldtype": "Link",
+   "label": "Nhóm hàng Tết",
+   "options": "Item Group",
+   "default": "Hàng Tết"
+  },
+  {
+   "fieldname": "traditional_item_group",
+   "fieldtype": "Link",
+   "label": "Nhóm hàng truyền thống",
+   "options": "Item Group",
+   "default": "Hàng truyền thống"
+  },
+  {
+   "fieldname": "tet_section",
+   "fieldtype": "Section Break",
+   "label": "Mùa Tết"
+  },
+  {
+   "fieldname": "tet_target_pct",
+   "fieldtype": "Percent",
+   "label": "Mục tiêu tăng so năm trước (%)",
+   "default": "20",
+   "description": "Cột \"NT + x%\" ở bảng NPP/Siêu thị."
+  },
+  {
+   "fieldname": "tet_season_start_month",
+   "fieldtype": "Int",
+   "label": "Tháng bắt đầu mùa Tết (năm trước Tết)",
+   "default": "11"
+  },
+  {
+   "fieldname": "tet_compare_mode",
+   "fieldtype": "Select",
+   "label": "Cách tính cùng kỳ Tết",
+   "options": "calendar\ntet_aligned",
+   "default": "calendar",
+   "description": "calendar = cùng ngày dương lịch năm trước; tet_aligned = cùng số ngày trước Tết."
+  },
+  {
+   "fieldname": "column_break_tet",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tet_dates",
+   "fieldtype": "Table",
+   "label": "Ngày mùng 1 Tết theo năm",
+   "options": "BC Tet Date"
+  },
+  {
+   "fieldname": "sx_section",
+   "fieldtype": "Section Break",
+   "label": "Sản xuất Tết"
+  },
+  {
+   "fieldname": "sx_default_from",
+   "fieldtype": "Date",
+   "label": "Khoảng mặc định — từ ngày",
+   "description": "Trống = đầu mùa Tết."
+  },
+  {
+   "fieldname": "column_break_sx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sx_default_to",
+   "fieldtype": "Date",
+   "label": "Khoảng mặc định — đến ngày",
+   "description": "Trống = mùng 1 Tết + 45 ngày."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "BC Viewer"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

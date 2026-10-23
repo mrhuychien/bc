@@ -1,0 +1,111 @@
+{% extends "templates/web.html" %}
+
+{% block title %}Báo cáo điều hành{% endblock %}
+
+{% block head_include %}
+{% set bc_v = (frappe.utils.now() | replace(" ", "T") | replace(":", "-")) %}
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#4c1d95">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Ẩn khung web ERPNext (navbar / footer / breadcrumb) — chỉ trên trang /bc. */
+body .navbar, body nav.navbar, body .web-footer, body footer.web-footer,
+body .page-breadcrumbs, body .page-header-wrapper, body .page-head { display: none !important; }
+body { background: #f5f3ff; }
+body main.container, body .page-content-wrapper, body .page_content, body .page-container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+</style>
+{% if not no_access %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/assets/bc/bc/shell.css?v={{ bc_v }}">
+
+<!-- Import map: cache-bust MỌI shared module (lib/ + components/). ES static import
+     KHÔNG kế thừa ?v= của module cha; /assets bị cache immutable 1 năm → thiếu map là
+     chạy bản cũ ("does not provide an export named"). PHẢI đứng trước mọi
+     <script type="module">. View modules tự bust qua assetVersion (withV) trong shell.js.
+     Thêm file mới vào lib/ hoặc components/ → THÊM dòng vào đây. -->
+<script type="importmap">
+{
+  "imports": {
+    "/assets/bc/bc/lib/api.js": "/assets/bc/bc/lib/api.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/chart.js": "/assets/bc/bc/lib/chart.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/dom.js": "/assets/bc/bc/lib/dom.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/format.js": "/assets/bc/bc/lib/format.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/leaflet.js": "/assets/bc/bc/lib/leaflet.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/lunar.js": "/assets/bc/bc/lib/lunar.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/provinces.js": "/assets/bc/bc/lib/provinces.js?v={{ bc_v }}",
+    "/assets/bc/bc/lib/router.js": "/assets/bc/bc/lib/router.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/calendar.js": "/assets/bc/bc/components/calendar.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/data-table.js": "/assets/bc/bc/components/data-table.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/empty-state.js": "/assets/bc/bc/components/empty-state.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/kpi-grid.js": "/assets/bc/bc/components/kpi-grid.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/modal.js": "/assets/bc/bc/components/modal.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/skeleton.js": "/assets/bc/bc/components/skeleton.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/stat-card.js": "/assets/bc/bc/components/stat-card.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/tabs.js": "/assets/bc/bc/components/tabs.js?v={{ bc_v }}",
+    "/assets/bc/bc/components/toast.js": "/assets/bc/bc/components/toast.js?v={{ bc_v }}"
+  }
+}
+</script>
+<script>
+    // Context server-side: mốc năm TC / mùa Tết / nhóm hàng / mục tiêu đều từ BC Settings.
+    window.BC_CONTEXT = {{ bc_context | tojson }};
+</script>
+{% endif %}
+{% endblock %}
+
+{% block page_content %}
+{% if no_access %}
+<div class="bc-app">
+    <div class="bc-empty" style="min-height:80vh;justify-content:center;">
+        <div class="bc-empty-icon">🔒</div>
+        <div class="bc-empty-title">Không có quyền</div>
+        <div class="bc-text-sm">Trang báo cáo dành cho Ban lãnh đạo. Liên hệ quản trị để được cấp vai trò "BC Viewer".</div>
+    </div>
+</div>
+{% else %}
+<div id="bc-app" class="bc-app">
+    <header class="bc-header">
+        <div class="bc-header-inner">
+            <div class="bc-brand">
+                <span class="bc-brand-logo">📊</span>
+                <div class="bc-brand-text">
+                    <h1 class="bc-header-title" id="bc-header-title">Tổng quan</h1>
+                    <div class="bc-header-sub" id="bc-header-status">Đang tải…</div>
+                </div>
+            </div>
+            <div class="bc-header-actions">
+                <span class="bc-badge-glass" id="bc-fy-badge" title="Năm tài chính"></span>
+                <span class="bc-badge-glass bc-tet-count" id="bc-tet-count" title="Đếm ngược Tết"></span>
+                <button class="bc-icon-btn" id="bc-btn-refresh" type="button" aria-label="Làm mới"><i class="fas fa-sync-alt"></i></button>
+                <button class="bc-icon-btn" id="bc-btn-account" type="button" aria-label="Tài khoản"><i class="fas fa-circle-user"></i></button>
+            </div>
+        </div>
+    </header>
+    <aside class="bc-sidebar" id="bc-sidebar" aria-label="Điều hướng"></aside>
+    <main class="bc-main" id="bc-view"></main>
+    <nav class="bc-bottom-nav" id="bc-bottom-nav" aria-label="Điều hướng"></nav>
+
+    <div id="bc-toast-mount" class="bc-toast-mount"></div>
+    <div id="bc-modal-mount" class="bc-modal-mount"></div>
+</div>
+
+<script type="module" src="/assets/bc/bc/shell.js?v={{ frappe.utils.now() | replace(' ', 'T') | replace(':', '-') }}"></script>
+<script>
+// Shell cũ do cache CDN/proxy: so BUILD server kỳ vọng vs BC.build đang chạy → banner đỏ.
+window.addEventListener('load', function () {
+    setTimeout(function () {
+        var expected = {{ shell_build | tojson }};
+        var got = (window.BC && window.BC.build) || null;
+        if (got === expected) return;
+        var el = document.createElement('div');
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;padding:10px 14px;font:600 13px Inter,sans-serif;text-align:center;';
+        el.textContent = '⚠️ Giao diện đang chạy bản CŨ do cache (' + (got || 'không rõ') + ' ≠ ' + expected + '). Xoá cache CDN hoặc Ctrl+Shift+R.';
+        document.body.appendChild(el);
+        console.error('[BC] SHELL BUILD MISMATCH — expected', expected, 'got', got);
+    }, 3000);
+});
+</script>
+{% endif %}
+{% endblock %}
