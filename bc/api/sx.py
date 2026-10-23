@@ -2,8 +2,8 @@
 """bc.api.sx — Sản xuất Hàng Tết (port "Quản lý sản xuất Hàng Tết" + "Sản lượng sản
 xuất theo ngày").
 
-Nguồn: Stock Entry mục đích Manufacture (docstatus=1), dòng thành phẩm
-(is_finished_item=1); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
+Nguồn: Stock Entry loại Material Receipt (docstatus=1), dòng nhập vào kho thành phẩm
+(BC Settings.sx_warehouse, mặc định "Thành phẩm - HGC"); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
 hệ số UOM "Thùng" của Item. Xuất bán = Sales Invoice (stock_qty, không tính trả).
 Tồn kho = Bin.actual_qty hiện tại (mọi kho). Ảnh + nhóm hàng join Item ngay trong
 SQL (bỏ frappe.client.get_list phía client).
@@ -19,6 +19,7 @@ from bc.api._common import (
 	OPENING_FILTER,
 	_guard,
 	carton_factors,
+	get_settings,
 	iso,
 	pct,
 	plan_column,
@@ -30,7 +31,15 @@ from bc.api._common import (
 	traditional_group,
 )
 
-FINISHED_FILTER = """se.docstatus = 1 AND se.purpose = 'Manufacture' AND sed.is_finished_item = 1"""
+# Phiếu nhập thành phẩm = Material Receipt vào kho thành phẩm (đã chốt với người dùng).
+# Mọi truy vấn dùng filter này PHẢI truyền tham số %(sx_wh)s (xem _wh()).
+SX_ENTRY_TYPE = "Material Receipt"
+FINISHED_FILTER = """se.docstatus = 1 AND se.stock_entry_type = 'Material Receipt' AND sed.t_warehouse = %(sx_wh)s"""
+SX_WAREHOUSE_DEFAULT = "Thành phẩm - HGC"
+
+
+def _wh() -> str:
+	return get_settings().get("sx_warehouse") or SX_WAREHOUSE_DEFAULT
 
 
 def _range(from_date, to_date) -> tuple:
@@ -67,7 +76,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 	f, t = _range(from_date, to_date)
 
 	def build():
-		p = {"f": f, "t": t}
+		p = {"f": f, "t": t, "sx_wh": _wh()}
 		produced = {r.item_code: flt(r.qty) for r in frappe.db.sql(
 			# SQL thay ORM: join Stock Entry ↔ Detail + lọc dòng thành phẩm.
 			f"""
@@ -136,16 +145,18 @@ def get_items(from_date=None, to_date=None, refresh=0):
 def _diagnose(f, t, has_production: bool) -> dict:
 	"""Giải thích khi khoảng lọc không có số SX: phiếu theo loại trong khoảng, phiếu SX gần nhất,
 	và khoảng mùa trước để UI gợi ý xem lại."""
-	by_purpose = {r.purpose: cint(r.n) for r in frappe.db.sql(
-		"""SELECT purpose, COUNT(*) AS n FROM `tabStock Entry`
-		   WHERE docstatus = 1 AND posting_date BETWEEN %(f)s AND %(t)s GROUP BY purpose""",
+	by_purpose = {(r.stock_entry_type or r.purpose): cint(r.n) for r in frappe.db.sql(
+		"""SELECT stock_entry_type, purpose, COUNT(*) AS n FROM `tabStock Entry`
+		   WHERE docstatus = 1 AND posting_date BETWEEN %(f)s AND %(t)s GROUP BY stock_entry_type, purpose""",
 		{"f": f, "t": t}, as_dict=True)}
 	last = frappe.db.sql(
 		f"""SELECT MAX(se.posting_date) FROM `tabStock Entry Detail` sed
-		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {FINISHED_FILTER}""")[0][0]
+		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {FINISHED_FILTER}""", {"sx_wh": _wh()})[0][0]
 	return {
 		"has_production": has_production,
 		"entries_by_purpose": by_purpose,
+		"entry_type": SX_ENTRY_TYPE,
+		"warehouse": _wh(),
 		"last_manufacture": iso(last),
 		"prev_from": iso(add_months(f, -12)),
 		"prev_to": iso(get_last_day(add_months(t, -12))),
@@ -184,7 +195,7 @@ def get_daily_summary(year=None, month=None, refresh=0):
 			WHERE {FINISHED_FILTER} AND se.posting_date BETWEEN %(s)s AND %(e)s
 			GROUP BY se.posting_date, sed.item_code
 			""",
-			{"s": start, "e": end},
+			{"s": start, "e": end, "sx_wh": _wh()},
 			as_dict=True,
 		)
 		factors = carton_factors(r.item_code for r in raw)
@@ -223,7 +234,7 @@ def get_daily_detail(date=None, refresh=0):
 			GROUP BY se.name, sed.item_code
 			ORDER BY se.name, sed.item_code
 			""",
-			{"d": d},
+			{"d": d, "sx_wh": _wh()},
 			as_dict=True,
 		)
 		factors = carton_factors(r.item_code for r in raw)

@@ -18,6 +18,7 @@
   "column_break_tet",
   "tet_dates",
   "sx_section",
+  "sx_warehouse",
   "sx_season_start_month",
   "sx_season_end_month",
   "sx_default_from",
@@ -101,6 +102,14 @@
    "fieldname": "sx_section",
    "fieldtype": "Section Break",
    "label": "Sản xuất Tết"
+  },
+  {
+   "fieldname": "sx_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "Kho thành phẩm (phiếu nhập SX)",
+   "default": "Thành phẩm - HGC",
+   "description": "Sản lượng SX = phiếu Stock Entry loại Material Receipt nhập vào kho này."
   },
   {
    "fieldname": "sx_season_start_month",
