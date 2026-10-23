@@ -10,7 +10,7 @@ from frappe.model.document import Document
 
 class BCSettings(Document):
 	def validate(self):
-		for field in ("fy_start_month", "tet_season_start_month", "sx_season_end_month"):
+		for field in ("fy_start_month", "tet_season_start_month", "sx_season_start_month", "sx_season_end_month"):
 			v = self.get(field)
 			if v and not 1 <= int(v) <= 12:
 				frappe.throw(_("{0} phải trong khoảng 1–12.").format(self.meta.get_label(field)))

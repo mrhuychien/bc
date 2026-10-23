@@ -60,7 +60,8 @@ def get_items(from_date=None, to_date=None, refresh=0):
 	"""Kế hoạch / tồn / đã sản xuất / đã xuất bán theo mã trong khoảng ngày.
 
 	rows: [{item_code, item_name, item_group, group_key (tet|traditional|other), image,
-	        plan, stock, produced, outgoing, produced_pct, outgoing_pct}]
+	        plan, stock (hộp), stock_cartons (thùng), carton_factor, produced, outgoing,
+	        produced_pct, outgoing_pct}] — sắp tồn kho giảm dần
 	"""
 	_guard()
 	f, t = _range(from_date, to_date)
@@ -105,6 +106,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 			as_dict=True,
 		)
 		plans = plans_of(codes)
+		factors = carton_factors(codes)
 		rows = []
 		for it in items:
 			plan = plans.get(it.item_code, 0.0)
@@ -118,12 +120,14 @@ def get_items(from_date=None, to_date=None, refresh=0):
 				"image": it.image or None,
 				"plan": plan,
 				"stock": flt(it.stock),
+				"stock_cartons": to_cartons(it.stock, factors.get(it.item_code)),
+				"carton_factor": factors.get(it.item_code),
 				"produced": prod,
 				"outgoing": out,
 				"produced_pct": pct(prod, plan),
 				"outgoing_pct": pct(out, plan if plan else prod),
 			})
-		rows.sort(key=lambda r: (r["plan"], r["produced"]), reverse=True)
+		rows.sort(key=lambda r: (r["stock"], r["produced"]), reverse=True)  # tồn kho lớn → bé
 		return {"rows": rows, "meta": _meta(f, t, plan_column=col, diag=diag)}
 
 	return run_cached("sx.get_items", {"f": iso(f), "t": iso(t)}, build, refresh)

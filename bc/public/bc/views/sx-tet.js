@@ -15,7 +15,7 @@ import { emptyState, errorState } from '../components/empty-state.js';
 
 const NO_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><rect width="72" height="72" rx="10" fill="#f4f2fb"/><text x="36" y="44" font-size="28" text-anchor="middle">📦</text></svg>');
-const state = { from: null, to: null, rows: [], tab: 'tet', sort: 'plan', q: '', year: null, month: null, days: [] };
+const state = { from: null, to: null, rows: [], tab: 'tet', sort: 'stock', q: '', year: null, month: null, days: [] };
 
 const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
 const pctOf = (a, b) => (b ? Math.round(a / b * 1000) / 10 : null);
@@ -29,7 +29,7 @@ function groupStats(rows, title, icon) {
             { label: 'Kế hoạch', value: fmtNum(plan), sub: 'hộp' },
             { label: 'Sản xuất', value: fmtPct(pctOf(prod, plan)), sub: `${fmtNum(prod)} hộp` },
             { label: 'Xuất bán', value: fmtPct(pctOf(out, plan || prod)), sub: `${fmtNum(out)} hộp` },
-            { label: 'Tồn kho', value: fmtNum(sum(rows, 'stock')), sub: 'hộp' },
+            { label: 'Tồn kho', value: `${fmtNum(sum(rows, 'stock_cartons'))} thùng`, sub: `${fmtNum(sum(rows, 'stock'))} hộp` },
         ], 2)}</div>`;
 }
 
@@ -43,7 +43,7 @@ function card(r) {
         <div style="min-width:0">
             <div class="bc-prod-name" title="${escapeHtml(r.item_name)}">${escapeHtml(r.item_name)}</div>
             <div class="bc-prod-code">${escapeHtml(r.item_code)}</div>
-            <div class="bc-prod-meta"><span>KH <b>${fmtNum(r.plan)}</b></span><span>Tồn <b>${fmtNum(r.stock)}</b></span></div>
+            <div class="bc-prod-meta"><span>KH <b>${fmtNum(r.plan)}</b></span><span>Tồn <b>${fmtNum(r.stock)}</b> hộp · <b>${r.carton_factor ? fmtNum(r.stock_cartons) : '—'}</b> thùng</span></div>
             <div class="bc-prod-prog"><span>SX ${fmtNum(r.produced)}</span><div class="bc-progress bc-ok"><span style="width:${clampW(r.produced_pct)}%"></span></div><b>${fmtPct(r.produced_pct, 0)}</b></div>
             <div class="bc-prod-prog"><span>Bán ${fmtNum(r.outgoing)}</span><div class="bc-progress"><span style="width:${clampW(r.outgoing_pct)}%"></span></div><b>${fmtPct(r.outgoing_pct, 0)}</b></div>
         </div></div>`;
@@ -54,6 +54,7 @@ function paintProducts() {
     let rows = state.rows.filter((r) => r.group_key === state.tab);
     if (q) rows = rows.filter((r) => `${r.item_code} ${r.item_name}`.toLowerCase().includes(q));
     const sorters = {
+        stock: (a, b) => b.stock - a.stock || b.produced - a.produced,
         plan: (a, b) => b.plan - a.plan || b.produced - a.produced,
         produced: (a, b) => b.produced - a.produced,
         name: (a, b) => String(a.item_name).localeCompare(String(b.item_name), 'vi'),
@@ -177,7 +178,7 @@ export async function render({ container }) {
     container.innerHTML = `
         <div class="bc-view-banner">
             <div><div class="bc-view-banner-title">Sản xuất Hàng Tết</div>
-                <div class="bc-view-banner-sub" id="sx-range">Mặc định: mùa sản xuất 01/11 → 30/04</div></div>
+                <div class="bc-view-banner-sub" id="sx-range">Mặc định: mùa sản xuất 01/10 → 30/04</div></div>
             <span class="bc-view-banner-badge">🏭 SX</span>
         </div>
         <div class="bc-card">
@@ -200,7 +201,7 @@ export async function render({ container }) {
         <div class="bc-flex bc-justify-between bc-items-center bc-wrap bc-gap-2">
             <div id="sx-tabs" style="min-width:0;flex:1"></div>
             <select class="bc-input" id="sx-sort" aria-label="Sắp xếp" style="margin-bottom:.75rem">
-                <option value="plan">Sắp theo kế hoạch</option><option value="produced">Sắp theo sản lượng</option><option value="name">Sắp theo tên</option>
+                <option value="stock">Tồn kho lớn → bé</option><option value="plan">Sắp theo kế hoạch</option><option value="produced">Sắp theo sản lượng</option><option value="name">Sắp theo tên</option>
             </select>
         </div>
         <div id="sx-prods"></div>`;
@@ -226,7 +227,7 @@ export async function render({ container }) {
     const now = todayISO();
     await loadItems();
     // Tháng lịch mặc định: tháng hôm nay nếu nằm trong khoảng lọc; trước khoảng → tháng đầu
-    // (vd 23/10 xem mùa 01/11 → 30/04 thì mở tháng 11); sau khoảng → tháng cuối.
+    // (vd 15/06 xem mùa 01/10 → 30/04 thì mở tháng 10); sau khoảng → tháng cuối.
     const ref = state.from && now < state.from ? state.from : (state.to && now > state.to ? state.to : now);
     await loadMonth(Number(ref.slice(0, 4)), Number(ref.slice(5, 7)));
 }
