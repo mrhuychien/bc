@@ -305,6 +305,13 @@
 .bc-prod-meta b { color: var(--bc-text); }
 .bc-prod-prog { display: grid; grid-template-columns: 58px 1fr 42px; gap: .4rem; align-items: center; font-size: .68rem; color: var(--bc-text-2); margin-top: 3px; }
 .bc-prod-prog b { text-align: right; color: var(--bc-text); }
+.bc-prod-line { display: flex; justify-content: space-between; gap: .4rem; font-size: .7rem; color: var(--bc-text-2); margin-top: 3px; }
+.bc-prod-line b { color: var(--bc-text); }
+.bc-prod-line > span:first-child { flex-shrink: 0; }
+.bc-prod-line > span:last-child { text-align: right; }
+.bc-prod-bar { display: grid; grid-template-columns: 1fr auto; gap: .45rem; align-items: center; margin-top: 2px; font-size: .68rem; }
+.bc-prod .bc-progress { height: 6px; }
+.bc-prod-note { font-style: normal; font-weight: 800; color: var(--bc-accent-1); }
 
 /* Bản đồ */
 .bc-map { height: 380px; border-radius: var(--bc-radius-sm); overflow: hidden; border: 1px solid var(--bc-border); z-index: 0; }

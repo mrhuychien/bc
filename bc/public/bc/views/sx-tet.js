@@ -23,14 +23,25 @@ const clampW = (v) => Math.max(0, Math.min(100, v || 0));
 
 function groupStats(rows, title, icon) {
     const plan = sum(rows, 'plan'), prod = sum(rows, 'produced'), out = sum(rows, 'outgoing');
+    const th = (k) => `${fmtNum(sum(rows, k))} thùng`;
     return `<div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">${icon} ${escapeHtml(title)}</div>
         <span class="bc-badge bc-badge-primary">${rows.length} mã</span></div>
         ${kpiGrid([
-            { label: 'Kế hoạch', value: fmtNum(plan), sub: 'hộp' },
-            { label: 'Sản xuất', value: fmtPct(pctOf(prod, plan)), sub: `${fmtNum(prod)} hộp` },
-            { label: 'Xuất bán', value: fmtPct(pctOf(out, plan || prod)), sub: `${fmtNum(out)} hộp` },
+            { label: 'Kế hoạch', value: th('plan_cartons'), sub: `${fmtNum(plan)} hộp` },
+            { label: 'Sản xuất', value: th('produced_cartons'), sub: `${fmtNum(prod)} hộp<br><b class="bc-prod-note">Đạt ${fmtPct(pctOf(prod, plan))} KH</b>` },
+            { label: 'Xuất bán', value: th('outgoing_cartons'), sub: `${fmtNum(out)} hộp<br><b class="bc-prod-note">${fmtPct(pctOf(out, plan || prod))} ${plan ? 'KH' : 'SX'}</b>` },
             { label: 'Tồn kho', value: `${fmtNum(sum(rows, 'stock_cartons'))} thùng`, sub: `${fmtNum(sum(rows, 'stock'))} hộp` },
         ], 2)}</div>`;
+}
+
+/** Dòng "Nhãn  1.200 hộp · 50 thùng  [ghi chú]" — chưa khai hệ số Thùng thì hiện "—". */
+function qtyLine(label, boxes, cartons, r) {
+    return `<div class="bc-prod-line"><span>${label}</span>
+        <span><b>${fmtNum(boxes)}</b> hộp · <b>${r.carton_factor ? fmtNum(cartons) : '—'}</b> thùng</span></div>`;
+}
+
+function progLine(pct, cls, label) {
+    return `<div class="bc-prod-bar"><div class="bc-progress ${cls}"><span style="width:${clampW(pct)}%"></span></div><b class="bc-prod-note">${label}</b></div>`;
 }
 
 function imgSrc(r) {
@@ -43,9 +54,12 @@ function card(r) {
         <div style="min-width:0">
             <div class="bc-prod-name" title="${escapeHtml(r.item_name)}">${escapeHtml(r.item_name)}</div>
             <div class="bc-prod-code">${escapeHtml(r.item_code)}</div>
-            <div class="bc-prod-meta"><span>KH <b>${fmtNum(r.plan)}</b></span><span>Tồn <b>${fmtNum(r.stock)}</b> hộp · <b>${r.carton_factor ? fmtNum(r.stock_cartons) : '—'}</b> thùng</span></div>
-            <div class="bc-prod-prog"><span>SX ${fmtNum(r.produced)}</span><div class="bc-progress bc-ok"><span style="width:${clampW(r.produced_pct)}%"></span></div><b>${fmtPct(r.produced_pct, 0)}</b></div>
-            <div class="bc-prod-prog"><span>Bán ${fmtNum(r.outgoing)}</span><div class="bc-progress"><span style="width:${clampW(r.outgoing_pct)}%"></span></div><b>${fmtPct(r.outgoing_pct, 0)}</b></div>
+            ${qtyLine('Kế hoạch', r.plan, r.plan_cartons, r)}
+            ${qtyLine('Tồn kho', r.stock, r.stock_cartons, r)}
+            ${qtyLine('Sản xuất', r.produced, r.produced_cartons, r)}
+            ${progLine(r.produced_pct, 'bc-ok', r.plan ? `Đạt ${fmtPct(r.produced_pct, 0)} KH` : 'Chưa có KH')}
+            ${qtyLine('Bán', r.outgoing, r.outgoing_cartons, r)}
+            ${progLine(r.outgoing_pct, '', r.outgoing_pct === null || r.outgoing_pct === undefined ? '—' : `${fmtPct(r.outgoing_pct, 0)} ${r.plan ? 'KH' : 'SX'}`)}
         </div></div>`;
 }
 

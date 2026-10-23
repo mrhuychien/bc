@@ -70,6 +70,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 
 	rows: [{item_code, item_name, item_group, group_key (tet|traditional|other), image,
 	        plan, stock (hộp), stock_cartons (thùng), carton_factor, produced, outgoing,
+	        plan_cartons, produced_cartons, outgoing_cartons (thùng),
 	        produced_pct, outgoing_pct}] — sắp tồn kho giảm dần
 	"""
 	_guard()
@@ -133,6 +134,9 @@ def get_items(from_date=None, to_date=None, refresh=0):
 				"carton_factor": factors.get(it.item_code),
 				"produced": prod,
 				"outgoing": out,
+				"plan_cartons": to_cartons(plan, factors.get(it.item_code)),
+				"produced_cartons": to_cartons(prod, factors.get(it.item_code)),
+				"outgoing_cartons": to_cartons(out, factors.get(it.item_code)),
 				"produced_pct": pct(prod, plan),
 				"outgoing_pct": pct(out, plan if plan else prod),
 			})
