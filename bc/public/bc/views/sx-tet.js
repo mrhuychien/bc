@@ -131,6 +131,26 @@ async function loadMonth(year, month) {
     }
 }
 
+function paintDiag(d) {
+    if (!d || d.has_production) { fill('sx-diag', ''); return; }
+    const other = Object.entries(d.entries_by_purpose || {}).filter(([k]) => k !== 'Manufacture');
+    const today = todayISO();
+    const why = state.from > today
+        ? `Mùa ${fmtDate(state.from)} → ${fmtDate(state.to)} chưa bắt đầu nên chưa có phiếu sản xuất.`
+        : `Không có phiếu sản xuất (Stock Entry loại Manufacture, dòng thành phẩm) từ ${fmtDate(state.from)} đến ${fmtDate(state.to)}.`;
+    fill('sx-diag', `<div class="bc-alert">
+        <b>${escapeHtml(why)}</b>
+        ${d.last_manufacture ? `<br>Phiếu sản xuất gần nhất: ${fmtDate(d.last_manufacture)}.` : '<br>Chưa tìm thấy phiếu Manufacture nào trên hệ thống.'}
+        ${other.length ? `<br>Trong khoảng này có phiếu kho loại khác: ${other.map(([k, n]) => `${escapeHtml(k)} (${n})`).join(', ')} — báo cáo chỉ tính phiếu Manufacture.` : ''}
+        <div class="bc-mt-2"><button type="button" class="bc-btn bc-btn-sm bc-btn-primary" id="sx-prev">Xem mùa trước (${fmtDate(d.prev_from)} → ${fmtDate(d.prev_to)})</button></div>
+    </div>`);
+    document.getElementById('sx-prev')?.addEventListener('click', async () => {
+        state.from = d.prev_from; state.to = d.prev_to;
+        await loadItems();
+        await loadMonth(Number(d.prev_from.slice(0, 4)), Number(d.prev_from.slice(5, 7)));
+    });
+}
+
 async function loadItems() {
     fill('sx-stats', skeletonGrid(2, 150, 'bc-grid-2'));
     fill('sx-prods', skeleton(96, 4, 8));
@@ -143,6 +163,7 @@ async function loadItems() {
         if (f) f.value = state.from;
         if (t) t.value = state.to;
         fill('sx-range', `${fmtDate(state.from)} → ${fmtDate(state.to)}${res.meta.plan_column ? '' : ' · chưa có cột kế hoạch trên Item'}`);
+        paintDiag(res.meta.diag);
         paintStats();
         paintProducts();
     } catch (err) {
@@ -167,6 +188,7 @@ export async function render({ container }) {
                 <input type="search" class="bc-input bc-search" id="sx-q" placeholder="🔍 Tìm mã / tên sản phẩm">
             </div>
         </div>
+        <div id="sx-diag" class="bc-mt-3"></div>
         <div class="bc-grid bc-grid-split bc-mt-3" style="align-items:start">
             <div class="bc-card"><div id="sx-cal">${skeleton(360)}</div>
                 <div class="bc-note">Bấm ngày có số để xem chi tiết phiếu · ô đỏ = mùng 1–3 Tết</div></div>

@@ -13,7 +13,7 @@ SQL (bỏ frappe.client.get_list phía client).
 from __future__ import annotations
 
 import frappe
-from frappe.utils import cint, flt, get_last_day, getdate
+from frappe.utils import add_months, cint, flt, get_last_day, getdate
 
 from bc.api._common import (
 	OPENING_FILTER,
@@ -85,17 +85,16 @@ def get_items(from_date=None, to_date=None, refresh=0):
 			  AND si.posting_date BETWEEN %(f)s AND %(t)s
 			GROUP BY sii.item_code
 			""", p, as_dict=True)}
-		# Mã có kế hoạch thuộc 2 nhóm chính cũng hiện, kể cả chưa sản xuất.
-		plan_codes = []
+		# Luôn hiện mọi mã đang dùng của 2 nhóm chính (kể cả chưa sản xuất trong khoảng)
+		# để vẫn thấy tồn kho / kế hoạch trước khi mùa bắt đầu; nhóm khác chỉ hiện khi có SX.
 		col = plan_column()
-		if col:
-			plan_codes = frappe.db.sql_list(
-				f"""SELECT name FROM `tabItem` WHERE disabled = 0 AND IFNULL(`{col}`, 0) > 0
-				    AND item_group IN %(g)s""",  # col ∈ whitelist PLAN_COLUMNS
-				{"g": (tet_group(), traditional_group())})
-		codes = set(produced) | set(plan_codes) | {c for c in outgoing if c in produced}
+		group_codes = frappe.db.sql_list(
+			"""SELECT name FROM `tabItem` WHERE disabled = 0 AND has_variants = 0 AND item_group IN %(g)s""",
+			{"g": (tet_group(), traditional_group())})
+		codes = set(produced) | set(group_codes)
+		diag = _diagnose(f, t, bool(produced))
 		if not codes:
-			return {"rows": [], "meta": _meta(f, t)}
+			return {"rows": [], "meta": _meta(f, t, plan_column=col, diag=diag)}
 		items = frappe.db.sql(
 			"""
 			SELECT i.name AS item_code, i.item_name, i.item_group, i.image,
@@ -125,9 +124,28 @@ def get_items(from_date=None, to_date=None, refresh=0):
 				"outgoing_pct": pct(out, plan if plan else prod),
 			})
 		rows.sort(key=lambda r: (r["plan"], r["produced"]), reverse=True)
-		return {"rows": rows, "meta": _meta(f, t, plan_column=col)}
+		return {"rows": rows, "meta": _meta(f, t, plan_column=col, diag=diag)}
 
 	return run_cached("sx.get_items", {"f": iso(f), "t": iso(t)}, build, refresh)
+
+
+def _diagnose(f, t, has_production: bool) -> dict:
+	"""Giải thích khi khoảng lọc không có số SX: phiếu theo loại trong khoảng, phiếu SX gần nhất,
+	và khoảng mùa trước để UI gợi ý xem lại."""
+	by_purpose = {r.purpose: cint(r.n) for r in frappe.db.sql(
+		"""SELECT purpose, COUNT(*) AS n FROM `tabStock Entry`
+		   WHERE docstatus = 1 AND posting_date BETWEEN %(f)s AND %(t)s GROUP BY purpose""",
+		{"f": f, "t": t}, as_dict=True)}
+	last = frappe.db.sql(
+		f"""SELECT MAX(se.posting_date) FROM `tabStock Entry Detail` sed
+		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {FINISHED_FILTER}""")[0][0]
+	return {
+		"has_production": has_production,
+		"entries_by_purpose": by_purpose,
+		"last_manufacture": iso(last),
+		"prev_from": iso(add_months(f, -12)),
+		"prev_to": iso(get_last_day(add_months(t, -12))),
+	}
 
 
 def _meta(f, t, **extra) -> dict:
