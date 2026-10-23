@@ -156,7 +156,7 @@ export async function render({ container }) {
     container.innerHTML = `
         <div class="bc-view-banner">
             <div><div class="bc-view-banner-title">Sản xuất Hàng Tết</div>
-                <div class="bc-view-banner-sub" id="sx-range">Khoảng mặc định theo BC Settings</div></div>
+                <div class="bc-view-banner-sub" id="sx-range">Mặc định: mùa sản xuất 01/11 → 30/04</div></div>
             <span class="bc-view-banner-badge">🏭 SX</span>
         </div>
         <div class="bc-card">
@@ -203,7 +203,8 @@ export async function render({ container }) {
 
     const now = todayISO();
     await loadItems();
-    // Tháng lịch mặc định: tháng hôm nay nếu nằm trong khoảng lọc, không thì tháng của "đến ngày".
-    const ref = state.from && state.to && (now < state.from || now > state.to) ? state.to : now;
+    // Tháng lịch mặc định: tháng hôm nay nếu nằm trong khoảng lọc; trước khoảng → tháng đầu
+    // (vd 23/10 xem mùa 01/11 → 30/04 thì mở tháng 11); sau khoảng → tháng cuối.
+    const ref = state.from && now < state.from ? state.from : (state.to && now > state.to ? state.to : now);
     await loadMonth(Number(ref.slice(0, 4)), Number(ref.slice(5, 7)));
 }

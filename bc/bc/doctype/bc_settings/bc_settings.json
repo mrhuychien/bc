@@ -18,6 +18,7 @@
   "column_break_tet",
   "tet_dates",
   "sx_section",
+  "sx_season_end_month",
   "sx_default_from",
   "column_break_sx",
   "sx_default_to"
@@ -101,10 +102,17 @@
    "label": "Sản xuất Tết"
   },
   {
+   "fieldname": "sx_season_end_month",
+   "fieldtype": "Int",
+   "label": "Tháng kết thúc mùa SX (năm Tết)",
+   "default": "4",
+   "description": "Mùa SX = 01/tháng bắt đầu mùa Tết (năm trước) → hết tháng này năm Tết. Mặc định 4 (đến 30/04)."
+  },
+  {
    "fieldname": "sx_default_from",
    "fieldtype": "Date",
    "label": "Khoảng mặc định — từ ngày",
-   "description": "Trống = đầu mùa Tết."
+   "description": "Trống = đầu mùa SX (01/11). Chỉ điền khi muốn cố định khoảng."
   },
   {
    "fieldname": "column_break_sx",
@@ -114,7 +122,7 @@
    "fieldname": "sx_default_to",
    "fieldtype": "Date",
    "label": "Khoảng mặc định — đến ngày",
-   "description": "Trống = mùng 1 Tết + 45 ngày."
+   "description": "Trống = hết tháng kết thúc mùa SX (30/04)."
   }
  ],
  "index_web_pages_for_search": 1,

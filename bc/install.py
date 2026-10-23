@@ -37,6 +37,8 @@ def seed_settings():
 		s.fy_start_month = 4
 	if not s.tet_season_start_month:
 		s.tet_season_start_month = 11
+	if not s.sx_season_end_month:
+		s.sx_season_end_month = 4
 	if not s.cache_ttl:
 		s.cache_ttl = 300
 	if not s.tet_target_pct:

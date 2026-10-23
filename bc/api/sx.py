@@ -19,7 +19,6 @@ from bc.api._common import (
 	OPENING_FILTER,
 	_guard,
 	carton_factors,
-	get_settings,
 	iso,
 	pct,
 	plan_column,
@@ -27,7 +26,6 @@ from bc.api._common import (
 	run_cached,
 	sx_default_range,
 	tet_group,
-	tet_season,
 	to_cartons,
 	traditional_group,
 )
@@ -36,14 +34,11 @@ FINISHED_FILTER = """se.docstatus = 1 AND se.purpose = 'Manufacture' AND sed.is_
 
 
 def _range(from_date, to_date) -> tuple:
-	"""Khoảng lọc: tham số client, thiếu thì mặc định BC Settings / mùa Tết (SPEC bước 5)."""
+	"""Khoảng lọc: tham số client, thiếu thì mặc định BC Settings / mùa sản xuất (sx_season)."""
 	if from_date and to_date:
 		f, t = getdate(from_date), getdate(to_date)
 	else:
-		s = get_settings()
-		# Chỉ cần mùa Tết khi Settings chưa khai đủ 2 mốc (tet_season báo lỗi rõ nếu thiếu ngày Tết).
-		season = None if (s.sx_default_from and s.sx_default_to) else tet_season()
-		df, dt = sx_default_range(season)
+		df, dt = sx_default_range()
 		f, t = getdate(from_date or df), getdate(to_date or dt)
 	if f > t:
 		frappe.throw("'Từ ngày' phải trước 'Đến ngày'")

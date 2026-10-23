@@ -18,7 +18,7 @@ import unicodedata
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, flt, getdate, nowdate
+from frappe.utils import add_days, add_months, flt, get_last_day, getdate, nowdate
 
 ACCESS_ROLES = {"BC Viewer", "System Manager"}
 CACHE_PREFIX = "bc:"
@@ -209,14 +209,29 @@ def tet_season(today=None) -> dict:
 	}
 
 
-def sx_default_range(season: dict | None = None) -> tuple:
-	"""Khoảng mặc định view SX Tết: Settings, trống thì season_start → tet + 45 ngày."""
+def sx_season(today=None) -> tuple:
+	"""Mùa sản xuất Tết chứa `today`, hoặc mùa SẮP TỚI nếu đang ở khoảng nghỉ giữa 2 mùa.
+
+	Mùa của Tết năm Y = 01/{tet_season_start_month}/(Y−1) → hết tháng {sx_season_end_month}/Y
+	(mặc định 01/11 → 30/04). Không cần bảng ngày Tết. Ví dụ 23/10/2026: đã qua 30/04/2026
+	→ mùa tới 01/11/2026 → 30/04/2027.
+	"""
+	today = getdate(today or nowdate())
+	start_m = setting_int("tet_season_start_month", 11)
+	end_m = setting_int("sx_season_end_month", 4)
+	year = today.year + 1 if today >= datetime.date(today.year, start_m, 1) else today.year
+	end = getdate(get_last_day(datetime.date(year, end_m, 1)))
+	if today > end:  # khoảng nghỉ (vd T5–T10) → mùa tới
+		year += 1
+		end = getdate(get_last_day(datetime.date(year, end_m, 1)))
+	return datetime.date(year - 1, start_m, 1), end
+
+
+def sx_default_range(today=None) -> tuple:
+	"""Khoảng mặc định view SX Tết: mốc cố định trong Settings (nếu có), trống thì theo sx_season()."""
 	s = get_settings()
-	if s.sx_default_from and s.sx_default_to:
-		return getdate(s.sx_default_from), getdate(s.sx_default_to)
-	season = season or tet_season()
-	return (getdate(s.sx_default_from or season["season_start"]),
-		getdate(s.sx_default_to or add_days(season["tet_date"], 45)))
+	season_from, season_to = sx_season(today)
+	return (getdate(s.sx_default_from or season_from), getdate(s.sx_default_to or season_to))
 
 
 def compare_mode_label(mode: str) -> str:
