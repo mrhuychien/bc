@@ -32,7 +32,7 @@ REPORTS = {
 	"Sản lượng sản xuất theo ngày": "sx.get_daily_summary / sx.get_daily_detail",
 }
 
-DATE_EXPR = re.compile(r"(CURDATE\(\)|NOW\(\)|SYSDATE\(\)|'\d{4}-\d{2}-\d{2}'|Hàng TTết)", re.I)
+DATE_EXPR = re.compile(r"(CURDATE\(\)|NOW\(\)|SYSDATE\(\)|'\d{4}-\d{2}-\d{2}'|Hàng T{1,2}ết)", re.I)
 
 
 def _slug(name: str) -> str:

@@ -23,7 +23,6 @@ from bc.api._common import (
 	SI_AMOUNT,
 	SII_AMOUNT,
 	_guard,
-	carton_factors,
 	channel_of,
 	fy_label,
 	fy_range,
@@ -259,3 +258,153 @@ def get_top_customers(limit=8, refresh=0):
 			"amount": flt(r.amount)} for r in rows], "meta": {"fy": _fy_meta(fy), "limit": limit}}
 
 	return run_cached("kd.get_top_customers", {"limit": limit}, build, refresh)
+
+
+@frappe.whitelist()
+def get_monthly(refresh=0):
+	"""Doanh số 12 tháng năm TC (T{fy_start_month} → …): năm nay và năm trước.
+
+	rows: [{period: current|last_year, month (1-12), fy_month (1-12, tháng đầu năm TC = 1),
+	        sales, returns}]
+	"""
+	_guard()
+
+	def build():
+		fy, p = _fy_params()
+		start_m = fy["fy_start"].month
+		rows = frappe.db.sql(
+			# SQL thay ORM: GROUP BY năm-tháng 2 năm TC trong 1 truy vấn.
+			f"""
+			SELECT CASE WHEN si.posting_date >= %(fy_start)s THEN 'current' ELSE 'last_year' END AS period,
+				MONTH(si.posting_date) AS month,
+				SUM(CASE WHEN si.is_return = 0 THEN {SI_AMOUNT} ELSE 0 END) AS sales,
+				SUM(CASE WHEN si.is_return = 1 THEN -{SI_AMOUNT} ELSE 0 END) AS returns
+			FROM `tabSales Invoice` si
+			WHERE si.docstatus = 1 AND {OPENING_FILTER}
+			  AND si.posting_date BETWEEN %(ly_start)s AND %(to_date)s
+			GROUP BY period, month
+			""",
+			p,
+			as_dict=True,
+		)
+		got = {(r.period, cint(r.month)): r for r in rows}
+		out = []
+		for period in ("current", "last_year"):
+			for i in range(12):
+				m = (start_m - 1 + i) % 12 + 1
+				r = got.get((period, m))
+				out.append({"period": period, "month": m, "fy_month": i + 1,
+					"sales": flt(r.sales) if r else 0.0, "returns": flt(r.returns) if r else 0.0})
+		return {"rows": out, "meta": {"fy": _fy_meta(fy)}}
+
+	return run_cached("kd.get_monthly", {}, build, refresh)
+
+
+@frappe.whitelist()
+def get_provinces(refresh=0):
+	"""Doanh số bán ra theo tỉnh (chuẩn hoá 34 tỉnh), năm TC đến hôm nay.
+
+	rows: [{province, sales, pct}] giảm dần; pct = % tổng doanh số.
+	"""
+	_guard()
+	from bc.api import _provinces
+
+	def build():
+		fy, p = _fy_params()
+		col = _provinces.province_column()
+		agg: dict[str, float] = {}
+		if col:
+			rows = frappe.db.sql(
+				# col ∈ whitelist PROV_COLUMNS — không phải input người dùng.
+				f"""
+				SELECT si.`{col}` AS prov, MAX(si.customer_name) AS cname, SUM({SI_AMOUNT}) AS sales
+				FROM `tabSales Invoice` si
+				WHERE si.docstatus = 1 AND {OPENING_FILTER} AND si.is_return = 0
+				  AND si.posting_date BETWEEN %(fy_start)s AND %(to_date)s
+				GROUP BY si.`{col}`
+				""",
+				p,
+				as_dict=True,
+			)
+			for r in rows:
+				k = _provinces.resolve(r.prov)
+				agg[k] = agg.get(k, 0.0) + flt(r.sales)
+		else:
+			rows = frappe.db.sql(
+				f"""
+				SELECT c.territory, c.customer_name, SUM({SI_AMOUNT}) AS sales
+				FROM `tabSales Invoice` si
+				LEFT JOIN `tabCustomer` c ON c.name = si.customer
+				WHERE si.docstatus = 1 AND {OPENING_FILTER} AND si.is_return = 0
+				  AND si.posting_date BETWEEN %(fy_start)s AND %(to_date)s
+				GROUP BY si.customer, c.territory, c.customer_name
+				""",
+				p,
+				as_dict=True,
+			)
+			for r in rows:
+				k = _provinces.resolve(None, r.territory, r.customer_name)
+				agg[k] = agg.get(k, 0.0) + flt(r.sales)
+		total = sum(agg.values())
+		out = sorted(({"province": k, "sales": v, "pct": pct(v, total)} for k, v in agg.items()),
+			key=lambda x: x["sales"], reverse=True)
+		return {"rows": out, "meta": {"fy": _fy_meta(fy), "source": col or "customer.territory", "total": total}}
+
+	return run_cached("kd.get_provinces", {}, build, refresh)
+
+
+@frappe.whitelist()
+def get_top_products(group="all", refresh=0):
+	"""Top sản phẩm theo số hộp (đơn vị kho, đã trừ trả) — lọc theo item_group.
+
+	group: all | tet | traditional. tet dùng mùa Tết (season_start → asof, so cùng kỳ
+	mùa trước theo BC Settings.tet_compare_mode); còn lại dùng năm TC vs cùng kỳ.
+	rows: [{item_code, item_name, short_name, item_group, qty, qty_sp, growth_pct}]
+	"""
+	_guard()
+	if group not in ("all", "tet", "traditional"):
+		frappe.throw("Nhóm không hợp lệ")
+
+	def build():
+		params: dict = {}
+		group_sql = ""
+		if group == "tet":
+			s = tet_season()
+			params.update(cs=s["season_start"], ce=s["asof"], ps=s["ly_season_start"], pe=s["ly_asof"])
+			meta = {"window": "tet", "tet_year": s["tet_year"], "compare_mode": s["compare_mode"],
+				**{k: iso(v) for k, v in params.items()}}
+			params["grp"] = tet_group()
+			group_sql = "AND sii.item_group = %(grp)s"
+		else:
+			fy = fy_range()
+			params.update(cs=fy["fy_start"], ce=fy["to_date"], ps=fy["sp_start"], pe=fy["sp_end"])
+			meta = {"window": "fy", **{k: iso(v) for k, v in params.items()}}
+			if group == "traditional":
+				params["grp"] = traditional_group()
+				group_sql = "AND sii.item_group = %(grp)s"
+		rows = frappe.db.sql(
+			# stock_qty của dòng trả hàng là số âm → SUM ra số hộp thực bán.
+			f"""
+			SELECT sii.item_code, MAX(sii.item_name) AS item_name, MAX(sii.item_group) AS item_group,
+				SUM(CASE WHEN si.posting_date BETWEEN %(cs)s AND %(ce)s THEN sii.stock_qty ELSE 0 END) AS qty,
+				SUM(CASE WHEN si.posting_date BETWEEN %(ps)s AND %(pe)s THEN sii.stock_qty ELSE 0 END) AS qty_sp
+			FROM `tabSales Invoice Item` sii
+			JOIN `tabSales Invoice` si ON si.name = sii.parent
+			WHERE si.docstatus = 1 AND {OPENING_FILTER}
+			  AND (si.posting_date BETWEEN %(cs)s AND %(ce)s OR si.posting_date BETWEEN %(ps)s AND %(pe)s)
+			  {group_sql}
+			GROUP BY sii.item_code
+			HAVING qty > 0 OR qty_sp > 0
+			ORDER BY qty DESC
+			LIMIT 300
+			""",
+			params,
+			as_dict=True,
+		)
+		meta["group"] = group
+		meta["item_group"] = params.get("grp")
+		return {"rows": [{"item_code": r.item_code, "item_name": r.item_name, "short_name": short_name(r.item_name),
+			"item_group": r.item_group, "qty": flt(r.qty), "qty_sp": flt(r.qty_sp),
+			"growth_pct": growth(r.qty, r.qty_sp)} for r in rows], "meta": meta}
+
+	return run_cached("kd.get_top_products", {"group": group}, build, refresh)

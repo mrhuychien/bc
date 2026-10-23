@@ -51,7 +51,7 @@ export function isoOf(y, m, d) { return `${y}-${pad2(m)}-${pad2(d)}`; }
 export function todayISO() { const d = new Date(); return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
 export function parseISO(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 
-/** "2026-02-17" → "17/02/2026" (short=true → "17/02"). */
+/** "2025-11-01" → "01/11/2025" (short=true → "01/11"). */
 export function fmtDate(s, short = false) {
     if (!s) return '—';
     const [y, m, d] = String(s).slice(0, 10).split('-');

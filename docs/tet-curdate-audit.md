@@ -15,7 +15,7 @@ bench --site a.rongvanghoanggia.com execute bc.scripts.dump_report_sql.run
 ```
 
 (script in sẵn bảng markdown `| report | dòng | biểu thức | ngữ cảnh |` cho mọi
-`CURDATE()`, `NOW()`, ngày literal và `Hàng TTết`). Sau khi điền: đối chiếu cột
+`CURDATE()`, `NOW()`, ngày literal và tên nhóm Tết cũ viết sai). Sau khi điền: đối chiếu cột
 "Tham số thay thế" với SQL trong `bc/api/tet.py`, rồi chạy
 `bc.scripts.compare_tet_reports.run` — diff phải rỗng (bước 3) trước khi bật
 `tet_compare_mode = tet_aligned` (bước 4).
@@ -48,7 +48,7 @@ bench --site a.rongvanghoanggia.com execute bc.scripts.dump_report_sql.run
 | ngày Tết literal / `CASE YEAR(CURDATE()) WHEN …` | `%(season_end)s` / `%(ly_season_end)s` — ngày đã chép vào BC Settings.tet_dates (seed 2023–2030) |
 | `<` hay `<=` với ngày Tết | giữ nguyên toán tử SQL gốc — SQL mới hiện dùng `<=` (mùng 1 tính vào mùa) **[VERIFY]** |
 | `MONTH(CURDATE()) >= 11` | bỏ — Python đã chọn `tet_year` |
-| `'Hàng TTết'` | `%(tet_group)s` = BC Settings.tet_item_group |
+| tên nhóm Tết cũ viết sai (`Hàng T…ết`, 2 chữ T) | `%(tet_group)s` = BC Settings.tet_item_group |
 
 ## Biểu thức gốc theo report (điền từ dump_report_sql)
 

@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p0-r1';
+const BUILD = 'bc-p1-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -16,6 +16,10 @@ const withV = (p) => (ASSET_V ? `${p}?v=${ASSET_V}` : p);
 const VIEW_MODULES = {
     '/tong-quan': () => import(withV('./views/tong-quan.js')),
     '/ngay': () => import(withV('./views/ngay.js')),
+    '/thang': () => import(withV('./views/thang.js')),
+    '/tet': () => import(withV('./views/tet.js')),
+    '/tinh-thanh': () => import(withV('./views/tinh-thanh.js')),
+    '/san-pham': () => import(withV('./views/san-pham.js')),
 };
 
 // Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).

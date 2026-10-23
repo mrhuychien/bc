@@ -3,8 +3,8 @@
 Custom app Frappe/ERPNext v16, **chỉ đọc**: Ban lãnh đạo xem báo cáo toàn công ty
 trên điện thoại + desktop. Thay 2 dashboard HTML cũ (Báo cáo KD tổng quát v29,
 Báo cáo SX Tết v6) bằng SPA tại **`/bc`**; số liệu do whitelisted method
-`bc.api.*` tính (port từ 15 Query Report), frontend không gọi
-`frappe.desk.query_report.run`.
+`bc.api.*` tính (port từ 15 Query Report), frontend không còn chạy Query Report
+qua desk API.
 
 - www route `/bc` · CSS prefix `bc-` · context `window.BC_CONTEXT`
 - Quyền: role **BC Viewer** (fixture) hoặc System Manager — kiểm ở www page và ở
