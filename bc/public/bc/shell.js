@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p1-r1';
+const BUILD = 'bc-p2-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -20,6 +20,7 @@ const VIEW_MODULES = {
     '/tet': () => import(withV('./views/tet.js')),
     '/tinh-thanh': () => import(withV('./views/tinh-thanh.js')),
     '/san-pham': () => import(withV('./views/san-pham.js')),
+    '/sx-tet': () => import(withV('./views/sx-tet.js')),
 };
 
 // Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).
@@ -52,7 +53,8 @@ function paintHeader() {
     if (tc) {
         const next = CTX.tet?.nextDate;
         const n = next ? daysBetween(todayISO(), next) : null;
-        tc.textContent = n === null ? '' : (n === 0 ? '🧧 Mùng 1 Tết' : `🧧 Tết còn ${n} ngày`);
+        const wide = window.innerWidth >= 900;
+        tc.textContent = n === null ? '' : (n === 0 ? '🧧 Mùng 1 Tết' : (wide ? `🧧 Tết còn ${n} ngày` : `🧧 ${n} ngày`));
         tc.hidden = n === null;
         if (next) tc.title = `Mùng 1 Tết: ${next}`;
     }
