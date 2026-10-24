@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p2-r6';
+const BUILD = 'bc-p3-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -22,6 +22,8 @@ const VIEW_MODULES = {
     '/san-pham': () => import(withV('./views/san-pham.js')),
     '/sx-tet': () => import(withV('./views/sx-tet.js')),
 };
+// Màn quản trị chỉ đăng ký cho System Manager (server vẫn guard mọi method).
+if (CTX.isSysManager) VIEW_MODULES['/chia-se'] = () => import(withV('./views/chia-se.js'));
 
 // Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).
 const NAV_GROUPS = [
@@ -41,6 +43,7 @@ const NAV_GROUPS = [
     { title: 'Nhân sự', items: [] },
     { title: 'ATTP', items: [] },
 ];
+if (CTX.isSysManager) NAV_GROUPS.push({ title: 'Quản trị', items: [{ route: '/chia-se', label: 'Chia sẻ lãnh đạo', icon: 'fa-share-nodes' }] });
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items).filter((it) => VIEW_MODULES[it.route]);
 const TITLES = Object.fromEntries(ALL_ITEMS.map((it) => [it.route, it.label]));
 const BOTTOM = ['/tong-quan', '/ngay', '/tet', '/sx-tet'].filter((r) => VIEW_MODULES[r]);
@@ -170,7 +173,8 @@ document.getElementById('bc-btn-refresh')?.addEventListener('click', async (e) =
     document.body.appendChild(menu);
     btn.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
     document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
-    menu.querySelector('.bc-acct-logout').addEventListener('click', () => { location.href = '/api/method/logout'; });
+    // Đăng xuất hẳn trên thiết bị này: xoá cả cookie nhớ đăng nhập (bc_key) của link chia sẻ.
+    menu.querySelector('.bc-acct-logout').addEventListener('click', () => { location.href = '/api/method/bc.api.share.logout'; });
 })();
 
 paintHeader();

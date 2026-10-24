@@ -26,6 +26,23 @@ bench --site a.rongvanghoanggia.com migrate && bench build --app bc && bench res
 Sau khi cài: mở `/app/bc-settings`, kiểm tra nhóm hàng + bảng ngày Tết (đã seed
 2023–2030), gán role **BC Viewer** cho người xem.
 
+## Chia sẻ cho lãnh đạo (link / QR tự đăng nhập)
+
+Quản trị (System Manager) vào `/bc` → **Quản trị › Chia sẻ lãnh đạo**:
+
+1. **Tạo tài khoản lãnh đạo** (họ tên, SĐT tuỳ chọn) → tài khoản Website User + role
+   BC Viewer: chỉ xem `/bc`, không vào được ERPNext. Hoặc cấp quyền xem cho user có sẵn.
+2. Hệ thống hiện **QR + link** `https://<site>/bc?k=<token>` (chỉ hiện 1 lần — DB lưu
+   hash). Gửi Zalo / cho quét QR.
+3. Lãnh đạo quét/bấm → đăng nhập ngay, thiết bị được **nhớ 400 ngày** (cookie httponly
+   `bc_key`): phiên Frappe hết hạn thì mở `/bc` sẽ tự đăng nhập lại.
+4. **Thu hồi** từng link (mất máy) hoặc **Khoá** tài khoản. Nút "Đăng xuất" trong app
+   xoá luôn cookie nhớ đăng nhập trên thiết bị đó.
+
+An toàn: không bao giờ cấp/tự đăng nhập link cho tài khoản System Manager; login bằng
+link giới hạn 30 lần/phút/IP; bảng link ở permlevel 1 (BC Viewer không đọc được).
+Lưu ý iPhone: mở link bằng Safari (khung xem trong Zalo có kho cookie riêng).
+
 ## Đối chiếu với Query Report cũ (bắt buộc trước nghiệm thu)
 
 Phiên build không truy cập được site nên SQL trong `bc/api/*.py` được dựng theo

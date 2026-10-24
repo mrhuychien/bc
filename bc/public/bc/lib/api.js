@@ -71,3 +71,12 @@ export const sx = {
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };
+
+export const share = {
+    list:          ()                                  => call('bc.api.share.list_leaders'),
+    create:        (full_name, mobile, email, label)  => call('bc.api.share.create_leader', { full_name, mobile, email, label }),
+    grantExisting: (user, label)                       => call('bc.api.share.grant_existing', { user, label }),
+    issue:         (user, label)                       => call('bc.api.share.issue_link', { user, label }),
+    revoke:        (link)                              => call('bc.api.share.revoke_link', { link }),
+    setEnabled:    (user, enabled)                     => call('bc.api.share.set_enabled', { user, enabled: enabled ? 1 : 0 }),
+};

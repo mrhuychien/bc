@@ -23,7 +23,9 @@
   "sx_season_end_month",
   "sx_default_from",
   "column_break_sx",
-  "sx_default_to"
+  "sx_default_to",
+  "share_section",
+  "share_links"
  ],
  "fields": [
   {
@@ -140,6 +142,20 @@
    "fieldtype": "Date",
    "label": "Khoảng mặc định — đến ngày",
    "description": "Trống = hết tháng kết thúc mùa SX (30/04)."
+  },
+  {
+   "fieldname": "share_section",
+   "fieldtype": "Section Break",
+   "label": "Chia sẻ cho lãnh đạo (link / QR tự đăng nhập)",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "share_links",
+   "fieldtype": "Table",
+   "options": "BC Share Link",
+   "label": "Link đăng nhập đã cấp",
+   "permlevel": 1,
+   "description": "Quản lý tại /bc → Chia sẻ. Xoá dòng = thu hồi link."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -164,6 +180,12 @@
   {
    "read": 1,
    "role": "BC Viewer"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
   }
  ],
  "sort_field": "modified",
