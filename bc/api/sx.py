@@ -5,7 +5,7 @@ xuất theo ngày").
 Nguồn: Stock Entry loại Material Receipt (docstatus=1), dòng nhập vào kho thành phẩm
 (BC Settings.sx_warehouse, mặc định "Thành phẩm - HGC"); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
 hệ số UOM "Thùng" của Item. Xuất bán = Sales Invoice (stock_qty, không tính trả).
-Tồn kho = Bin.actual_qty hiện tại (mọi kho). Ảnh + nhóm hàng join Item ngay trong
+Tồn kho = Bin.actual_qty hiện tại CHỈ kho thành phẩm (sx_warehouse, gồm kho con nếu là nhóm). Ảnh + nhóm hàng join Item ngay trong
 SQL (bỏ frappe.client.get_list phía client).
 [VERIFY port] đối chiếu với SQL gốc (docs/report-sql/) — đặc biệt kho/nhóm được lọc.
 """
@@ -109,10 +109,13 @@ def get_items(from_date=None, to_date=None, refresh=0):
 		items = frappe.db.sql(
 			"""
 			SELECT i.name AS item_code, i.item_name, i.item_group, i.image,
-				(SELECT COALESCE(SUM(b.actual_qty), 0) FROM `tabBin` b WHERE b.item_code = i.name) AS stock
+				(SELECT COALESCE(SUM(b.actual_qty), 0) FROM `tabBin` b
+				 JOIN `tabWarehouse` w ON w.name = b.warehouse
+				 JOIN `tabWarehouse` root ON root.name = %(sx_wh)s
+				 WHERE b.item_code = i.name AND w.lft >= root.lft AND w.rgt <= root.rgt) AS stock
 			FROM `tabItem` i WHERE i.name IN %(codes)s
 			""",
-			{"codes": tuple(codes)},
+			{"codes": tuple(codes), "sx_wh": _wh()},
 			as_dict=True,
 		)
 		plans = plans_of(codes)
