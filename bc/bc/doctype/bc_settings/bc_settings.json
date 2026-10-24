@@ -37,8 +37,8 @@
    "fieldname": "fy_start_month",
    "fieldtype": "Int",
    "label": "Tháng bắt đầu năm tài chính",
-   "default": "4",
-   "description": "1–12. Mặc định 4 (01/04 → 31/03)."
+   "default": "5",
+   "description": "1–12. Mặc định 5 (01/05 → 30/04 năm sau)."
   },
   {
    "fieldname": "cache_ttl",

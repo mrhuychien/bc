@@ -34,7 +34,7 @@ def seed_settings():
 	"""Điền giá trị mặc định cho các ô còn trống — không ghi đè cấu hình đã có."""
 	s = frappe.get_single("BC Settings")
 	if not s.fy_start_month:
-		s.fy_start_month = 4
+		s.fy_start_month = 5
 	if not s.tet_season_start_month:
 		s.tet_season_start_month = 11
 	if not s.get("sx_warehouse") and frappe.db.exists("Warehouse", "Thành phẩm - HGC"):

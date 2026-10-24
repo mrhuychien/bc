@@ -122,7 +122,7 @@ def fy_range(today=None) -> dict:
 	ly_start..ly_end         trọn năm TC trước
 	"""
 	today = getdate(today or nowdate())
-	m = setting_int("fy_start_month", 4)
+	m = setting_int("fy_start_month", 5)  # năm TC RVHG: 01/05 → 30/04 năm sau
 	y = today.year if today.month >= m else today.year - 1
 	fy_start = datetime.date(y, m, 1)
 	fy_end = add_days(add_months(fy_start, 12), -1)

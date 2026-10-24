@@ -55,7 +55,7 @@ def build_context_meta() -> dict:
 			"lyStart": iso(fy["ly_start"]),
 			"lyEnd": iso(fy["ly_end"]),
 			"label": fy_label(fy),
-			"startMonth": setting_int("fy_start_month", 4),
+			"startMonth": setting_int("fy_start_month", 5),
 		},
 		"tet": tet,
 		"tetError": tet_error,
