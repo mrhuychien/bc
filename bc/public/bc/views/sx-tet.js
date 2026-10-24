@@ -13,8 +13,6 @@ import { tabs, bindTabs } from '../components/tabs.js';
 import { skeleton, skeletonGrid } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
 
-const NO_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><rect width="72" height="72" rx="10" fill="#f4f2fb"/><text x="36" y="44" font-size="28" text-anchor="middle">📦</text></svg>');
 const state = { from: null, to: null, rows: [], tab: 'tet', sort: 'stock', q: '', year: null, month: null, days: [] };
 
 const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
@@ -35,32 +33,59 @@ function groupStats(rows, title, icon) {
 }
 
 /** Dòng "Nhãn  1.200 hộp · 50 thùng  [ghi chú]" — chưa khai hệ số Thùng thì hiện "—". */
-function qtyLine(label, boxes, cartons, r) {
-    return `<div class="bc-prod-line"><span>${label}</span>
-        <span><b>${fmtNum(boxes)}</b> hộp · <b>${r.carton_factor ? fmtNum(cartons) : '—'}</b> thùng</span></div>`;
+/** Chữ viết tắt cho mã không có ảnh: "Bánh đậu xanh Đồng tiền nhỏ 50g" → "ĐTN". */
+function initials(r) {
+    const name = String(r.short_name || r.item_name || r.item_code || '')
+        .replace(/bánh đậu xanh|rồng vàng hoàng gia|\brvhg\b|hương vị/gi, ' ');
+    const words = name.split(/[\s\-–]+/).filter((w) => w && !/\d/.test(w));
+    return (words.slice(0, 3).map((w) => w[0]).join('') || '?').toUpperCase();
 }
 
-function progLine(pct, cls, label) {
-    return `<div class="bc-prod-bar"><div class="bc-progress ${cls}"><span style="width:${clampW(pct)}%"></span></div><b class="bc-prod-note">${label}</b></div>`;
+function thumb(r) {
+    const ini = escapeHtml(initials(r));
+    if (!r.image) {
+        // Chưa có ảnh trên Item: thử /files/{mã}.jpg, lỗi thì hiện chữ viết tắt.
+        return `<img class="bc-pc-img" loading="lazy" alt="" src="/files/${encodeURIComponent(r.item_code)}.jpg" data-fallback="" data-initials="${ini}">`;
+    }
+    return `<img class="bc-pc-img" loading="lazy" alt="" src="${escapeHtml(r.image)}" data-fallback="/files/${encodeURIComponent(r.item_code)}.jpg" data-initials="${ini}">`;
 }
 
-function imgSrc(r) {
-    return r.image || `/files/${encodeURIComponent(r.item_code)}.jpg`;
+function tile(label, boxes, cartons, r, emptyText = '') {
+    const none = emptyText && !boxes;
+    return `<div class="bc-pc-tile">
+        <div class="bc-pc-label">${label}</div>
+        <div class="bc-pc-num">${none ? '—' : fmtNum(boxes)}</div>
+        <div class="bc-pc-sub">${none ? emptyText : `${r.carton_factor ? fmtNum(cartons) : '—'} thùng`}</div>
+    </div>`;
 }
 
-function card(r) {
-    return `<div class="bc-prod">
-        <img class="bc-prod-img" loading="lazy" alt="" src="${escapeHtml(imgSrc(r))}" data-fallback="${escapeHtml(r.image ? `/files/${encodeURIComponent(r.item_code)}.jpg` : '')}">
-        <div style="min-width:0">
-            <div class="bc-prod-name" title="${escapeHtml(r.item_name)}">${escapeHtml(r.item_name)}</div>
-            <div class="bc-prod-code">${escapeHtml(r.item_code)}</div>
-            ${qtyLine('Kế hoạch', r.plan, r.plan_cartons, r)}
-            ${qtyLine('Tồn kho', r.stock, r.stock_cartons, r)}
-            ${qtyLine('Sản xuất', r.produced, r.produced_cartons, r)}
-            ${progLine(r.produced_pct, 'bc-ok', r.plan ? `Đạt ${fmtPct(r.produced_pct, 0)} KH` : 'Chưa có KH')}
-            ${qtyLine('Bán', r.outgoing, r.outgoing_cartons, r)}
-            ${progLine(r.outgoing_pct, '', r.outgoing_pct === null || r.outgoing_pct === undefined ? '—' : `${fmtPct(r.outgoing_pct, 0)} ${r.plan ? 'KH' : 'SX'}`)}
-        </div></div>`;
+function bar(label, pct, cls, hasPlan) {
+    const tone = !hasPlan ? 'bc-txt-warning' : (pct >= 100 ? 'bc-txt-success' : (pct >= 70 ? 'bc-txt-warning' : 'bc-txt-danger'));
+    return `<div class="bc-pc-bar"><span class="bc-pc-bar-label">${label}</span>
+        <div class="bc-progress ${cls}"><span style="width:${hasPlan ? clampW(pct) : 0}%"></span></div>
+        <b class="${tone}">${hasPlan ? (pct === null || pct === undefined ? '—' : fmtPct(pct, 0)) : 'Chưa có KH'}</b></div>`;
+}
+
+function card(r, i) {
+    const hasPlan = Number(r.plan) > 0;
+    const soldPct = hasPlan ? Math.round(r.outgoing / r.plan * 1000) / 10 : null;
+    return `<div class="bc-pc">
+        <div class="bc-pc-head">
+            <div class="bc-pc-thumb">${thumb(r)}</div>
+            <div style="min-width:0">
+                <div class="bc-pc-name" title="${escapeHtml(r.item_name)}">${escapeHtml(r.item_name)}</div>
+                <div class="bc-pc-code">#${i + 1} · ${escapeHtml(r.item_code)}</div>
+            </div>
+        </div>
+        <div class="bc-pc-tiles">
+            ${tile('Kế hoạch', r.plan, r.plan_cartons, r, 'Chưa có')}
+            ${tile('Sản xuất', r.produced, r.produced_cartons, r)}
+            ${tile('Đã bán', r.outgoing, r.outgoing_cartons, r)}
+            ${tile('Tồn kho', r.stock, r.stock_cartons, r)}
+        </div>
+        ${bar('SX / KH', r.produced_pct, 'bc-ok', hasPlan)}
+        ${bar('Bán / KH', soldPct, '', hasPlan)}
+    </div>`;
 }
 
 function paintProducts() {
@@ -74,7 +99,7 @@ function paintProducts() {
         name: (a, b) => String(a.item_name).localeCompare(String(b.item_name), 'vi'),
     };
     rows.sort(sorters[state.sort]);
-    fill('sx-prods', rows.length ? `<div class="bc-prod-grid">${rows.map(card).join('')}</div>`
+    fill('sx-prods', rows.length ? `<div class="bc-prod-grid">${rows.map((r, i) => card(r, i)).join('')}</div>`
         : emptyState({ title: q ? 'Không có mã khớp tìm kiếm' : 'Không có mã trong nhóm này' }));
 }
 
@@ -232,10 +257,13 @@ export async function render({ container }) {
     // Ảnh: image → /files/{item_code}.jpg → ảnh mặc định (sự kiện error không nổi bọt → capture).
     container.addEventListener('error', (e) => {
         const img = e.target;
-        if (!(img instanceof HTMLImageElement) || !img.classList.contains('bc-prod-img')) return;
+        if (!(img instanceof HTMLImageElement) || !img.classList.contains('bc-pc-img')) return;
         const next = img.dataset.fallback;
-        img.dataset.fallback = '';
-        img.src = next || NO_IMG;
+        if (next) { img.dataset.fallback = ''; img.src = next; return; }
+        const box = document.createElement('div');
+        box.className = 'bc-pc-ini';
+        box.textContent = img.dataset.initials || '?';
+        img.replaceWith(box);
     }, true);
 
     const now = todayISO();

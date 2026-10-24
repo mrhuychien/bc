@@ -137,8 +137,8 @@
     padding: 1rem; box-shadow: var(--bc-shadow-sm); min-width: 0; }
 .bc-card + .bc-card, .bc-section + .bc-section { margin-top: .9rem; }
 .bc-card-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem; }
-.bc-app .bc-card-title { font-size: .95rem; font-weight: 700; color: var(--bc-text); }
-.bc-card-sub { font-size: .74rem; color: var(--bc-text-3); }
+.bc-app .bc-card-title { font-size: 1.05rem; font-weight: 700; color: var(--bc-text); }
+.bc-card-sub { font-size: .8rem; color: var(--bc-text-3); }
 .bc-section-title { font-size: .72rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--bc-text-2); margin: 1.1rem 0 .5rem; }
 
 .bc-view-banner { background: linear-gradient(135deg, #312e81, #4c1d95 60%, #6d28d9); color: #fff; border-radius: var(--bc-radius-lg);
@@ -170,22 +170,22 @@
 .bc-stat.bc-tone-danger::after { background: var(--bc-danger); }
 .bc-stat.bc-tone-success::after { background: var(--bc-success); }
 .bc-stat.bc-tone-warning::after { background: var(--bc-warning); }
-.bc-stat-label { font-size: .66rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+.bc-stat-label { font-size: .74rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
     display: flex; align-items: center; gap: .35rem; }
-.bc-stat-value { font-size: 1.3rem; font-weight: 800; margin-top: 3px; color: var(--bc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-stat-value { font-size: 1.55rem; font-weight: 800; margin-top: 3px; color: var(--bc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bc-stat-rows { margin-top: .4rem; display: flex; flex-direction: column; gap: 2px; }
-.bc-stat-row { display: flex; justify-content: space-between; gap: .4rem; font-size: .72rem; color: var(--bc-text-2); }
+.bc-stat-row { display: flex; justify-content: space-between; gap: .4rem; font-size: .82rem; color: var(--bc-text-2); }
 .bc-stat-row b { color: var(--bc-text); font-weight: 700; white-space: nowrap; }
-@media (min-width: 900px) { .bc-stat-value { font-size: 1.5rem; } .bc-stat { padding: 1rem; } }
+@media (min-width: 900px) { .bc-stat-value { font-size: 1.85rem; } .bc-stat { padding: 1.1rem; } }
 
 /* KPI mini */
 .bc-kpi { background: var(--bc-surface-2); border-radius: var(--bc-radius-sm); padding: .65rem .75rem; min-width: 0; }
-.bc-kpi-label { font-size: .64rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
-.bc-kpi-value { font-size: 1.05rem; font-weight: 800; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bc-kpi-sub { font-size: .7rem; color: var(--bc-text-2); }
+.bc-kpi-label { font-size: .72rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
+.bc-kpi-value { font-size: 1.3rem; font-weight: 800; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-kpi-sub { font-size: .8rem; color: var(--bc-text-2); margin-top: 1px; }
 
 /* Badge / growth */
-.bc-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 50px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.bc-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 50px; font-size: .78rem; font-weight: 700; white-space: nowrap; }
 .bc-badge-success { background: #d1fae5; color: #065f46; }
 .bc-badge-warning { background: #fef3c7; color: #92400e; }
 .bc-badge-danger { background: #fee2e2; color: #991b1b; }
@@ -226,9 +226,9 @@
 /* ─── Bảng: cuộn ngang, cột đầu sticky, sort, phân trang ─────────────── */
 .bc-table-wrap { position: relative; }
 .bc-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--bc-border); border-radius: var(--bc-radius-sm); }
-.bc-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .8rem; }
+.bc-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .9rem; }
 .bc-table th, .bc-table td { padding: .55rem .65rem; text-align: right; border-bottom: 1px solid var(--bc-border); white-space: nowrap; background: var(--bc-surface); }
-.bc-table th { background: var(--bc-surface-2); font-size: .66rem; font-weight: 800; color: var(--bc-text-2); text-transform: uppercase;
+.bc-table th { background: var(--bc-surface-2); font-size: .72rem; font-weight: 800; color: var(--bc-text-2); text-transform: uppercase;
     letter-spacing: .4px; position: sticky; top: 0; z-index: 2; }
 .bc-table th.bc-sortable { cursor: pointer; user-select: none; }
 .bc-table th.bc-sorted { color: var(--bc-accent-1); }
@@ -241,7 +241,7 @@
 .bc-table tr.bc-row-total td { font-weight: 800; background: var(--bc-surface-2); }
 .bc-table tr.bc-clickable { cursor: pointer; }
 .bc-table a { color: var(--bc-accent-1); text-decoration: none; font-weight: 600; }
-@media (min-width: 900px) { .bc-table td:first-child, .bc-table th:first-child { max-width: 320px; } .bc-table { font-size: .84rem; } }
+@media (min-width: 900px) { .bc-table td:first-child, .bc-table th:first-child { max-width: 320px; } .bc-table { font-size: .95rem; } }
 .bc-scroll-btns { display: flex; gap: .3rem; }
 .bc-pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 0 2px; }
 .bc-pager-btn { padding: 6px 14px; border: 1px solid var(--bc-border); border-radius: 999px; background: var(--bc-surface);
@@ -260,9 +260,9 @@
 .bc-rank-row { display: grid; grid-template-columns: 26px 1fr auto; gap: .6rem; align-items: center; }
 .bc-rank-no { width: 26px; height: 26px; border-radius: 8px; background: var(--bc-surface-2); display: flex; align-items: center; justify-content: center;
     font-weight: 800; font-size: .75rem; color: var(--bc-accent-1); }
-.bc-rank-name { font-weight: 700; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-rank-name { font-weight: 700; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bc-rank-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
-.bc-rank-bar { display: grid; grid-template-columns: 1fr 72px; gap: .4rem; align-items: center; font-size: .68rem; color: var(--bc-text-2); }
+.bc-rank-bar { display: grid; grid-template-columns: 1fr 84px; gap: .4rem; align-items: center; font-size: .8rem; color: var(--bc-text-2); }
 .bc-rank-bar b { text-align: right; color: var(--bc-text); }
 
 /* Lịch tháng (dùng chung KD + SX), thứ Hai đầu tuần */
@@ -288,9 +288,9 @@
 .bc-cal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 2px; }
 .bc-cal-day { font-weight: 800; font-size: .78rem; }
 .bc-cal-lunar { font-size: .56rem; color: var(--bc-text-3); }
-.bc-cal-val { font-size: .66rem; font-weight: 800; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bc-cal-val2 { font-size: .58rem; color: var(--bc-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (min-width: 900px) { .bc-cal-cell { min-height: 76px; padding: 5px 7px; } .bc-cal-val { font-size: .78rem; } .bc-cal-val2 { font-size: .68rem; } }
+.bc-cal-val { font-size: .72rem; font-weight: 800; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-cal-val2 { font-size: .64rem; color: var(--bc-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 900px) { .bc-cal-cell { min-height: 76px; padding: 5px 7px; } .bc-cal-val { font-size: .9rem; } .bc-cal-val2 { font-size: .76rem; } }
 
 /* Thẻ sản phẩm SX */
 .bc-prod-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; }
@@ -396,3 +396,27 @@
 .bc-share-qr img, .bc-share-qr canvas { display: block; }
 .bc-share-url { font-family: ui-monospace, monospace; font-size: .72rem; word-break: break-all; background: var(--bc-surface-2);
     padding: .5rem .7rem; border-radius: var(--bc-radius-sm); max-width: 100%; user-select: all; }
+
+/* Thẻ sản phẩm SX (#/sx-tet) — 4 ô số lớn + 2 thanh tiến độ */
+.bc-pc { background: var(--bc-surface); border: 1px solid #ddd6fe; border-radius: 18px; padding: 1rem; box-shadow: var(--bc-shadow-sm); min-width: 0; }
+.bc-pc-head { display: grid; grid-template-columns: 56px 1fr; gap: .8rem; align-items: center; margin-bottom: .85rem; }
+.bc-pc-thumb { width: 56px; height: 56px; }
+.bc-pc-img { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; background: var(--bc-surface-2); display: block; }
+.bc-pc-ini { width: 56px; height: 56px; border-radius: 14px; background: #fdecd3; color: #b45309; display: flex; align-items: center;
+    justify-content: center; font-weight: 800; font-size: .95rem; letter-spacing: .3px; }
+.bc-app .bc-pc-name { font-weight: 700; font-size: 1.05rem; line-height: 1.3; color: var(--bc-text); overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.bc-pc-code { font-size: .85rem; color: var(--bc-text-3); margin-top: 2px; }
+.bc-pc-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+@media (min-width: 420px) { .bc-pc-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.bc-pc-tile { background: var(--bc-surface-2); border-radius: 12px; padding: .6rem .7rem; min-width: 0; }
+.bc-pc-label { font-size: .82rem; color: var(--bc-text-2); }
+.bc-pc-num { font-size: 1.3rem; font-weight: 800; color: var(--bc-text); line-height: 1.25; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-pc-sub { font-size: .8rem; color: var(--bc-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-pc-bar { display: grid; grid-template-columns: 74px 1fr auto; gap: .6rem; align-items: center; margin-top: .65rem; font-size: .85rem; }
+.bc-pc-bar-label { color: var(--bc-text-2); }
+.bc-pc-bar b { font-size: .88rem; white-space: nowrap; }
+.bc-pc .bc-progress { height: 8px; }
+.bc-prod-grid { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .bc-prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1400px) { .bc-prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

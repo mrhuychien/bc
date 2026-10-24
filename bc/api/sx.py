@@ -25,6 +25,7 @@ from bc.api._common import (
 	plan_column,
 	plans_of,
 	run_cached,
+	short_name,
 	sx_default_range,
 	tet_group,
 	to_cartons,
@@ -128,6 +129,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 			rows.append({
 				"item_code": it.item_code,
 				"item_name": it.item_name,
+				"short_name": short_name(it.item_name),
 				"item_group": it.item_group,
 				"group_key": _group_key(it.item_group),
 				"image": it.image or None,
