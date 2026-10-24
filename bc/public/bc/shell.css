@@ -154,7 +154,7 @@
 
 .bc-grid { display: grid; gap: .75rem; }
 .bc-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.bc-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bc-grid-3 { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }  /* đủ chỗ 3 ô/hàng, hẹp thì tự xuống dòng */
 .bc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-charts { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) {
@@ -164,7 +164,7 @@
 }
 
 /* Stat card (KPI có cùng kỳ + tăng trưởng) */
-.bc-stat { background: var(--bc-surface); border: 1px solid var(--bc-border); border-radius: var(--bc-radius-md);
+.bc-stat { container-type: inline-size; background: var(--bc-surface); border: 1px solid var(--bc-border); border-radius: var(--bc-radius-md);
     padding: .85rem; box-shadow: var(--bc-shadow-sm); position: relative; overflow: hidden; min-width: 0; }
 .bc-stat::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--bc-accent-grad); }
 .bc-stat.bc-tone-danger::after { background: var(--bc-danger); }
@@ -172,16 +172,16 @@
 .bc-stat.bc-tone-warning::after { background: var(--bc-warning); }
 .bc-stat-label { font-size: .74rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
     display: flex; align-items: center; gap: .35rem; }
-.bc-stat-value { font-size: 1.55rem; font-weight: 800; margin-top: 3px; color: var(--bc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-stat-value { font-size: 1.3rem; font-size: clamp(1.05rem, 12cqi, 1.75rem); font-weight: 800; margin-top: 3px; color: var(--bc-text); white-space: nowrap; }
 .bc-stat-rows { margin-top: .4rem; display: flex; flex-direction: column; gap: 2px; }
-.bc-stat-row { display: flex; justify-content: space-between; gap: .4rem; font-size: .82rem; color: var(--bc-text-2); }
+.bc-stat-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0 .4rem; font-size: .8rem; color: var(--bc-text-2); }
 .bc-stat-row b { color: var(--bc-text); font-weight: 700; white-space: nowrap; }
-@media (min-width: 900px) { .bc-stat-value { font-size: 1.85rem; } .bc-stat { padding: 1.1rem; } }
+@media (min-width: 900px) { .bc-stat { padding: 1.1rem; } }
 
 /* KPI mini */
-.bc-kpi { background: var(--bc-surface-2); border-radius: var(--bc-radius-sm); padding: .65rem .75rem; min-width: 0; }
+.bc-kpi { container-type: inline-size; background: var(--bc-surface-2); border-radius: var(--bc-radius-sm); padding: .6rem .65rem; min-width: 0; }
 .bc-kpi-label { font-size: .72rem; color: var(--bc-text-3); text-transform: uppercase; letter-spacing: .5px; font-weight: 700; }
-.bc-kpi-value { font-size: 1.3rem; font-weight: 800; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-kpi-value { font-size: 1.1rem; font-size: clamp(.95rem, 13cqi, 1.35rem); font-weight: 800; margin-top: 2px; white-space: nowrap; }
 .bc-kpi-sub { font-size: .8rem; color: var(--bc-text-2); margin-top: 1px; }
 
 /* Badge / growth */
@@ -408,11 +408,12 @@
     -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .bc-pc-code { font-size: .85rem; color: var(--bc-text-3); margin-top: 2px; }
 .bc-pc-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-@media (min-width: 420px) { .bc-pc-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.bc-pc-tile { background: var(--bc-surface-2); border-radius: 12px; padding: .6rem .7rem; min-width: 0; }
-.bc-pc-label { font-size: .82rem; color: var(--bc-text-2); }
-.bc-pc-num { font-size: 1.3rem; font-weight: 800; color: var(--bc-text); line-height: 1.25; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bc-pc-sub { font-size: .8rem; color: var(--bc-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-pc { container-type: inline-size; }
+@container (min-width: 440px) { .bc-pc-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.bc-pc-tile { container-type: inline-size; background: var(--bc-surface-2); border-radius: 12px; padding: .55rem .6rem; min-width: 0; }
+.bc-pc-label { font-size: .78rem; color: var(--bc-text-2); }
+.bc-pc-num { font-size: 1.15rem; font-size: clamp(.9rem, 19cqi, 1.3rem); font-weight: 800; color: var(--bc-text); line-height: 1.25; margin-top: 2px; white-space: nowrap; }
+.bc-pc-sub { font-size: .78rem; color: var(--bc-text-2); }
 .bc-pc-bar { display: grid; grid-template-columns: 74px 1fr auto; gap: .6rem; align-items: center; margin-top: .65rem; font-size: .85rem; }
 .bc-pc-bar-label { color: var(--bc-text-2); }
 .bc-pc-bar b { font-size: .88rem; white-space: nowrap; }
