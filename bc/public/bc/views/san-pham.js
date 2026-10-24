@@ -7,6 +7,7 @@ import { escapeHtml, fmtDate, fmtNum, growthText } from '../lib/format.js';
 import { tabs, bindTabs } from '../components/tabs.js';
 import { skeleton } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
+import { hideBtn, bindHide } from '../components/hide-item.js';
 
 const PAGE = 10;
 const state = { group: 'all', rows: [], page: 0, meta: null };
@@ -32,7 +33,7 @@ function paint() {
                     <div class="bc-rank-bar"><div class="bc-progress bc-alt"><span style="width:${Math.max(0, r.qty_sp) / max * 100}%"></span></div><b>${fmtNum(r.qty_sp)}</b></div>
                 </div>
             </div>
-            <div>${badge(r.growth_pct)}</div>
+            <div class="bc-flex bc-items-center bc-gap-2">${badge(r.growth_pct)}${hideBtn(r.item_code, r.item_name)}</div>
         </div>`).join('')}</div>
         ${pages > 1 ? `<div class="bc-pager">
             <button type="button" class="bc-pager-btn" data-sp-page="-1" ${page <= 0 ? 'disabled' : ''}>‹ Trước</button>
@@ -72,6 +73,7 @@ export async function render({ container }) {
         ${tabs([{ key: 'all', label: 'Tất cả' }, { key: 'traditional', label: g.traditional || 'Hàng TT' }, { key: 'tet', label: g.tet || 'Hàng Tết' }], state.group, 'sp')}
         <div class="bc-card"><div class="bc-card-sub" id="sp-sub" style="margin-bottom:.6rem"></div><div id="sp-list"></div></div>`;
     bindTabs(container, 'sp', (k) => load(k));
+    bindHide(container.querySelector('#sp-list'), (code) => { state.rows = state.rows.filter((r) => r.item_code !== code); paint(); });
     container.querySelector('#sp-list').addEventListener('click', (e) => {
         const b = e.target.closest('[data-sp-page]');
         if (!b) return;

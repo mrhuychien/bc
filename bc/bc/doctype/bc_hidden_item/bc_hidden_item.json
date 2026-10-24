@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "creation": "2026-10-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "note",
+  "hidden_by",
+  "hidden_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "options": "Item",
+   "label": "Mã hàng",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Tên hàng",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Data",
+   "label": "Lý do ẩn",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "hidden_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Người ẩn",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hidden_on",
+   "fieldtype": "Datetime",
+   "label": "Ẩn lúc",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC Hidden Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

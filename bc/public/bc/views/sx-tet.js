@@ -12,6 +12,7 @@ import { showModal } from '../components/modal.js';
 import { tabs, bindTabs } from '../components/tabs.js';
 import { skeleton, skeletonGrid } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
+import { hideBtn, bindHide } from '../components/hide-item.js';
 
 const state = { from: null, to: null, rows: [], tab: 'tet', sort: 'stock', q: '', year: null, month: null, days: [] };
 
@@ -72,6 +73,7 @@ function card(r, i) {
     return `<div class="bc-pc">
         <div class="bc-pc-head">
             <div class="bc-pc-thumb">${thumb(r)}</div>
+            ${hideBtn(r.item_code, r.item_name)}
             <div style="min-width:0">
                 <div class="bc-pc-name" title="${escapeHtml(r.item_name)}">${escapeHtml(r.item_name)}</div>
                 <div class="bc-pc-code">#${i + 1} · ${escapeHtml(r.item_code)}</div>
@@ -246,6 +248,11 @@ export async function render({ container }) {
         <div id="sx-prods"></div>`;
     document.getElementById('sx-sort').value = state.sort;
     document.getElementById('sx-q').value = state.q;
+    bindHide(document.getElementById('sx-prods'), (code) => {
+        state.rows = state.rows.filter((r) => r.item_code !== code);
+        paintStats();
+        paintProducts();
+    });
     document.getElementById('sx-sort').addEventListener('change', (e) => { state.sort = e.target.value; paintProducts(); });
     document.getElementById('sx-q').addEventListener('input', debounce((e) => { state.q = e.target.value; paintProducts(); }, 200));
     document.getElementById('sx-apply').addEventListener('click', () => {

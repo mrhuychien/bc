@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p3-r3';
+const BUILD = 'bc-p3-r4';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -23,7 +23,10 @@ const VIEW_MODULES = {
     '/sx-tet': () => import(withV('./views/sx-tet.js')),
 };
 // Màn quản trị chỉ đăng ký cho System Manager (server vẫn guard mọi method).
-if (CTX.isSysManager) VIEW_MODULES['/chia-se'] = () => import(withV('./views/chia-se.js'));
+if (CTX.isSysManager) {
+    VIEW_MODULES['/chia-se'] = () => import(withV('./views/chia-se.js'));
+    VIEW_MODULES['/an-sp'] = () => import(withV('./views/an-sp.js'));
+}
 
 // Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).
 const NAV_GROUPS = [
@@ -43,7 +46,10 @@ const NAV_GROUPS = [
     { title: 'Nhân sự', items: [] },
     { title: 'ATTP', items: [] },
 ];
-if (CTX.isSysManager) NAV_GROUPS.push({ title: 'Quản trị', items: [{ route: '/chia-se', label: 'Chia sẻ lãnh đạo', icon: 'fa-share-nodes' }] });
+if (CTX.isSysManager) NAV_GROUPS.push({ title: 'Quản trị', items: [
+    { route: '/chia-se', label: 'Chia sẻ lãnh đạo', icon: 'fa-share-nodes' },
+    { route: '/an-sp', label: 'Ẩn sản phẩm', icon: 'fa-eye-slash' },
+] });
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items).filter((it) => VIEW_MODULES[it.route]);
 const TITLES = Object.fromEntries(ALL_ITEMS.map((it) => [it.route, it.label]));
 const BOTTOM = ['/tong-quan', '/ngay', '/tet', '/sx-tet'].filter((r) => VIEW_MODULES[r]);

@@ -80,3 +80,10 @@ export const share = {
     revoke:        (link)                              => call('bc.api.share.revoke_link', { link }),
     setEnabled:    (user, enabled)                     => call('bc.api.share.set_enabled', { user, enabled: enabled ? 1 : 0 }),
 };
+
+export const hidden = {
+    list:   ()                 => call('bc.api.hidden.list_hidden'),
+    search: (q)                => call('bc.api.hidden.search_items', { q }),
+    hide:   (item_code, note)  => call('bc.api.hidden.hide_item', { item_code, note }),
+    unhide: (item_code)        => call('bc.api.hidden.unhide_item', { item_code }),
+};

@@ -24,6 +24,8 @@
   "sx_default_from",
   "column_break_sx",
   "sx_default_to",
+  "hidden_section",
+  "hidden_items",
   "share_section",
   "share_links"
  ],
@@ -142,6 +144,20 @@
    "fieldtype": "Date",
    "label": "Khoảng mặc định — đến ngày",
    "description": "Trống = hết tháng kết thúc mùa SX (30/04)."
+  },
+  {
+   "fieldname": "hidden_section",
+   "fieldtype": "Section Break",
+   "label": "Sản phẩm ẩn khỏi báo cáo",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "hidden_items",
+   "fieldtype": "Table",
+   "options": "BC Hidden Item",
+   "label": "Mã hàng ẩn",
+   "permlevel": 1,
+   "description": "Ẩn khỏi danh sách sản phẩm (SX Hàng Tết, Mã hàng Tết, Sản phẩm bán chạy). Tổng doanh số/sản lượng không đổi. Quản lý tại /bc → Quản trị › Ẩn sản phẩm."
   },
   {
    "fieldname": "share_section",

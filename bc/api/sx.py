@@ -19,6 +19,7 @@ from bc.api._common import (
 	OPENING_FILTER,
 	_guard,
 	carton_factors,
+	drop_hidden,
 	get_settings,
 	iso,
 	pct,
@@ -145,6 +146,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 				"produced_pct": pct(prod, plan),
 				"outgoing_pct": pct(out, plan if plan else prod),
 			})
+		rows = drop_hidden(rows)  # mã admin đã ẩn khỏi báo cáo
 		rows.sort(key=lambda r: (r["stock"], r["produced"]), reverse=True)  # tồn kho lớn → bé
 		return {"rows": rows, "meta": _meta(f, t, plan_column=col, diag=diag)}
 

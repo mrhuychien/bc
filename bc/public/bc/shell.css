@@ -421,3 +421,14 @@
 .bc-prod-grid { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .bc-prod-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1400px) { .bc-prod-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Ẩn sản phẩm (chỉ admin) */
+.bc-hide-btn { width: 30px; height: 30px; flex-shrink: 0; border: 1px solid var(--bc-border); border-radius: 8px; background: var(--bc-surface);
+    color: var(--bc-text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; }
+.bc-hide-btn:hover { color: var(--bc-danger); border-color: #fecaca; background: #fef2f2; }
+.bc-pc { position: relative; }
+.bc-pc > .bc-pc-head > .bc-hide-btn { position: absolute; top: .7rem; right: .7rem; }
+.bc-pc-head:has(.bc-hide-btn) { padding-right: 2.2rem; }
+.bc-an-results { display: flex; flex-direction: column; gap: .4rem; max-height: 360px; overflow-y: auto; }
+.bc-an-row { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .5rem .7rem;
+    background: var(--bc-surface-2); border-radius: var(--bc-radius-sm); }

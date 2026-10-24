@@ -43,6 +43,14 @@ An toàn: không bao giờ cấp/tự đăng nhập link cho tài khoản System
 link giới hạn 30 lần/phút/IP; bảng link ở permlevel 1 (BC Viewer không đọc được).
 Lưu ý iPhone: mở link bằng Safari (khung xem trong Zalo có kho cookie riêng).
 
+## Ẩn sản phẩm khỏi báo cáo (chỉ quản trị)
+
+System Manager: bấm biểu tượng 👁‍🗨 cạnh tên sản phẩm (thẻ SX Hàng Tết, Sản phẩm bán chạy,
+bảng Mã hàng Tết) hoặc vào **Quản trị › Ẩn sản phẩm** (tìm mã để ẩn, danh sách đang ẩn,
+"Hiện lại"). Mã ẩn không hiện ở các danh sách THEO MÃ; tổng doanh số / kênh / tỉnh /
+lịch ngày / lịch SX không đổi. Lưu ở BC Settings.hidden_items (permlevel 1); server chặn
+mọi thao tác ẩn của user không phải System Manager.
+
 ## Đối chiếu với Query Report cũ (bắt buộc trước nghiệm thu)
 
 Phiên build không truy cập được site nên SQL trong `bc/api/*.py` được dựng theo

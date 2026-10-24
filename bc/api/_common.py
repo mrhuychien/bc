@@ -394,3 +394,25 @@ def plans_of(item_codes) -> dict[str, float]:
 		f"SELECT name, `{col}` AS plan FROM `tabItem` WHERE name IN %(codes)s",  # col ∈ whitelist
 		{"codes": codes}, as_dict=True)
 	return {r.name: flt(r.plan) for r in rows}
+
+
+# ─── Mã hàng ẩn khỏi danh sách sản phẩm (quản lý ở bc.api.hidden) ───────────
+_HIDDEN_KEY = CACHE_PREFIX + "hidden_items"
+
+
+def hidden_items() -> set[str]:
+	"""Tập mã hàng admin đã ẩn. Cache tới khi danh sách đổi (clear_cache xoá bc:*)."""
+	hit = frappe.cache().get_value(_HIDDEN_KEY)
+	if hit is not None:
+		return set(hit)
+	codes = frappe.get_all("BC Hidden Item", filters={"parent": "BC Settings", "parenttype": "BC Settings"},
+		pluck="item_code")
+	frappe.cache().set_value(_HIDDEN_KEY, list(codes), expires_in_sec=3600)
+	return set(codes)
+
+
+def drop_hidden(rows: list, key: str = "item_code") -> list:
+	"""Bỏ các dòng có mã hàng đang ẩn."""
+	hid = hidden_items()
+	return [r for r in rows if r.get(key) not in hid] if hid else rows
+

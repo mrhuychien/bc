@@ -28,6 +28,7 @@ from bc.api._common import (
 	SII_AMOUNT,
 	_guard,
 	carton_factors,
+	drop_hidden,
 	channel_of,
 	compare_mode_label,
 	growth,
@@ -211,6 +212,7 @@ def get_items(refresh=0):
 				"npp_return_pct": pct(it["npp_back"], it["npp_out"]),
 				"plan_pct": pct(net, plan),
 			})
+		rows = drop_hidden(rows)  # mã admin đã ẩn khỏi báo cáo
 		rows.sort(key=lambda x: x["value"], reverse=True)
 		return {"rows": rows, "meta": _meta(s, plan_column=plan_column())}
 

@@ -24,6 +24,7 @@ from bc.api._common import (
 	SII_AMOUNT,
 	_guard,
 	channel_of,
+	drop_hidden,
 	fy_label,
 	fy_range,
 	growth,
@@ -403,6 +404,7 @@ def get_top_products(group="all", refresh=0):
 		)
 		meta["group"] = group
 		meta["item_group"] = params.get("grp")
+		rows = drop_hidden(rows)  # mã admin đã ẩn khỏi báo cáo
 		return {"rows": [{"item_code": r.item_code, "item_name": r.item_name, "short_name": short_name(r.item_name),
 			"item_group": r.item_group, "qty": flt(r.qty), "qty_sp": flt(r.qty_sp),
 			"growth_pct": growth(r.qty, r.qty_sp)} for r in rows], "meta": meta}

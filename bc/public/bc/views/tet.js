@@ -7,6 +7,7 @@ import { escapeHtml, fmtDate, fmtNum, fmtPct, growthClass, growthText } from '..
 import { dataTable } from '../components/data-table.js';
 import { skeleton } from '../components/skeleton.js';
 import { errorState } from '../components/empty-state.js';
+import { hideBtn, bindHide } from '../components/hide-item.js';
 
 const num = (k) => (r) => fmtNum(r[k]);
 const growthBadge = (v) => `<span class="bc-badge ${v === null || v === undefined ? 'bc-badge-muted' : (v >= 0 ? 'bc-badge-success' : 'bc-badge-danger')}">${growthText(v)}</span>`;
@@ -76,7 +77,7 @@ function itemsTable(res) {
         rows, sortKey: 'value', emptyMessage: 'Chưa có mã Hàng Tết phát sinh',
         columns: [
             { key: 'short_name', label: 'Mã hàng', align: 'left',
-                render: (r) => `<b>${escapeHtml(r.short_name)}</b><div class="bc-muted" style="font-size:.68rem">${escapeHtml(r.item_code)}</div>` },
+                render: (r) => `<div class="bc-flex bc-items-center bc-gap-2">${hideBtn(r.item_code, r.item_name)}<div><b>${escapeHtml(r.short_name)}</b><div class="bc-muted" style="font-size:.68rem">${escapeHtml(r.item_code)}</div></div></div>` },
             { key: 'value', label: 'Giá trị', render: num('value') },
             { key: 'plan', label: 'Kế hoạch', render: num('plan') },
             { key: 'plan_pct', label: '% KH', render: (r) => planBadge(r.plan_pct) },
@@ -132,6 +133,9 @@ export async function render({ container, isCurrent }) {
         else if (sub && res.meta) sub.innerHTML = `${seasonLine(res.meta)}<br>${sub.innerHTML}`;
     }).catch((err) => { if (isCurrent()) fill(id, errorState(err)); });
 
+    // Admin ẩn 1 mã ở bảng Mã hàng → tải lại bảng (server đã xoá cache).
+    bindHide(document.getElementById('tet-items'), () => api.tet.items()
+        .then((r) => fill('tet-items', itemsTable(r))).catch((err) => fill('tet-items', errorState(err))));
     await Promise.all([
         block(api.tet.nppGrowth(), 'tet-growth', nppGrowthTable),
         block(api.tet.nppDetail(), 'tet-npp', (r) => detailTable(r, 'NPP', r.meta?.target_pct ?? targetPct)),
