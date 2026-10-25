@@ -1,25 +1,70 @@
-/* Chế độ nhúng trong /bc (tab Thời gian thực): header gọn, bỏ danh sách phòng bên trái
-   (SPA cha đã có bảng số liệu), thêm dải tin vận hành chạy chữ dưới đáy. */
-body.bc-embed header { height: 48px; padding: 0 14px; }
-body.bc-embed .brand { font-size: 15px; gap: 9px; }
-body.bc-embed .brand-mark { width: 28px; height: 30px; font-size: 22px; }
-body.bc-embed .brand-sub, body.bc-embed #help { display: none; }
-body.bc-embed .header-middle { font-size: 12px; }
-body.bc-embed main { height: calc(100dvh - 48px); }
-body.bc-embed aside, body.bc-embed #open-list, body.bc-embed .gesture-hint { display: none !important; }
+/* Chế độ nhúng trong /bc (tab Thời gian thực) — bỏ "khung trong khung": không thanh tiêu đề,
+   không danh sách phòng, không nhãn góc nhìn; sơ đồ chiếm trọn khung. Nút tạm dừng chuyển động
+   thành nút nổi nhỏ góc trên-trái. Card chi tiết chỉ hiện khi chạm vào một khu. */
+body.bc-embed header { position: absolute; top: 10px; left: 10px; right: auto; height: auto; padding: 0; z-index: 41;
+    background: transparent; border: 0; box-shadow: none; pointer-events: none; }
+body.bc-embed .brand, body.bc-embed .header-middle, body.bc-embed #help { display: none !important; }
+body.bc-embed .header-right { pointer-events: auto; gap: 6px; }
+body.bc-embed .motion-toggle { min-height: 32px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(16, 43, 56, .18); }
+body.bc-embed main { height: 100dvh; }
+body.bc-embed aside, body.bc-embed #open-list, body.bc-embed .gesture-hint, body.bc-embed .view-tag,
+body.bc-embed #panels-toggle { display: none !important; }
 @media (max-width: 760px) {
-    body.bc-embed header { height: 44px; padding: 0 10px; }
-    body.bc-embed main { height: calc(100dvh - 44px); }
-    body.bc-embed .header-middle { display: none; }
-    body.bc-embed #selection-card { bottom: 58px; }
+    body.bc-embed header { height: auto; padding: 0; }
+    body.bc-embed main { height: 100dvh; }
+    body.bc-embed .motion-label { display: none; }
 }
-.bc-live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 6px;
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, .7); animation: bcLivePulse 1.6s infinite; vertical-align: 1px; }
+
+/* Card chi tiết khi có số liệu sống */
+body.bc-embed #selection-card { max-height: calc(100% - 190px); overflow-y: auto; overscroll-behavior: contain; }
+body.bc-embed #selection-card.bc-has-live { width: 320px; }
+@media (max-width: 760px) {
+    body.bc-embed #selection-card, body.bc-embed #selection-card.bc-has-live { width: auto; max-height: calc(100% - 120px); bottom: 84px; }
+    /* × lên góc trên (gốc đặt ở đáy card — card cuộn được thì × trôi giữa nội dung) */
+    body.bc-embed #clear-selection { top: 4px; bottom: auto; right: 6px; }
+    body.bc-embed #focus-selection { right: 40px; top: 10px; }
+    body.bc-embed #selection-card.bc-has-live #selection-description { display: none; }
+    body.bc-embed.bc-card-open #bc-live-ticker { display: none; }
+    #bc-live-ticker { bottom: 80px; }
+}
+#bc-live-panel { margin: 6px 0 10px; }
+.bc-lp-head { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; letter-spacing: 1.1px;
+    text-transform: uppercase; color: #d5512e; margin-bottom: 6px; }
+.bc-lp-time { margin-left: auto; color: #5b7f8d; font-weight: 700; letter-spacing: 0; }
+.bc-lp-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.bc-lp-tile { container-type: inline-size; background: #f1f8f6; border: 1px solid #d3e8e3; border-radius: 8px; padding: 6px 8px; min-width: 0; }
+.bc-lp-label { display: block; font-size: 10px; color: #5b7f8d; line-height: 1.3; }
+.bc-lp-value { display: block; font-size: 15px; font-size: clamp(12px, 14cqi, 18px); font-weight: 800; color: #173b4a; white-space: nowrap; line-height: 1.3; }
+.bc-lp-sub { display: block; font-size: 10px; color: #6b8a96; line-height: 1.3; }
+.bc-lp-up .bc-lp-value { color: #15803d; }
+.bc-lp-down .bc-lp-value { color: #dc2626; }
+.bc-lp-warn .bc-lp-value { color: #c2410c; }
+.bc-lp-list { margin-top: 9px; }
+.bc-lp-list-title { font-size: 10px; font-weight: 800; color: #214d62; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 3px; }
+.bc-lp-list ol { list-style: none; margin: 0; padding: 0; }
+.bc-lp-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #2b5566; padding: 3px 0;
+    border-bottom: 1px dashed #d9e9e5; }
+.bc-lp-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bc-lp-list li b { white-space: nowrap; color: #173b4a; }
+.bc-lp-list li.bc-lp-down b, .bc-lp-list li.bc-lp-warn b { color: #c2410c; }
+.bc-lp-empty { font-size: 12px; color: #6b8a96; }
+.bc-lp-note { font-size: 10.5px; color: #6b8a96; margin-top: 7px; font-style: italic; line-height: 1.4; }
+
+/* Gợi ý chạm (tự mờ sau vài giây / khi đã chọn khu) */
+#bc-tap-hint { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 39; pointer-events: none;
+    background: rgba(16, 43, 56, .86); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12px;
+    white-space: nowrap; transition: opacity .6s ease; max-width: calc(100% - 140px); overflow: hidden; text-overflow: ellipsis; }
+#bc-tap-hint.bc-gone { opacity: 0; }
+@media (max-width: 760px) { #bc-tap-hint { top: 52px; font-size: 11px; max-width: calc(100% - 24px); } }
+
+.bc-live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, .7); animation: bcLivePulse 1.6s infinite; }
 @keyframes bcLivePulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .7); } 70% { box-shadow: 0 0 0 9px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+
+/* Dải tin vận hành chạy chữ */
 #bc-live-ticker { position: absolute; left: 12px; bottom: 12px; z-index: 9; max-width: min(560px, calc(100% - 24px)); pointer-events: none;
     background: rgba(13, 37, 49, .88); border: 1px solid rgba(150, 188, 200, .28); color: #f4f3eb; border-radius: 999px;
     padding: 7px 14px; font-size: 12px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     backdrop-filter: blur(10px); transition: opacity .35s ease; }
 #bc-live-ticker:empty { display: none; }
 #bc-live-ticker b { color: #fbbf24; font-weight: 700; }
-#selection-meta .bc-live-meta { border-color: #f59e0b !important; background: #fef3c7 !important; color: #78350f !important; font-weight: 700; }

@@ -4,8 +4,10 @@
 Một lượt gọi trả đủ khối: bán hàng hôm nay (so cùng giờ hôm qua), luỹ kế tháng (so cùng
 kỳ tháng trước), sản xuất hôm nay (phiếu Material Receipt vào kho thành phẩm — cùng nguồn
 với SX Hàng Tết), tồn kho thành phẩm, đơn chờ giao, nhập nguyên vật liệu, theo giờ, top
-mã SX hôm nay và dòng sự kiện mới nhất. Cache 30 giây (dùng chung mọi người xem); SPA tự
-làm mới mỗi 60 giây. Mọi mốc thời gian tính ở Python.
+mã SX hôm nay và dòng sự kiện mới nhất; thêm số liệu THEO KHU cho card khi bấm vào sơ đồ 3D
+(tồn từng kho ERPNext, doanh số theo kênh / khách, đơn chờ giao gần hạn, luỹ kế năm TC).
+Cache 30 giây (dùng chung mọi người xem); SPA tự làm mới mỗi 60 giây. Mọi mốc thời gian
+tính ở Python.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ from bc.api._common import (
 	carton_factors,
 	channel_of,
 	drop_hidden,
+	fy_label,
+	fy_range,
 	growth,
 	iso,
 	short_name,
@@ -89,8 +93,9 @@ def _voucher_count(day, wh) -> int:
 def _finished_stock(wh) -> dict:
 	rows = frappe.db.sql(
 		"""
-		SELECT b.item_code, SUM(b.actual_qty) AS qty, SUM(b.stock_value) AS value
+		SELECT b.item_code, MAX(i.item_name) AS item_name, SUM(b.actual_qty) AS qty, SUM(b.stock_value) AS value
 		FROM `tabBin` b
+		JOIN `tabItem` i ON i.name = b.item_code
 		JOIN `tabWarehouse` w ON w.name = b.warehouse
 		JOIN `tabWarehouse` root ON root.name = %(wh)s
 		WHERE w.lft >= root.lft AND w.rgt <= root.rgt AND b.actual_qty != 0
@@ -100,20 +105,34 @@ def _finished_stock(wh) -> dict:
 		as_dict=True,
 	)
 	f = carton_factors(r.item_code for r in rows)
+	top = [{"item_code": r.item_code, "short_name": short_name(r.item_name), "boxes": flt(r.qty),
+		"cartons": to_cartons(r.qty, f.get(r.item_code))} for r in rows if flt(r.qty) > 0]
+	top = sorted(drop_hidden(top), key=lambda x: x["cartons"] or x["boxes"], reverse=True)[:5]
 	return {
 		"boxes": sum(flt(r.qty) for r in rows),
 		"cartons": round(sum(to_cartons(r.qty, f.get(r.item_code)) for r in rows), 1),
 		"value": sum(flt(r.value) for r in rows),
 		"items": sum(1 for r in rows if flt(r.qty) > 0),
+		"top": top,
 	}
 
 
-def _pending_orders() -> dict:
+def _pending_orders(today) -> dict:
+	"""Sales Order chờ giao: số đơn, giá trị còn giao, số đơn quá hạn giao, 5 đơn gần hạn nhất."""
+	remain = "so.net_total * (100 - IFNULL(so.per_delivered, 0)) / 100"
 	r = frappe.db.sql(
-		"""SELECT COUNT(*) AS n, SUM(so.net_total * (100 - IFNULL(so.per_delivered, 0)) / 100) AS amount
+		f"""SELECT COUNT(*) AS n, SUM({remain}) AS amount,
+		          SUM(CASE WHEN so.delivery_date < %(d)s THEN 1 ELSE 0 END) AS overdue
 		   FROM `tabSales Order` so WHERE so.docstatus = 1 AND so.status IN %(st)s""",
-		{"st": SO_OPEN}, as_dict=True)[0]
-	return {"count": cint(r.n), "amount": flt(r.amount)}
+		{"st": SO_OPEN, "d": today}, as_dict=True)[0]
+	top = frappe.db.sql(
+		f"""SELECT so.customer_name, so.delivery_date, {remain} AS amount
+		   FROM `tabSales Order` so WHERE so.docstatus = 1 AND so.status IN %(st)s
+		   ORDER BY so.delivery_date ASC, so.name ASC LIMIT 5""",
+		{"st": SO_OPEN}, as_dict=True)
+	return {"count": cint(r.n), "amount": flt(r.amount), "overdue": cint(r.overdue),
+		"top": [{"customer": t.customer_name, "delivery_date": iso(t.delivery_date), "amount": flt(t.amount),
+			"overdue": bool(t.delivery_date and getdate(t.delivery_date) < today)} for t in top]}
 
 
 def _purchases(day) -> dict:
@@ -121,6 +140,66 @@ def _purchases(day) -> dict:
 		"""SELECT COUNT(*) AS n, SUM(pr.net_total) AS amount FROM `tabPurchase Receipt` pr
 		   WHERE pr.docstatus = 1 AND pr.posting_date = %s""", (day,), as_dict=True)[0]
 	return {"count": cint(r.n), "amount": flt(r.amount)}
+
+
+def _sales_breakdown(day) -> dict:
+	"""Doanh số bán hôm nay theo kênh + 5 khách mua nhiều nhất (cho card Phòng kinh doanh)."""
+	rows = frappe.db.sql(
+		f"""SELECT si.customer_group AS grp, si.customer, MAX(si.customer_name) AS customer_name,
+		          SUM({SI_AMOUNT}) AS v
+		   FROM `tabSales Invoice` si
+		   WHERE si.docstatus = 1 AND {OPENING_FILTER} AND si.is_return = 0 AND si.posting_date = %s
+		   GROUP BY si.customer_group, si.customer""", (day,), as_dict=True)
+	by_ch: dict = {}
+	by_cust: dict = {}
+	for r in rows:
+		ch = CHANNEL_LABELS[channel_of(r.grp)]
+		by_ch[ch] = by_ch.get(ch, 0.0) + flt(r.v)
+		c = by_cust.setdefault(r.customer, {"customer": r.customer_name or r.customer, "amount": 0.0})
+		c["amount"] += flt(r.v)
+	return {
+		"by_channel": sorted(({"channel": k, "amount": v} for k, v in by_ch.items()), key=lambda x: x["amount"], reverse=True),
+		"top_customers": sorted(by_cust.values(), key=lambda x: x["amount"], reverse=True)[:5],
+	}
+
+
+def _fy_sales() -> dict:
+	"""Luỹ kế năm tài chính đến hôm nay vs cùng kỳ năm trước (card Phòng Chủ tịch)."""
+	fy = fy_range()
+	cur, prev = _sales_between(fy["fy_start"], fy["to_date"]), _sales_between(fy["sp_start"], fy["sp_end"])
+	return {"sales": cur, "prev": prev, "growth": growth(cur, prev), "label": fy_label(fy)}
+
+
+def _warehouses() -> list:
+	"""Tồn kho từng kho ERPNext (kho lá, đang dùng): giá trị, số mã có tồn, 5 mã giá trị lớn nhất.
+
+	SPA khớp tên kho với tên khu trên sơ đồ 3D (vd "Kho đường" ↔ "Kho đường - HGC").
+	"""
+	summary = frappe.db.sql(
+		"""SELECT b.warehouse, MAX(w.warehouse_name) AS warehouse_name,
+		          COUNT(DISTINCT CASE WHEN b.actual_qty > 0 THEN b.item_code END) AS items,
+		          SUM(b.stock_value) AS value
+		   FROM `tabBin` b JOIN `tabWarehouse` w ON w.name = b.warehouse
+		   WHERE w.is_group = 0 AND IFNULL(w.disabled, 0) = 0
+		   GROUP BY b.warehouse""", as_dict=True)
+	tops: dict = {}
+	# Window function (MariaDB ≥ 10.2): 8 mã giá trị lớn nhất mỗi kho trong 1 truy vấn.
+	for r in frappe.db.sql(
+		"""SELECT t.warehouse, t.item_code, t.item_name, t.stock_uom, t.qty, t.value FROM (
+		       SELECT b.warehouse, b.item_code, i.item_name, i.stock_uom, b.actual_qty AS qty, b.stock_value AS value,
+		              ROW_NUMBER() OVER (PARTITION BY b.warehouse ORDER BY b.stock_value DESC, b.actual_qty DESC) AS rn
+		       FROM `tabBin` b JOIN `tabItem` i ON i.name = b.item_code
+		       WHERE b.actual_qty > 0) t
+		   WHERE t.rn <= 8""", as_dict=True):
+		tops.setdefault(r.warehouse, []).append({"item_code": r.item_code, "item_name": short_name(r.item_name),
+			"qty": flt(r.qty), "uom": r.stock_uom, "value": flt(r.value)})
+	out = []
+	for w in summary:
+		if not cint(w.items) and not flt(w.value):
+			continue
+		out.append({"name": w.warehouse, "warehouse_name": w.warehouse_name or w.warehouse, "items": cint(w.items),
+			"value": flt(w.value), "top": drop_hidden(tops.get(w.warehouse, []))[:5]})
+	return out
 
 
 def _feed(day, wh, limit=14) -> list:
@@ -202,7 +281,8 @@ def get_snapshot(refresh=0):
 				"server_now": now.isoformat(timespec="seconds")},
 			"sales": {**sales, "net": sales["sales"] - sales["returns"],
 				"yesterday_same_time": sales_y["sales"], "growth": growth(sales["sales"], sales_y["sales"]),
-				"orders_yesterday": sales_y["orders"]},
+				"orders_yesterday": sales_y["orders"], **_sales_breakdown(today)},
+			"fy": _fy_sales(),
 			"mtd": {"sales": mtd, "prev": mtd_prev, "growth": growth(mtd, mtd_prev),
 				"from": iso(mtd_start), "prev_from": iso(prev_start), "prev_to": iso(prev_end)},
 			"production": {"cartons": prod_cartons, "boxes": sum(flt(r.boxes) for r in prod_rows),
@@ -211,7 +291,8 @@ def get_snapshot(refresh=0):
 				"items": len(by_item), "yesterday_same_time": prod_cartons_y,
 				"growth": growth(prod_cartons, prod_cartons_y), "top": top_prod},
 			"stock": _finished_stock(wh),
-			"pending": _pending_orders(),
+			"pending": _pending_orders(today),
+			"warehouses": _warehouses(),
 			"purchases": _purchases(today),
 			"hourly": {"sales": hourly_sales, "production": [round(v, 1) for v in hourly_prod]},
 			"feed": _feed(today, wh),

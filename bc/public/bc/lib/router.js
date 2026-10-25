@@ -75,8 +75,10 @@ async function dispatch() {
 
 export function start() {
     window.addEventListener('hashchange', dispatch);
-    window.addEventListener('DOMContentLoaded', dispatch, { once: true });
-    if (document.readyState !== 'loading') dispatch();
+    // Chỉ dispatch MỘT lần lúc khởi động: module script chạy khi readyState='interactive' rồi
+    // DOMContentLoaded mới bắn — đăng ký cả hai sẽ dựng view 2 lần (gọi API 2 lần, dựng 3D 2 lần).
+    if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', dispatch, { once: true });
+    else dispatch();
 }
 
 /** Re-dispatch route hiện tại (dùng cho nút Làm mới). */

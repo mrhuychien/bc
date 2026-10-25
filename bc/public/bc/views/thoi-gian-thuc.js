@@ -5,7 +5,7 @@
 
 import { call } from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtMoney, fmtNum, growthClass, growthText } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtMoney, fmtNum, growthClass, growthText } from '../lib/format.js';
 import { solarToLunar } from '../lib/lunar.js';
 import { loadChartLib, chartRegistry } from '../lib/chart.js';
 import { skeleton } from '../components/skeleton.js';
@@ -125,44 +125,218 @@ async function paintHourly(d) {
     }));
 }
 
-/** Số liệu gắn lên từng khu của sơ đồ 3D (id phòng theo mô hình RVHG-Xuong-3D). */
-function roomsPayload(d) {
-    const s = d.sales, p = d.production;
+// ─── Số liệu THEO KHU cho card chi tiết khi bấm vào sơ đồ 3D ─────────────────
+// id khu theo mô hình RVHG-Xuong-3D; bridge.js gửi danh sách khu thật (id, tên, nhóm) khi sẵn sàng.
+// Khu không có số liệu phù hợp (WC, thay đồ, trạm biến áp…) → card chỉ hiện mô tả của mô hình.
+const PROCESS_ZONES = new Set(['roast', 'shell', 'grind', 'cook', 'mix', 'roll', 'powder', 'left-pack']);
+let zones = [];
+
+const toneOf = (g) => (g === null || g === undefined ? '' : (g >= 0 ? 'up' : 'down'));
+const plain = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+/** Chuẩn hoá tên kho/khu để khớp: bỏ dấu, bỏ hậu tố công ty " - ABC", bỏ chữ "kho"/"phòng" đầu, bỏ ký hiệu. */
+function normName(s) {
+    return plain(s).replace(/\s+-\s+[a-z0-9]{1,8}$/, '').replace(/[·•().,/_-]+/g, ' ')
+        .replace(/^\s*(kho|phong)\s+/, '').replace(/\s+/g, ' ').trim();
+}
+/** Kho ERPNext ứng với 1 khu trên sơ đồ ("Kho đường" ↔ "Kho đường - HGC"); ưu tiên khớp đúng tên. */
+function matchWarehouse(title, warehouses) {
+    const t = normName(title);
+    if (!t) return null;
+    let best = null;
+    for (const w of warehouses || []) {
+        for (const cand of [w.warehouse_name, w.name]) {
+            const n = normName(cand);
+            if (!n) continue;
+            if (n === t) return w;
+            if (n.length >= 3 && (t.includes(n) || n.includes(t)) && (!best || n.length > best.len)) best = { w, len: n.length };
+        }
+    }
+    return best?.w || null;
+}
+const boxesOrCartons = (t) => (t.cartons ? `${fmtNum(t.cartons)} thùng` : `${fmtNum(t.boxes)} hộp`);
+
+function prodInfo(d, isMain) {
+    const p = d.production;
     return {
-        'main-pack': { lines: ['Sản xuất hôm nay', `${fmtNum(p.cartons)} thùng`], level: p.cartons > 0 ? 'hot' : 'idle',
-            detail: [`SX hôm nay: ${fmtNum(p.cartons)} thùng`, `${fmtNum(p.boxes)} hộp`, `${p.vouchers} phiếu nhập`, `${p.items} mã`] },
-        finished: { lines: ['Tồn kho thành phẩm', `${fmtNum(d.stock.cartons)} thùng`], level: 'ok',
-            detail: [`Tồn: ${fmtNum(d.stock.boxes)} hộp`, `${fmtNum(d.stock.cartons)} thùng`, `Giá trị ${fmtMoney(d.stock.value)}`] },
-        sales: { lines: ['Doanh số hôm nay', fmtMoney(s.sales)], level: s.orders > 0 ? 'hot' : 'idle',
-            detail: [`DS hôm nay: ${fmtMoney(s.sales)}`, `${s.orders} hoá đơn · ${s.customers} khách`,
-                `${s.return_orders} đơn trả · ${fmtMoney(s.returns)}`, `So cùng giờ hôm qua: ${growthText(s.growth)}`] },
-        parking: { lines: ['Đơn chờ giao', `${fmtNum(d.pending.count)} đơn`], level: d.pending.count > 0 ? 'warn' : 'ok',
-            detail: [`${d.pending.count} đơn bán chờ giao`, `Giá trị còn giao ${fmtMoney(d.pending.amount)}`] },
-        materials: { lines: ['Nhập NVL hôm nay', `${fmtNum(d.purchases.count)} phiếu`], level: d.purchases.count > 0 ? 'hot' : 'idle',
-            detail: [`${d.purchases.count} phiếu nhập mua`, fmtMoney(d.purchases.amount)] },
-        // Phòng giám đốc sát phòng kinh doanh → nâng nhãn cao hơn để không chồng.
-        director: { lines: ['Luỹ kế tháng', fmtMoney(d.mtd.sales)], level: 'ok', lift: 16,
-            detail: [`Luỹ kế tháng: ${fmtMoney(d.mtd.sales)}`, `So cùng kỳ: ${growthText(d.mtd.growth)}`] },
+        title: 'Sản xuất hôm nay', headline: `${fmtNum(p.cartons)} thùng`, level: p.cartons > 0 ? 'hot' : 'idle', pin: isMain,
+        scope: isMain ? 'Sản xuất hôm nay' : 'Sản xuất toàn xưởng hôm nay',
+        tiles: [
+            { label: 'Sản xuất hôm nay', value: `${fmtNum(p.cartons)} thùng`, sub: `${fmtNum(p.boxes)} hộp` },
+            { label: 'So cùng giờ hôm qua', value: growthText(p.growth), tone: toneOf(p.growth), sub: `Hôm qua ${fmtNum(p.yesterday_same_time)} thùng` },
+            { label: 'Phiếu nhập TP', value: fmtNum(p.vouchers), sub: `${fmtNum(p.items)} mã hàng` },
+            { label: 'Giá trị nhập kho', value: fmtMoney(p.amount) },
+        ],
+        lists: [{ title: 'Sản xuất nhiều nhất hôm nay', empty: 'Chưa có phiếu nhập thành phẩm hôm nay',
+            rows: p.top.slice(0, 5).map((t) => [t.short_name, boxesOrCartons(t)]) }],
+        note: isMain ? `Nguồn: phiếu Material Receipt nhập kho ${d.meta.warehouse} hôm nay.`
+            : 'Số liệu chung toàn xưởng — hệ thống chưa ghi nhận sản lượng riêng theo công đoạn.',
     };
+}
+
+function finishedInfo(d) {
+    const st = d.stock;
+    return {
+        title: 'Tồn kho thành phẩm', headline: `${fmtNum(st.cartons)} thùng`, level: 'ok', pin: true, scope: 'Tồn kho thành phẩm',
+        tiles: [
+            { label: 'Tồn kho', value: `${fmtNum(st.cartons)} thùng`, sub: `${fmtNum(st.boxes)} hộp` },
+            { label: 'Giá trị tồn', value: fmtMoney(st.value) },
+            { label: 'Số mã có tồn', value: fmtNum(st.items) },
+            { label: 'Nhập kho hôm nay', value: `${fmtNum(d.production.cartons)} thùng` },
+        ],
+        lists: [{ title: 'Tồn nhiều nhất', empty: 'Kho đang trống', rows: (st.top || []).map((t) => [t.short_name, boxesOrCartons(t)]) }],
+        note: `Kho ERPNext: ${d.meta.warehouse}`,
+    };
+}
+
+function warehouseInfo(w) {
+    return {
+        title: w.warehouse_name, headline: fmtMoney(w.value), level: 'ok', pin: false, scope: 'Tồn kho hiện tại',
+        tiles: [{ label: 'Giá trị tồn', value: fmtMoney(w.value) }, { label: 'Số mã có tồn', value: fmtNum(w.items) }],
+        lists: [{ title: 'Giá trị tồn lớn nhất', empty: 'Kho đang trống',
+            rows: (w.top || []).map((t) => [t.item_name, `${fmtNum(t.qty)} ${t.uom || ''}`.trim()]) }],
+        note: `Kho ERPNext: ${w.name}`,
+    };
+}
+
+function materialsInfo(d, w) {
+    const pu = d.purchases;
+    const base = w ? warehouseInfo(w) : { tiles: [], lists: [] };
+    return {
+        title: 'Nhập NVL hôm nay', headline: `${fmtNum(pu.count)} phiếu`, level: pu.count > 0 ? 'hot' : 'idle', pin: pu.count > 0,
+        scope: 'Nhập nguyên vật liệu',
+        tiles: [{ label: 'Phiếu nhập mua hôm nay', value: fmtNum(pu.count) }, { label: 'Giá trị nhập', value: fmtMoney(pu.amount) }, ...base.tiles],
+        lists: [{ title: 'Phiếu nhập hôm nay', empty: 'Chưa có phiếu nhập mua hôm nay',
+            rows: d.feed.filter((e) => e.kind === 'purchase').slice(0, 5).map((e) => [`${e.time} · ${e.title}`, fmtMoney(e.amount)]) }, ...base.lists],
+        note: w ? base.note : 'Nguồn: Purchase Receipt hôm nay.',
+    };
+}
+
+const ZONE_BUILDERS = {
+    sales: (d) => {
+        const s = d.sales;
+        return {
+            title: 'Doanh số hôm nay', headline: fmtMoney(s.sales), level: s.orders > 0 ? 'hot' : 'idle', pin: true, scope: 'Bán hàng hôm nay',
+            tiles: [
+                { label: 'Doanh số', value: fmtMoney(s.sales), sub: `Thực bán ${fmtMoney(s.net)}` },
+                { label: 'So cùng giờ hôm qua', value: growthText(s.growth), tone: toneOf(s.growth), sub: `Hôm qua ${fmtMoney(s.yesterday_same_time)}` },
+                { label: 'Hoá đơn', value: fmtNum(s.orders), sub: `${fmtNum(s.customers)} khách` },
+                { label: 'Trả hàng', value: fmtMoney(s.returns), tone: s.returns ? 'warn' : '', sub: `${fmtNum(s.return_orders)} đơn` },
+            ],
+            lists: [
+                { title: 'Theo kênh', empty: 'Chưa có đơn hôm nay', rows: (s.by_channel || []).map((c) => [c.channel, fmtMoney(c.amount)]) },
+                { title: 'Khách mua nhiều nhất', empty: 'Chưa có đơn hôm nay', rows: (s.top_customers || []).map((c) => [c.customer, fmtMoney(c.amount)]) },
+            ],
+        };
+    },
+    accounting: (d) => {
+        const s = d.sales;
+        return {
+            title: 'Hoá đơn hôm nay', headline: `${fmtNum(s.orders)} đơn`, level: 'ok', pin: false, scope: 'Chứng từ bán hàng hôm nay',
+            tiles: [
+                { label: 'Hoá đơn bán', value: fmtNum(s.orders) },
+                { label: 'Hoá đơn trả', value: fmtNum(s.return_orders), tone: s.return_orders ? 'warn' : '' },
+                { label: 'Thực bán', value: fmtMoney(s.net) },
+                { label: 'Giá trị trả', value: fmtMoney(s.returns) },
+            ],
+            lists: [{ title: 'Hoá đơn mới nhất', empty: 'Chưa có hoá đơn hôm nay',
+                rows: d.feed.filter((e) => e.kind === 'sale' || e.kind === 'return').slice(0, 5)
+                    .map((e) => [`${e.time} · ${e.title}`, `${e.kind === 'return' ? '−' : ''}${fmtMoney(e.amount)}`, e.kind === 'return' ? 'warn' : '']) }],
+        };
+    },
+    director: (d) => ({
+        // Phòng giám đốc sát phòng kinh doanh → khung nổi (khi bật "Số liệu") đặt cao hơn để không chồng.
+        title: 'Luỹ kế tháng', headline: fmtMoney(d.mtd.sales), level: 'ok', pin: true, lift: 16, scope: 'Điều hành',
+        tiles: [
+            { label: 'Luỹ kế tháng', value: fmtMoney(d.mtd.sales) },
+            { label: 'So cùng kỳ tháng trước', value: growthText(d.mtd.growth), tone: toneOf(d.mtd.growth), sub: `Tháng trước ${fmtMoney(d.mtd.prev)}` },
+            { label: 'Doanh số hôm nay', value: fmtMoney(d.sales.sales) },
+            { label: 'Sản xuất hôm nay', value: `${fmtNum(d.production.cartons)} thùng` },
+        ],
+        note: `Cùng kỳ = ${fmtDate(d.mtd.prev_from)} → ${fmtDate(d.mtd.prev_to)} (cùng số ngày đã trôi).`,
+    }),
+    chairman: (d) => ({
+        title: 'Luỹ kế năm tài chính', headline: fmtMoney(d.fy.sales), level: 'ok', pin: false, scope: 'Năm tài chính',
+        tiles: [
+            { label: 'Luỹ kế năm TC', value: fmtMoney(d.fy.sales) },
+            { label: 'So cùng kỳ năm trước', value: growthText(d.fy.growth), tone: toneOf(d.fy.growth), sub: `Năm trước ${fmtMoney(d.fy.prev)}` },
+            { label: 'Luỹ kế tháng', value: fmtMoney(d.mtd.sales) },
+            { label: 'Giá trị tồn thành phẩm', value: fmtMoney(d.stock.value) },
+        ],
+        note: `Năm tài chính ${d.fy.label}.`,
+    }),
+    meeting: (d) => ({
+        title: 'Toàn cảnh hôm nay', level: 'ok', pin: false, scope: 'Toàn cảnh hôm nay',
+        tiles: [
+            { label: 'Doanh số hôm nay', value: fmtMoney(d.sales.sales), tone: '', sub: `So cùng giờ hôm qua ${growthText(d.sales.growth)}` },
+            { label: 'Sản xuất hôm nay', value: `${fmtNum(d.production.cartons)} thùng` },
+            { label: 'Tồn kho thành phẩm', value: `${fmtNum(d.stock.cartons)} thùng` },
+            { label: 'Đơn chờ giao', value: fmtNum(d.pending.count), tone: d.pending.overdue ? 'warn' : '' },
+        ],
+    }),
+    guard: (d) => ({
+        title: 'Ra vào cổng hôm nay', level: 'ok', pin: false, scope: 'Hàng ra vào hôm nay',
+        tiles: [
+            { label: 'Hàng bán ra', value: `${fmtNum(d.sales.orders)} đơn` },
+            { label: 'Hàng trả về', value: `${fmtNum(d.sales.return_orders)} đơn` },
+            { label: 'Nhập nguyên vật liệu', value: `${fmtNum(d.purchases.count)} phiếu` },
+            { label: 'Nhập thành phẩm', value: `${fmtNum(d.production.vouchers)} phiếu` },
+        ],
+        lists: [{ title: 'Mới nhất', empty: 'Chưa có giao dịch hôm nay',
+            rows: d.feed.slice(0, 5).map((e) => [`${e.time} · ${(FEED[e.kind] || FEED.sale).verb} · ${e.title}`,
+                e.kind === 'production' ? `${fmtNum(e.boxes)} hộp` : fmtMoney(e.amount)]) }],
+        note: 'Theo chứng từ trên ERPNext (không phải sổ bảo vệ).',
+    }),
+    parking: (d) => {
+        const pe = d.pending;
+        return {
+            title: 'Đơn chờ giao', headline: `${fmtNum(pe.count)} đơn`, level: pe.overdue ? 'warn' : (pe.count ? 'hot' : 'ok'), pin: pe.count > 0,
+            scope: 'Giao hàng',
+            tiles: [
+                { label: 'Đơn chờ giao', value: fmtNum(pe.count) },
+                { label: 'Giá trị còn giao', value: fmtMoney(pe.amount) },
+                { label: 'Quá hạn giao', value: fmtNum(pe.overdue), tone: pe.overdue ? 'down' : '' },
+            ],
+            lists: [{ title: 'Gần hạn giao nhất', empty: 'Không có đơn chờ giao',
+                rows: (pe.top || []).map((o) => [`${fmtDate(o.delivery_date, true)} · ${o.customer}`, fmtMoney(o.amount), o.overdue ? 'warn' : '']) }],
+            note: 'Nguồn: Sales Order đã duyệt, trạng thái chờ giao.',
+        };
+    },
+};
+
+function zonesPayload(d) {
+    const out = {};
+    for (const z of zones) {
+        let info = null;
+        if (z.id === 'main-pack') info = prodInfo(d, true);
+        else if (PROCESS_ZONES.has(z.id)) info = prodInfo(d, false);
+        else if (z.id === 'finished') info = finishedInfo(d);
+        else if (z.id === 'materials') info = materialsInfo(d, matchWarehouse(z.title, d.warehouses));
+        else if (ZONE_BUILDERS[z.id]) info = ZONE_BUILDERS[z.id](d);
+        else if (/^kho\b/.test(plain(z.title)) || z.id === 'tools') {
+            const w = matchWarehouse(z.title, d.warehouses);
+            if (w) info = warehouseInfo(w);
+        }
+        if (info) out[z.id] = info;
+    }
+    return out;
 }
 
 function sendTo3d() {
     const frame = document.getElementById('lv-3d');
-    if (!frame?.contentWindow || !last) return;
+    if (!frame?.contentWindow || !last || !zones.length) return;
     const d = last;
     const ticker = d.feed.slice(0, 10).map((e) => {
         const k = FEED[e.kind] || FEED.sale;
         const val = e.kind === 'production' ? `${fmtNum(e.boxes)} hộp` : fmtMoney(e.amount);
         return `<b>${escapeHtml(e.time)}</b> ${k.icon} ${escapeHtml(k.verb)} · ${escapeHtml(e.title || '')} — ${escapeHtml(val)}`;
     });
-    frame.contentWindow.postMessage({
-        type: 'bc-live', rooms: roomsPayload(d), ticker,
-        headline: `TRỰC TIẾP · ${escapeHtml(d.meta.time)} · DS ${escapeHtml(fmtMoney(d.sales.sales))} · SX ${escapeHtml(fmtNum(d.production.cartons))} thùng`,
-    }, location.origin);
+    frame.contentWindow.postMessage({ type: 'bc-live', zones: zonesPayload(d), ticker, stamp: d.meta.time }, location.origin);
 }
 
 function onFrameMessage(e) {
-    if (e.origin === location.origin && e.data?.type === 'bc-3d-ready') sendTo3d();
+    if (e.origin !== location.origin || e.data?.type !== 'bc-3d-ready') return;
+    if (Array.isArray(e.data.zones) && e.data.zones.length) zones = e.data.zones;
+    sendTo3d();
 }
 
 async function load(isCurrent) {
@@ -223,11 +397,11 @@ export async function render({ container, isCurrent }) {
                 </div>
             </div>
             <div id="lv-kpis">${skeleton(110, 1, 0)}</div>
-            <div class="bc-lv-3d-card">
-                <div class="bc-lv-card-head"><div><div class="bc-lv-title">🏭 Sơ đồ xưởng · số liệu sống trên từng khu</div>
-                    <div class="bc-lv-muted">Kéo để xoay · bấm vào phòng để xem chi tiết · nút ⤢ trong khung để toàn màn hình</div></div></div>
-                <iframe id="lv-3d" class="bc-lv-3d" src="/bc_xuong?v=${v}" title="Sơ đồ xưởng 3D RVHG" loading="lazy" allow="fullscreen" allowfullscreen></iframe>
+            <div class="bc-lv-3d-head">
+                <div class="bc-lv-title">🏭 Sơ đồ xưởng</div>
+                <div class="bc-lv-muted">Chạm vào khu vực để xem số liệu · nút ▦ Số liệu bật khung số trên sơ đồ</div>
             </div>
+            <iframe id="lv-3d" class="bc-lv-3d" src="/bc_xuong?v=${v}" title="Sơ đồ xưởng 3D RVHG" loading="lazy" allow="fullscreen" allowfullscreen></iframe>
             <div class="bc-lv-grid">
                 <div class="bc-lv-card"><div class="bc-lv-title">⚡ Hoạt động trong ngày</div><div id="lv-feed">${skeleton(48, 5, 6)}</div></div>
                 <div class="bc-lv-col">

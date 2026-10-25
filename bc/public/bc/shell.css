@@ -464,11 +464,15 @@
     font-variant-numeric: tabular-nums; color: #fff; }
 .bc-lv-kpi-sub { font-size: .76rem; color: var(--lv-muted); margin-top: 2px; }
 .bc-lv .bc-up { color: #4ade80; } .bc-lv .bc-down { color: #f87171; }
-.bc-lv-3d-card, .bc-lv-card { background: var(--lv-card); border: 1px solid var(--lv-line); border-radius: 16px; padding: .85rem; margin-top: .9rem; min-width: 0; }
-.bc-lv-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .6rem; }
+.bc-lv-card { background: var(--lv-card); border: 1px solid var(--lv-line); border-radius: 16px; padding: .85rem; margin-top: .9rem; min-width: 0; }
+/* Sơ đồ 3D nằm thẳng trong khối điều hành — không thẻ bọc (bỏ "khung trong khung"). */
+.bc-lv-3d-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .2rem .8rem; margin: 1.1rem 0 .5rem; }
+.bc-app .bc-lv-3d-head .bc-lv-title { margin: 0; }
 .bc-app .bc-lv-title { font-weight: 800; font-size: 1rem; color: #fff; margin-bottom: .5rem; }
-.bc-lv-3d { display: block; width: 100%; height: 440px; border: 0; border-radius: 12px; background: #102b38; }
-@media (min-width: 900px) { .bc-lv-3d { height: 600px; } }
+.bc-lv-3d { display: block; border: 0; background: #f7ecd0;
+    /* Điện thoại: tràn sát mép khối điều hành (bớt một lớp khung); cao vừa mô hình nằm ngang. */
+    width: calc(100% + 2rem); margin: 0 -1rem; height: 460px; border-radius: 0; }
+@media (min-width: 900px) { .bc-lv-3d { width: 100%; margin: 0; height: 640px; border-radius: 14px; box-shadow: 0 8px 28px rgba(0, 0, 0, .28); } }
 .bc-lv-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 .9rem; }
 @media (min-width: 1100px) { .bc-lv-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .bc-lv .bc-chart-wrap { height: 230px; }
