@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p3-r4';
+const BUILD = 'bc-p4-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -14,6 +14,7 @@ console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'
 const ASSET_V = encodeURIComponent(CTX.assetVersion || '');
 const withV = (p) => (ASSET_V ? `${p}?v=${ASSET_V}` : p);
 const VIEW_MODULES = {
+    '/thoi-gian-thuc': () => import(withV('./views/thoi-gian-thuc.js')),
     '/tong-quan': () => import(withV('./views/tong-quan.js')),
     '/ngay': () => import(withV('./views/ngay.js')),
     '/thang': () => import(withV('./views/thang.js')),
@@ -30,6 +31,9 @@ if (CTX.isSysManager) {
 
 // Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).
 const NAV_GROUPS = [
+    { title: 'Điều hành', items: [
+        { route: '/thoi-gian-thuc', label: 'Thời gian thực', icon: 'fa-tower-broadcast' },
+    ] },
     { title: 'Kinh doanh', items: [
         { route: '/tong-quan', label: 'Tổng quan', icon: 'fa-chart-pie' },
         { route: '/ngay', label: 'Theo ngày', icon: 'fa-calendar-day' },
@@ -52,7 +56,7 @@ if (CTX.isSysManager) NAV_GROUPS.push({ title: 'Quản trị', items: [
 ] });
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items).filter((it) => VIEW_MODULES[it.route]);
 const TITLES = Object.fromEntries(ALL_ITEMS.map((it) => [it.route, it.label]));
-const BOTTOM = ['/tong-quan', '/ngay', '/tet', '/sx-tet'].filter((r) => VIEW_MODULES[r]);
+const BOTTOM = ['/thoi-gian-thuc', '/tong-quan', '/tet', '/sx-tet'].filter((r) => VIEW_MODULES[r]);
 
 // ─── Header: badge năm TC + đếm ngược Tết ──────────────────────────────────
 function paintHeader() {

@@ -51,6 +51,23 @@ bảng Mã hàng Tết) hoặc vào **Quản trị › Ẩn sản phẩm** (tìm
 lịch ngày / lịch SX không đổi. Lưu ở BC Settings.hidden_items (permlevel 1); server chặn
 mọi thao tác ẩn của user không phải System Manager.
 
+## Báo cáo thời gian thực + sơ đồ xưởng 3D (`#/thoi-gian-thuc`)
+
+Tab đầu tiên của menu (nhóm **Điều hành**). Đồng hồ + chấm LIVE, tự làm mới 60 giây
+(dừng khi tab ẩn); 6 KPI hôm nay có hiệu ứng đếm số; **sơ đồ xưởng 3D** (mã nguồn
+RVHG-Xuong-3D, three.js 0.180 MIT, tại `bc/public/bc/xuong3d/`) với bảng số liệu nổi +
+vòng sáng trên từng khu; dòng sự kiện trong ngày; biểu đồ theo giờ; top mã SX hôm nay.
+
+- API `bc.api.live.get_snapshot` (cache 30 giây, dùng chung): bán hôm nay so cùng giờ hôm
+  qua, luỹ kế tháng so cùng kỳ, SX hôm nay (Material Receipt vào kho thành phẩm như SX
+  Hàng Tết), tồn kho thành phẩm, Sales Order chờ giao, Purchase Receipt hôm nay, sự kiện.
+- 3D chạy trong iframe `/bc_xuong` (www page riêng, cùng quyền BC Viewer/System Manager);
+  SPA gửi số liệu bằng postMessage cùng origin → `xuong3d/bridge.js` dùng `window.__RVHG`
+  của mô hình để gắn nhãn; KHÔNG sửa lõi 3D (`app.js`, `view-ui.js` giữ nguyên bản gốc).
+- Khu có số liệu: Phòng đóng gói chính (SX), Kho thành phẩm (tồn), Phòng kinh doanh (DS),
+  Phòng giám đốc (luỹ kế tháng), Nhà xe cổng vào (đơn chờ giao), Kho vật tư (nhập NVL).
+  Chuyển động máy/người trong mô hình vẫn là minh hoạ, không phải dữ liệu vận hành.
+
 ## Đối chiếu với Query Report cũ (bắt buộc trước nghiệm thu)
 
 Phiên build không truy cập được site nên SQL trong `bc/api/*.py` được dựng theo

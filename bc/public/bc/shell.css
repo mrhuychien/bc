@@ -432,3 +432,61 @@
 .bc-an-results { display: flex; flex-direction: column; gap: .4rem; max-height: 360px; overflow-y: auto; }
 .bc-an-row { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .5rem .7rem;
     background: var(--bc-surface-2); border-radius: var(--bc-radius-sm); }
+
+/* ═══ Báo cáo thời gian thực (#/thoi-gian-thuc) — nền navy như sơ đồ xưởng 3D ═══ */
+.bc-lv { --lv-bg: #0f2733; --lv-card: rgba(19, 52, 66, .92); --lv-line: rgba(148, 190, 204, .2); --lv-text: #f1f5f9; --lv-muted: #94b4c0;
+    background: radial-gradient(ellipse at 20% 0%, #1d4a5c 0%, var(--lv-bg) 55%), var(--lv-bg); color: var(--lv-text);
+    border-radius: var(--bc-radius-lg); padding: 1rem; margin: -.25rem -.25rem 0; box-shadow: var(--bc-shadow-lg); }
+.bc-lv a { color: #7dd3fc; text-decoration: none; }
+.bc-lv-muted { color: var(--lv-muted); font-size: .8rem; }
+.bc-lv-hero { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.bc-lv-eyebrow { font-size: .7rem; font-weight: 800; letter-spacing: 1.4px; color: #fcd34d; display: flex; align-items: center; gap: 8px; }
+.bc-lv-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; animation: bcLvPulse 1.6s infinite; }
+.bc-lv-dot.bc-lv-busy { background: #fbbf24; }
+@keyframes bcLvPulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .7); } 70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+.bc-lv-clock { font-size: clamp(2rem, 8vw, 3.2rem); font-weight: 800; letter-spacing: 1px; font-variant-numeric: tabular-nums; line-height: 1.1; margin-top: 4px;
+    background: linear-gradient(90deg, #fff, #a5f3fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.bc-lv-date { font-size: .85rem; color: var(--lv-muted); }
+.bc-lv-refresh { display: flex; align-items: center; gap: .6rem; flex-shrink: 0; }
+.bc-lv-ring { width: 44px; height: 44px; transform: rotate(-90deg); }
+.bc-lv-ring circle { fill: none; stroke-width: 3.5; stroke: rgba(148, 190, 204, .2); }
+.bc-lv-ring circle + circle { stroke: #fcd34d; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.bc-lv-count { font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.bc-lv-updated { font-size: .72rem; color: var(--lv-muted); }
+.bc-lv-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+@media (min-width: 900px) { .bc-lv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .bc-lv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.bc-lv-kpi { container-type: inline-size; background: var(--lv-card); border: 1px solid var(--lv-line); border-radius: 14px; padding: .75rem .8rem;
+    position: relative; overflow: hidden; min-width: 0; }
+.bc-lv-kpi::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, #22d3ee, #fbbf24); opacity: .8; }
+.bc-lv-kpi-label { font-size: .74rem; color: var(--lv-muted); display: flex; gap: .35rem; align-items: center; }
+.bc-lv-kpi-value { font-size: 1.3rem; font-size: clamp(1.05rem, 13cqi, 1.8rem); font-weight: 800; margin-top: 3px; white-space: nowrap;
+    font-variant-numeric: tabular-nums; color: #fff; }
+.bc-lv-kpi-sub { font-size: .76rem; color: var(--lv-muted); margin-top: 2px; }
+.bc-lv .bc-up { color: #4ade80; } .bc-lv .bc-down { color: #f87171; }
+.bc-lv-3d-card, .bc-lv-card { background: var(--lv-card); border: 1px solid var(--lv-line); border-radius: 16px; padding: .85rem; margin-top: .9rem; min-width: 0; }
+.bc-lv-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .6rem; }
+.bc-app .bc-lv-title { font-weight: 800; font-size: 1rem; color: #fff; margin-bottom: .5rem; }
+.bc-lv-3d { display: block; width: 100%; height: 440px; border: 0; border-radius: 12px; background: #102b38; }
+@media (min-width: 900px) { .bc-lv-3d { height: 600px; } }
+.bc-lv-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 .9rem; }
+@media (min-width: 1100px) { .bc-lv-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.bc-lv .bc-chart-wrap { height: 230px; }
+.bc-lv-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; max-height: 520px; overflow-y: auto; }
+.bc-lv-ev { display: grid; grid-template-columns: 44px 26px 1fr auto; gap: .45rem; align-items: center; padding: .5rem .55rem; border-radius: 10px;
+    background: rgba(255, 255, 255, .04); border-left: 3px solid #38bdf8; animation: bcLvIn .35s ease both; }
+.bc-lv-ev.bc-lv-ret { border-left-color: #f87171; } .bc-lv-ev.bc-lv-prod { border-left-color: #fbbf24; } .bc-lv-ev.bc-lv-buy { border-left-color: #a78bfa; }
+@keyframes bcLvIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.bc-lv-ev-time { font-variant-numeric: tabular-nums; font-weight: 700; color: #fcd34d; font-size: .82rem; }
+.bc-lv-ev-icon { font-size: 1.05rem; text-align: center; }
+.bc-lv-ev-title { font-weight: 700; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bc-lv-ev-sub { font-size: .74rem; color: var(--lv-muted); }
+.bc-lv-ev-val { font-size: .9rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bc-lv-top { display: flex; flex-direction: column; gap: .55rem; }
+.bc-lv-top-row { display: grid; grid-template-columns: 26px 1fr auto; gap: .55rem; align-items: center; }
+.bc-lv-top-no { width: 26px; height: 26px; border-radius: 8px; background: rgba(251, 191, 36, .18); color: #fcd34d; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; font-size: .8rem; }
+.bc-lv-top-name { font-weight: 700; font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+.bc-lv .bc-progress { background: rgba(255, 255, 255, .08); }
+.bc-lv .bc-empty { color: var(--lv-muted); } .bc-app .bc-lv .bc-empty-title { color: #e2e8f0; }
+.bc-lv .bc-skeleton { background: linear-gradient(90deg, rgba(255,255,255,.05) 25%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.05) 75%); background-size: 200% 100%; }
