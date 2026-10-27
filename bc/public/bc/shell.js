@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p5-r2';
+const BUILD = 'bc-p5-r3';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -25,6 +25,7 @@ const VIEW_MODULES = {
     '/cong-no': () => import(withV('./views/cong-no.js')),
     '/phai-tra': () => import(withV('./views/phai-tra.js')),
     '/attp': () => import(withV('./views/attp.js')),
+    '/van-chuyen': () => import(withV('./views/van-chuyen.js')),
 };
 // Màn quản trị chỉ đăng ký cho System Manager (server vẫn guard mọi method).
 if (CTX.isSysManager) {
@@ -49,6 +50,9 @@ const NAV_GROUPS = [
         { route: '/sx-tet', label: 'SX Hàng Tết', icon: 'fa-industry' },
     ] },
     { title: 'Kho', items: [] },
+    { title: 'Vận chuyển', items: [
+        { route: '/van-chuyen', label: 'Giao hàng & xe', icon: 'fa-truck-fast' },
+    ] },
     { title: 'Công nợ', items: [
         { route: '/cong-no', label: 'Phải thu', icon: 'fa-hand-holding-dollar' },
         { route: '/phai-tra', label: 'Phải trả & quỹ', icon: 'fa-building-columns' },

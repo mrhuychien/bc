@@ -21,6 +21,7 @@ from paths import BC_ROOT as ROOT, app  # noqa: E402
 sys.path.insert(0, ROOT)
 sys.path.insert(1, app("sx"))      # bc.api.attp gọi helper sx thật
 sys.path.insert(1, app("ketoan"))  # bc.api.cn gọi mt_debt của ketoan thật
+sys.path.insert(1, app("vanchuyen"))  # bc.api.vc gọi lịch xe (nhat_ky_xe) của vanchuyen thật
 PUBLIC = os.path.join(ROOT, "bc", "public", "bc")
 
 import frappe  # noqa: E402  (fake)

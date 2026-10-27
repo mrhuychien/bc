@@ -158,7 +158,9 @@
 .bc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-charts { grid-template-columns: minmax(0, 1fr); }
+.bc-grid-even { grid-template-columns: minmax(0, 1fr); }  /* điện thoại 1 cột, desktop 2 cột bằng nhau */
 @media (min-width: 900px) {
+    .bc-grid-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .bc-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .bc-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .bc-grid-charts { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -77,6 +77,37 @@ const SCEN = {
         const nav = await page.textContent('#bc-sidebar');
         check('Menu: có Phải thu, Phải trả & quỹ, An toàn thực phẩm', ['Phải thu', 'Phải trả & quỹ', 'An toàn thực phẩm'].every((x) => nav.includes(x)));
     },
+    '/van-chuyen': async (page) => {
+        await page.waitForSelector('#vc-kpis .bc-stat', { timeout: 20000 });
+        // Số trên màn phải khớp API (seed gộp có cả hoá đơn của bộ thử khác → không cố định 9 đơn ở đây).
+        const api = (thang) => page.evaluate((t) => fetch('/api/method/bc.api.vc.get_overview', { method: 'POST',
+            body: new URLSearchParams(t ? { thang: t } : {}) }).then((r) => r.json()).then((j) => j.message), thang);
+        const d = await api();
+        const k = await page.textContent('#vc-kpis');
+        check(`Vận chuyển: KPI khớp API (${d.giao.total} đơn, chờ quá 3 ngày ${d.giao.cho_qua_han.qua_n}, cước 1,3 tr, sự cố mở 3)`,
+            new RegExp(`Đơn giao trong tháng\\s*${d.giao.total}\\b`).test(k) && new RegExp(`quá 3 ngày\\s*${d.giao.cho_qua_han.qua_n}\\b`).test(k)
+            && k.includes('1,3 tr') && /Sự cố đang mở\s*3/.test(k), k.replace(/\s+/g, ' ').slice(0, 400));
+        const g = await page.textContent('#vc-giao');
+        check('Vận chuyển: bảng hình thức có Tự vận chuyển, Chưa phân công; giao lần đầu 66,7%',
+            g.includes('Tự vận chuyển') && g.includes('Chưa phân công') && g.includes('66,7%'), g.replace(/\s+/g, ' ').slice(0, 300));
+        const cu = await page.textContent('#vc-cuoc');
+        check('Vận chuyển: cảnh báo trả cước bất thường + điều chỉnh tay', cu.includes('đã huỷ') && cu.includes('Điều chỉnh tay'), cu.slice(0, 300));
+        const th = await page.textContent('#vc-thuhoi');
+        check('Vận chuyển: thu hồi theo chặng phiếu kiểm', th.includes('Đang kiểm') && th.includes('Đã kiểm hàng') && !th.includes('Hủy tại chỗ'), th.slice(0, 300));
+        const xe = await page.textContent('#vc-xe');
+        check('Vận chuyển: xe đến hạn có 29C-111.11 quá hạn 7 ngày, không lộ xe ngừng',
+            xe.includes('29C-111.11') && xe.includes('quá hạn 7 ngày') && !xe.includes('29C-333.33'), xe.replace(/\s+/g, ' ').slice(0, 300));
+        const all = await page.textContent('main');
+        check('Vận chuyển: không lộ tên lái xe / khách', !all.includes('Nguyễn Văn Lái') && !all.includes('Khách Bí Mật'));
+        await page.selectOption('#vc-thang', '2026-09');
+        await page.waitForFunction(() => /Từ 01\/09\/2026/.test(document.querySelector('#vc-filter')?.textContent || ''), null, { timeout: 15000 });
+        const d9 = await api('2026-09');
+        const k9 = await page.textContent('#vc-kpis');
+        check(`Vận chuyển: đổi sang tháng 9 → khớp API (${d9.giao.total} đơn, khác tháng 10)`, d9.giao.total !== d.giao.total
+            && new RegExp(`Đơn giao trong tháng\\s*${d9.giao.total}\\b`).test(k9), k9.replace(/\s+/g, ' ').slice(0, 200));
+        const nav = await page.textContent('.bc-sidebar, nav, body');
+        check('Menu: có nhóm Vận chuyển', nav.includes('Giao hàng & xe'));
+    },
 };
 
 const routes = process.argv.slice(3).length ? process.argv.slice(3) : Object.keys(SCEN);

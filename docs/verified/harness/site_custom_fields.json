@@ -1,0 +1,8 @@
+[
+  {"dt": "Sales Invoice", "fieldname": "custom_hình_thức_vận_chuyển", "fieldtype": "Select", "options": "Chưa phân công\nNhất Tín\nViettel Post\nTự vận chuyển\nXe vào bốc", "_nguon": "Customize Form trên site (docs/legacy/Fields.csv của vanchuyen); nextnpp loại khỏi fixtures"},
+  {"dt": "Sales Invoice", "fieldname": "custom_trạng_thái_vận_chuyển", "fieldtype": "Select", "options": "Chờ xử lý\nĐang xử lý\nĐang giao hàng\nĐã giao hàng, chụp chứng từ\nĐã nộp chứng từ", "default": "Chờ xử lý", "_nguon": "như trên"},
+  {"dt": "Sales Invoice", "fieldname": "custom_tổng_kiện", "fieldtype": "Float", "_nguon": "Client Script phía ketoan tính"},
+  {"dt": "Sales Invoice", "fieldname": "custom_hộp_lẻ", "fieldtype": "Float", "_nguon": "như trên"},
+  {"dt": "Sales Invoice", "fieldname": "custom_thể_tích_lô", "fieldtype": "Float", "_nguon": "cm³ — như trên"},
+  {"dt": "Sales Invoice", "fieldname": "custom_tỉnh", "fieldtype": "Link", "options": "Territory", "_nguon": "fetch shipping_address_name.custom_tinh"}
+]

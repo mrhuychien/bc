@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 [ -d .src/erpnext ] || ./fetch_schema.sh
 python3 -B extract_cf.py >/dev/null
 fail=0
-for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py; do
+for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py; do
 	echo "═══ $t"; python3 -B "$t" | tail -1 || fail=1
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done

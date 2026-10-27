@@ -78,6 +78,10 @@ export const attp = {
     report:   (thang) => call('bc.api.attp.get_report', { thang }),
 };
 
+export const vc = {
+    overview: (thang) => call('bc.api.vc.get_overview', { thang }),
+};
+
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };
