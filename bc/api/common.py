@@ -10,11 +10,13 @@ from __future__ import annotations
 import frappe
 
 from bc.api._common import (
+	SECTIONS,
 	_guard,
 	compare_mode_label,
 	fy_label,
 	fy_range,
 	get_settings,
+	hidden_sections,
 	iso,
 	setting_int,
 	target_pct,
@@ -66,6 +68,8 @@ def build_context_meta() -> dict:
 		"hasTetDates": bool(get_settings().tet_dates),
 		# Nguồn ngày Tết duy nhất cho frontend (lịch tô mùng 1–3) — không tự tính âm lịch nữa.
 		"tetDates": {str(y): iso(d) for y, d in sorted(tet_dates().items())},
+		# Mảng báo cáo quản trị đang ẩn với người xem (shell lọc menu; máy chủ vẫn chặn ở _guard).
+		"hiddenSections": [k for k in SECTIONS if k in hidden_sections()],
 	}
 
 

@@ -106,7 +106,8 @@ ghi chú tự do; biển số xe được hiện.
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
 bench): sản xuất 41, kênh 9, công nợ 30 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
 / `so_lieu` của sx thật), ngày Tết 6 + 5, vận chuyển 65 (lịch xe gọi code vanchuyen thật), nhân sự 58
-(so vi sai với cảnh báo của ns thật), giao diện Playwright 110 (desktop + điện thoại), tab mở trước
+(so vi sai với cảnh báo của ns thật), ẩn / hiện mảng 29 + 22 giao diện (vai quản trị + người xem), giao diện
+Playwright 110 (desktop + điện thoại), tab mở trước
 deploy 6. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
@@ -139,6 +140,23 @@ Quản trị (System Manager) vào `/bc` → **Quản trị › Chia sẻ lãnh 
 An toàn: không bao giờ cấp/tự đăng nhập link cho tài khoản System Manager; login bằng
 link giới hạn 30 lần/phút/IP; bảng link ở permlevel 1 (BC Viewer không đọc được).
 Lưu ý iPhone: mở link bằng Safari (khung xem trong Zalo có kho cookie riêng).
+
+## Ẩn / hiện mảng báo cáo (chỉ quản trị)
+
+System Manager vào `/bc` → **Quản trị › Ẩn / hiện mảng**: mỗi màn báo cáo (Thời gian thực, Tổng quan, …,
+Nhân sự & lương, An toàn thực phẩm) có một công tắc, nhóm nhiều màn có nút "Ẩn / Hiện cả nhóm", và nút
+"Hiện tất cả". Áp dụng cho mọi người xem (BC Viewer):
+
+- mảng bị ẩn không còn trong menu (nhóm ẩn hết thì mất cả nhóm); mở đường dẫn cũ sẽ về trang đầu (Tổng quan,
+  hoặc màn còn mở đầu tiên); ẩn hết thì người xem thấy "chưa có mảng báo cáo nào được mở";
+- **máy chủ chặn thật**: mọi method báo cáo gọi `_guard("<mảng>")` ở dòng đầu, trước cache — gọi thẳng API
+  của mảng đang ẩn trả 403 "Mảng báo cáo này đang được quản trị ẩn";
+- quản trị vẫn mở được mọi mảng (menu có dấu 👁‍🗨 "đang ẩn") để kiểm tra trước khi mở lại;
+- người xem đang mở trang thấy thay đổi khi tải lại trang hoặc bấm Làm mới.
+
+Ẩn theo màn, không theo nguồn số liệu: số dùng chung vẫn có thể hiện ở màn khác (vd doanh số hôm nay ở Thời
+gian thực). Lưu ở `BC Settings.hidden_sections` (permlevel 1, mỗi dòng một mã màn — sửa được cả trên Desk,
+mã sai bị từ chối). Cần `bench migrate` để có field trên Desk; màn quản trị dùng được ngay sau deploy.
 
 ## Ẩn sản phẩm khỏi báo cáo (chỉ quản trị)
 

@@ -26,6 +26,7 @@
   "sx_default_to",
   "hidden_section",
   "hidden_items",
+  "hidden_sections",
   "share_section",
   "share_links"
  ],
@@ -148,7 +149,7 @@
   {
    "fieldname": "hidden_section",
    "fieldtype": "Section Break",
-   "label": "Sản phẩm ẩn khỏi báo cáo",
+   "label": "Ẩn khỏi báo cáo",
    "permlevel": 1
   },
   {
@@ -158,6 +159,13 @@
    "label": "Mã hàng ẩn",
    "permlevel": 1,
    "description": "Ẩn khỏi danh sách sản phẩm (SX Hàng Tết, Mã hàng Tết, Sản phẩm bán chạy). Tổng doanh số/sản lượng không đổi. Quản lý tại /bc → Quản trị › Ẩn sản phẩm."
+  },
+  {
+   "fieldname": "hidden_sections",
+   "fieldtype": "Small Text",
+   "label": "Mảng báo cáo ẩn với người xem",
+   "permlevel": 1,
+   "description": "Quản lý ở /bc › Quản trị › Ẩn / hiện mảng báo cáo. Mỗi dòng một mã: thoi-gian-thuc, tong-quan, ngay, thang, tet, tinh-thanh, san-pham, sx-tet, van-chuyen, cong-no, phai-tra, nhan-su, attp. Người xem (BC Viewer) không mở được mảng bị ẩn; quản trị vẫn thấy."
   },
   {
    "fieldname": "share_section",
@@ -177,7 +185,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 00:00:00.000000",
+ "modified": "2026-10-27 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BC",
  "name": "BC Settings",

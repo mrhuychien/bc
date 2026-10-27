@@ -43,10 +43,44 @@ def has_access(user: str | None = None) -> bool:
 	return bool(ACCESS_ROLES & set(frappe.get_roles(user)))
 
 
-def _guard():
-	"""Chặn mọi user không có BC Viewer / System Manager. Gọi ở DÒNG ĐẦU mọi method."""
+def is_admin(user: str | None = None) -> bool:
+	user = user or frappe.session.user
+	return user != "Guest" and "System Manager" in frappe.get_roles(user)
+
+
+# Mảng báo cáo (= màn / route của SPA, bỏ dấu "/") — quản trị ẩn được với người xem (bc.api.sections).
+# Mọi method báo cáo gọi _guard("<mảng>") ở dòng đầu: mảng đang ẩn thì người xem bị chặn ngay ở máy chủ
+# (gõ thẳng URL / gọi API cũng không lấy được số), quản trị vẫn xem để kiểm tra.
+SECTIONS = ("thoi-gian-thuc", "tong-quan", "ngay", "thang", "tet", "tinh-thanh", "san-pham", "sx-tet",
+	"van-chuyen", "cong-no", "phai-tra", "nhan-su", "attp")
+HIDDEN_SECTIONS_FIELD = "hidden_sections"  # BC Settings, Small Text, mỗi dòng một mảng
+
+
+def parse_sections(value) -> list[str]:
+	"""Chuỗi lưu (mỗi dòng / dấu phẩy một mã) → các mã HỢP LỆ, đúng thứ tự SECTIONS, không trùng."""
+	got = {x.strip() for x in str(value or "").replace(",", "\n").splitlines()}
+	return [k for k in SECTIONS if k in got]
+
+
+def hidden_sections() -> set[str]:
+	"""Mảng đang ẩn với người xem. Đọc thẳng tabSingles (luôn tươi, không vướng meta khi site chưa migrate
+	field — v16 get_single_value throw nếu field chưa có trong meta)."""
+	r = frappe.db.sql("SELECT value FROM `tabSingles` WHERE doctype = %s AND field = %s",
+		("BC Settings", HIDDEN_SECTIONS_FIELD))
+	return set(parse_sections(r[0][0] if r else ""))
+
+
+def _guard(section: str | None = None):
+	"""Chặn mọi user không có BC Viewer / System Manager; `section`: mảng báo cáo của method — đang ẩn thì chỉ
+	quản trị qua. Gọi ở DÒNG ĐẦU mọi method (trước cache: cache dùng chung không lách được)."""
 	if not has_access():
 		frappe.throw(_("Không có quyền"), frappe.PermissionError)
+	if section is None:
+		return
+	if section not in SECTIONS:
+		raise ValueError(f"bc: mảng báo cáo không tồn tại: {section}")
+	if section in hidden_sections() and not is_admin():
+		frappe.throw(_("Mảng báo cáo này đang được quản trị ẩn."), frappe.PermissionError)
 
 
 # ─── Settings ───────────────────────────────────────────────────────────────

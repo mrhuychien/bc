@@ -25,8 +25,10 @@ pip install pymysql
 | `test_attp.py` | So vi sai với `sx.api.qc_attp.tong_quan` / `qc_baocao.so_lieu` THẬT (bc dưới BC Viewer, sx dưới System Manager) |
 | `test_vc.py` | Vận chuyển: giao theo hình thức, chờ giao quá hạn, xếp chuyến theo dòng chuyến (chuyến nháp), giao lần đầu, tải có trọng số, cước chỉ chuyến đã duyệt + chia doanh thu theo kiện, sự cố, thu hồi (phiếu kiểm ketoan), lịch xe (code vanchuyen thật); riêng tư; từng phần thiếu |
 | `test_ns.py` | Nhân sự: quân số, vào / nghỉ, BHXH, quỹ lương một phiếu / người / tháng, tạm tính vs đã chốt, ẩn nhóm < 5 người, giấy tờ (ATTP option sai chữ), việc tồn — so vi sai với `ns.api.canh_bao` THẬT; riêng tư; từng phần thiếu |
+| `test_sections.py` | Ẩn / hiện mảng: AST — mọi method @whitelist gọi `_guard("<mảng>")` đúng mảng ở dòng đầu (method mới quên khai thì đỏ), menu `lib/nav.js` khớp `SECTIONS`; ẩn từng mảng → người xem bị chặn đúng 23 method, quản trị vẫn qua; cache không lách được; chỉ quản trị đổi được; dữ liệu lưu tay / Desk |
+| `sections_check.mjs` | Playwright 2 server cùng DB: vai quản trị bật/tắt ở `#/an-mang` (công tắc, cả nhóm, phím cách, hiện tất cả) → vai người xem mất menu / route / 403, thanh dưới điện thoại bù màn, Làm mới tải lại theo danh sách mới, ẩn hết → trang trống có lời nhắn |
 | `test_tet_source.py`, `lunar_check.mjs` | Ngày Tết một nguồn BC Settings (pkd đọc mềm, lịch frontend) |
 | `old_tab_check.mjs` | Tab mở TRƯỚC deploy (lib/ cũ trong module map, view mới): view vẫn vẽ được — `BC_OLD_PUBLIC=<public/bc bản cũ> ./run_all.sh` |
-| `ui_check.mjs` | Playwright: trang dựng từ chính `www/bc.html` (import map thật), API Python thật; desktop + 390px; lỗi JS/HTTP, cuộn ngang |
+| `ui_check.mjs` | Playwright (vai người xem; `BC_UI_USER=Administrator python3 server.py <port>` = vai quản trị): trang dựng từ chính `www/bc.html` (import map thật), API Python thật; desktop + 390px; lỗi JS/HTTP, cuộn ngang |
 
 Thử phá: `BC_APP_ROOT=<bản bc đã sửa hỏng> python3 test_xxx.py` phải đỏ.

@@ -465,7 +465,7 @@ def get_overview(thang=None, refresh=0):
 
 	{available, meta: {thang, from, to, as_of}, giao, chuyen, cuoc, su_co, thu_hoi, xe}
 	"""
-	_guard()
+	_guard("van-chuyen")
 	if "vanchuyen" not in frappe.get_installed_apps() or not _has("Chuyen Xe"):
 		return {"available": False, "meta": {}}
 	f, t, label = period(thang)

@@ -234,7 +234,7 @@ def _feed(day, wh, limit=14) -> list:
 @frappe.whitelist()
 def get_snapshot(refresh=0):
 	"""Ảnh chụp vận hành hôm nay (xem docstring module)."""
-	_guard()
+	_guard("thoi-gian-thuc")
 	now = now_datetime()
 	today = getdate(now)
 	minute = now.strftime("%H:%M")

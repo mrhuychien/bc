@@ -1,7 +1,7 @@
 """Server thử SPA /bc: trang dựng từ CHÍNH www/bc.html (import map thật), /assets/bc/bc/* → public/,
 POST /api/method/<dotted> → gọi hàm Python thật của bc trên Frappe giả + MariaDB.
 
-python3 server.py <port>   (BC_APP_ROOT đổi được gốc app để thử phá)
+python3 server.py <port>   (BC_APP_ROOT đổi được gốc app để thử phá; BC_UI_USER=Administrator → vai quản trị)
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def shell_build():
 def context():
 	from bc.api.common import build_context_meta
 	c = build_context_meta()
-	c.update({"user": frappe.session.user, "fullName": "Lãnh đạo thử", "isSysManager": False,
+	c.update({"user": frappe.session.user, "fullName": "Lãnh đạo thử", "isSysManager": "System Manager" in frappe.get_roles(),
 		"assetVersion": V, "csrfToken": "x", "shellBuild": shell_build()})
 	return c
 
@@ -136,6 +136,7 @@ def serve(port=0):
 
 if __name__ == "__main__":
 	port = int(sys.argv[1]) if len(sys.argv) > 1 else 8124
+	frappe.session.user = os.environ.get("BC_UI_USER") or frappe.session.user  # BC_UI_USER=Administrator: chạy vai quản trị
 	srv = serve(port)
 	print(f"http://127.0.0.1:{srv.server_address[1]}/bc", flush=True)
 	srv.serve_forever()

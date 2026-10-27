@@ -24,6 +24,14 @@ class BCSettings(Document):
 				frappe.throw(_("Ngày Tết {0} không thuộc năm {1}.").format(r.tet_date, r.year))
 		if self.sx_default_from and self.sx_default_to and self.sx_default_from > self.sx_default_to:
 			frappe.throw(_("Khoảng SX mặc định: 'từ ngày' phải trước 'đến ngày'."))
+		if self.get("hidden_sections"):
+			from bc.api._common import SECTIONS, parse_sections
+
+			nhap = [x.strip() for x in str(self.hidden_sections).replace(",", "\n").splitlines() if x.strip()]
+			sai = [x for x in nhap if x not in SECTIONS]
+			if sai:
+				frappe.throw(_("Mảng báo cáo không hợp lệ: {0}. Mã hợp lệ: {1}").format(", ".join(sai), ", ".join(SECTIONS)))
+			self.hidden_sections = "\n".join(parse_sections(self.hidden_sections))
 
 	def on_update(self):
 		# Cấu hình đổi → số liệu cache cũ có thể sai mốc: xoá toàn bộ cache bc.

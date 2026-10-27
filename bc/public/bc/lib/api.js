@@ -99,6 +99,11 @@ export const share = {
     setEnabled:    (user, enabled)                     => call('bc.api.share.set_enabled', { user, enabled: enabled ? 1 : 0 }),
 };
 
+export const sections = {
+    get: ()               => call('bc.api.sections.get_hidden'),
+    set: (keys, hidden)   => call('bc.api.sections.set_hidden', { sections: keys, hidden: hidden ? 1 : 0 }),
+};
+
 export const hidden = {
     list:   ()                 => call('bc.api.hidden.list_hidden'),
     search: (q)                => call('bc.api.hidden.search_items', { q }),

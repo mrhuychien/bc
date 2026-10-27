@@ -66,6 +66,13 @@ def format(value, df=None, doc=None, *a, **k):  # noqa: A001  (frappe.format: ch
 	return "" if value is None else str(value)
 
 
+DOC_CACHE_CLEARED: list = []
+
+
+def clear_document_cache(doctype, name=None):  # v16: xoá cache get_cached_doc — bộ thử chỉ ghi lại lời gọi
+	DOC_CACHE_CLEARED.append((doctype, name))
+
+
 def log_error(*a, **k):
 	LOGGED.append((a, k))
 

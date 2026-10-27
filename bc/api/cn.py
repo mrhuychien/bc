@@ -296,7 +296,7 @@ def get_receivables(refresh=0):
 	 top_overdue: [{customer, channel, receivable, overdue, unknown, max_days}] (10, ngoài MT),
 	 mt: {chains[...], total, overdue, invoice_count, pending_review, orphan_return_*, einv_known} | null}
 	"""
-	_guard()
+	_guard("cong-no")
 	comp = company()
 	today = getdate(nowdate())
 
@@ -412,7 +412,7 @@ def get_payables(refresh=0):
 	      due: {overdue_total, overdue_count, upcoming_total, upcoming_count, rows[{supplier, due_date, days_to_due, amount}]}},
 	 cash: {rows[{account, type, balance}], total, cash, bank}}
 	"""
-	_guard()
+	_guard("phai-tra")
 	comp = company()
 	today = getdate(nowdate())
 	ahead = 14

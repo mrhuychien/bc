@@ -121,7 +121,7 @@ def get_overview(refresh=0):
 	{available, linh_vuc: [{ma, ten, bieu_mau, den: do|vang|xanh, so, nhan_so, dong[], nhac[{muc_do, tieu_de, chi_tiet}]}],
 	 dem: {do, vang, xanh}, ngay, tu, den, so_ngay, du_lieu_mau}
 	"""
-	_guard()
+	_guard("attp")
 	S = _sx()
 	if not S:
 		return {"available": False, "meta": {}}
@@ -176,7 +176,7 @@ def get_report(thang=None, refresh=0):
 	{available, thang, nam, dau, cat, bang: [{ma, ten, don_vi, kieu, huong, thang{YYYY-MM: v}, ky, nam}],
 	 chi_tieu: [{chi_so, ten, so_sanh, muc_tieu, ky, nam_luy_ke, dat_ky, dat_nam}]}
 	"""
-	_guard()
+	_guard("attp")
 	if "sx" not in frappe.get_installed_apps() or not frappe.db.table_exists("SX Chi Tieu ATTP"):
 		return {"available": False, "meta": {}}
 	try:

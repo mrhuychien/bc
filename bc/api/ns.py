@@ -384,7 +384,7 @@ def get_overview(refresh=0):
 
 	{available, meta: {as_of, thang, ky, k}, nhan_su, bien_dong, bhxh, luong, giay_to, canh_bao}
 	"""
-	_guard()
+	_guard("nhan-su")
 	if not frappe.db.table_exists("Employee"):
 		return {"available": False, "meta": {}}
 	# Số tạm tính đổi theo từng phiếu HR nhập: chỉ quản trị được bỏ qua cache (người xem không lấy mẫu dày

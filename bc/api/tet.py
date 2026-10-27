@@ -120,7 +120,7 @@ def get_npp_growth(refresh=0):
 
 	rows: [{customer, customer_id, this_year, last_year, growth_pct}]
 	"""
-	_guard()
+	_guard("tet")
 
 	def build():
 		s, p = _params()
@@ -137,14 +137,14 @@ def get_npp_growth(refresh=0):
 @frappe.whitelist()
 def get_npp_detail(refresh=0):
 	"""NPP chi tiết Hàng Tết: NT, NT+mục tiêu, NT đi, năm nay, tổng nhập/về, % về, tăng trưởng."""
-	_guard()
+	_guard("tet")
 	return run_cached("tet.get_npp_detail", {}, lambda: _detail("npp"), refresh)
 
 
 @frappe.whitelist()
 def get_mt_detail(refresh=0):
 	"""Siêu thị (kênh MT) chi tiết Hàng Tết — cùng cột với get_npp_detail."""
-	_guard()
+	_guard("tet")
 	return run_cached("tet.get_mt_detail", {}, lambda: _detail("mt"), refresh)
 
 
@@ -156,7 +156,7 @@ def get_items(refresh=0):
 	        boxes_back, return_pct, mt, gt, mt_out, mt_back, mt_return_pct, npp_out, npp_back,
 	        npp_return_pct, plan_pct}]
 	"""
-	_guard()
+	_guard("tet")
 
 	def build():
 		s, p = _params()

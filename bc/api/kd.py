@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """bc.api.kd — Báo cáo Kinh doanh tổng quát (port từ các Query Report "Dashboard KD *").
 
-Mọi method: _guard() dòng đầu, tham số `refresh`, trả {rows, meta}. Mốc thời gian
+Mọi method: _guard("<mảng>") dòng đầu, tham số `refresh`, trả {rows, meta}. Mốc thời gian
 do fy_range() tính ở Python (period-aligned: năm nay đến hôm nay vs cùng kỳ năm
 trước cùng số ngày). Doanh số loại opening; trả hàng = hoá đơn is_return=1 (giá trị
 âm trên ERPNext → đổi dấu thành số dương ở cột `returns`).
@@ -94,7 +94,7 @@ def get_summary(refresh=0):
 
 	rows: [{period: current|same_period|last_year, sales, returns, net, return_rate}]
 	"""
-	_guard()
+	_guard("tong-quan")
 
 	def build():
 		by_group, fy = _period_sums_by_group()
@@ -116,7 +116,7 @@ def get_channels(refresh=0):
 
 	rows: [{period, channel, channel_key, sales, returns, net, return_rate}]
 	"""
-	_guard()
+	_guard("tong-quan")
 
 	def build():
 		by_group, fy = _period_sums_by_group()
@@ -139,7 +139,7 @@ def get_daily(year=None, month=None, refresh=0):
 
 	rows: [{date, sales, returns, orders, return_orders}] (chỉ ngày có phát sinh)
 	"""
-	_guard()
+	_guard("ngay")
 	today = getdate()
 	year, month = cint(year) or today.year, cint(month) or today.month
 	if not (1 <= month <= 12 and 2000 <= year <= 2100):
@@ -179,7 +179,7 @@ def get_orders(date=None, refresh=0):
 
 	rows: [{name, customer, customer_name, channel, amount, is_return, posting_time}]
 	"""
-	_guard()
+	_guard("ngay")
 	d = getdate(date or getdate())
 
 	def build():
@@ -210,7 +210,7 @@ def get_item_groups(refresh=0):
 
 	rows: [{item_group, amount}] giảm dần
 	"""
-	_guard()
+	_guard("tong-quan")
 
 	def build():
 		fy, p = _fy_params()
@@ -238,7 +238,7 @@ def get_top_customers(limit=8, refresh=0):
 
 	rows: [{customer, customer_id, amount}]
 	"""
-	_guard()
+	_guard("tong-quan")
 	limit = min(max(cint(limit) or 8, 1), 50)
 
 	def build():
@@ -268,7 +268,7 @@ def get_monthly(refresh=0):
 	rows: [{period: current|last_year, month (1-12), fy_month (1-12, tháng đầu năm TC = 1),
 	        sales, returns}]
 	"""
-	_guard()
+	_guard("thang")
 
 	def build():
 		fy, p = _fy_params()
@@ -307,7 +307,7 @@ def get_provinces(refresh=0):
 
 	rows: [{province, sales, pct}] giảm dần; pct = % tổng doanh số.
 	"""
-	_guard()
+	_guard("tinh-thanh")
 	from bc.api import _provinces
 
 	def build():
@@ -362,7 +362,7 @@ def get_top_products(group="all", refresh=0):
 	mùa trước theo BC Settings.tet_compare_mode); còn lại dùng năm TC vs cùng kỳ.
 	rows: [{item_code, item_name, short_name, item_group, qty, qty_sp, growth_pct}]
 	"""
-	_guard()
+	_guard("san-pham")
 	if group not in ("all", "tet", "traditional"):
 		frappe.throw("Nhóm không hợp lệ")
 

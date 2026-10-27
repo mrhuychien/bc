@@ -123,7 +123,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 	        plan_cartons, produced_cartons, outgoing_cartons (thùng),
 	        produced_pct, outgoing_pct}] — sắp tồn kho giảm dần
 	"""
-	_guard()
+	_guard("sx-tet")
 	f, t = _range(from_date, to_date)
 
 	def build():
@@ -243,7 +243,7 @@ def get_daily_summary(year=None, month=None, refresh=0):
 
 	rows: [{date, cartons, boxes, amount}] — amount = giá trị nhập kho (Stock Entry amount).
 	"""
-	_guard()
+	_guard("sx-tet")
 	year, month, start, end = _month_range(year, month)
 
 	def build():
@@ -280,7 +280,7 @@ def get_daily_detail(date=None, refresh=0):
 	rows: [{item_code, item_name, boxes, cartons, amount, voucher}] — voucher mở
 	/app/stock-entry/{voucher}.
 	"""
-	_guard()
+	_guard("sx-tet")
 	d = getdate(date or getdate())
 
 	def build():
