@@ -28,9 +28,11 @@ qua desk API.
   khoá tên nhóm. Showroom chỉ hiện thẻ khi có số.
 - **Sản xuất** = phiếu SẢN XUẤT nhập kho thành phẩm (`bc.api.sx.production_filter`): Manufacture (dòng
   thành phẩm — app sx ghi Work Order + Manufacture cho mã có BOM) + Material Receipt, TRỪ phiếu điều
-  chỉnh của app sx (kiểm kê / bù sau kiểm kê có `custom_kiem_ke`; dọn lô / tồn âm theo `remarks`). Trước
-  đây chỉ đếm Material Receipt → thiếu hàng có BOM, thừa phiếu kiểm kê. Kho thành phẩm: BC Settings →
-  `SX Settings.kho_tp` → "Thành phẩm - HGC".
+  chỉnh của app sx (kiểm kê / bù sau kiểm kê có `custom_kiem_ke`; dọn lô / tồn âm theo `remarks`) + phiếu
+  chuyển từ Kho Xưởng sản xuất (`SX Settings.kho_xuong`) vào Kho TP — trước D191 (12/10/2026) thành phẩm vào
+  kho bằng phiếu chuyển này mà không ghi sản xuất vào Xưởng. Trước đây chỉ đếm Material Receipt → thiếu hàng
+  có BOM và hàng chuyển từ Xưởng, thừa phiếu kiểm kê. Kho thành phẩm: BC Settings → `SX Settings.kho_tp` →
+  "Thành phẩm - HGC".
 
 ## Công nợ (`#/cong-no`, `#/phai-tra`)
 
@@ -39,12 +41,14 @@ nhận từ client; cache dùng chung theo ngày.
 - **Phải thu**: số dư GL từng khách trên TK phải thu (Ketoan Portal Settings.receivable_account, trống thì
   mọi TK loại Receivable). Quá hạn phân bổ FIFO như danh sách công nợ của Kế toán (số dư thuộc hoá đơn
   mới nhất; hạn = due_date, trống thì ngày HĐ + invoice_due_days); phần không gắn được hoá đơn → cột
-  "Chưa rõ hạn". Tuổi nợ theo aging_bucket_1/2/3 (mặc định 30/60/90). DSO như `ketoan.get_dso`.
+  "Chưa rõ hạn". Tuổi nợ theo aging_bucket_1/2/3 (mặc định 30/60/90). DSO như `ketoan.get_dso` (nợ GL toàn
+  công ty / doanh thu gồm VAT từ dso_window_days ngày trước, không cận trên — y như Kế toán).
 - **MT**: gọi thẳng helper của ketoan (`mt_debt._fetch/_enrich/_rollup/_orphan_returns` — không guard,
   không phụ thuộc phiên); khách MT (nhóm = Ketoan Portal Settings.mt_customer_group) bị loại khỏi phần GL.
   Không có bảng kê / helper lỗi → MT tính theo GL, trang ghi rõ.
 - **Phải trả & quỹ**: GL TK loại Payable (tuổi nợ theo hạn Purchase Invoice, lịch trả 14 ngày); số dư TK
-  Cash/Bank (`cash_bank_account_filter`), số tài khoản ngân hàng trong tên TK được che (`•••1234`).
+  Cash/Bank (`cash_bank_account_filter`), số tài khoản ngân hàng trong tên TK được che (`•••1234`, kể cả số
+  viết theo nhóm "1903 5678 9012").
 
 ## ATTP (`#/attp`)
 
@@ -56,9 +60,10 @@ sx, bỏ chi tiết dòng sổ. Site không cài sx → trang báo "chưa có s�
 ## Kiểm thử
 
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
-bench): sản xuất 22, kênh 9, công nợ 24 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
-/ `so_lieu` của sx thật), ngày Tết 6 + 5, giao diện Playwright 64 (desktop + điện thoại). Mỗi bản sửa
-đều đã thử phá (đưa code về bản lỗi → test phải đỏ).
+bench): sản xuất 41, kênh 9, công nợ 30 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
+/ `so_lieu` của sx thật), ngày Tết 6 + 5, giao diện Playwright 64 (desktop + điện thoại), tab mở trước
+deploy 6. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
+`docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
 ## Cài đặt / deploy
 

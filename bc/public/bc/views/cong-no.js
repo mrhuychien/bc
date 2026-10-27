@@ -52,12 +52,12 @@ function agingTable(d) {
     return dataTable({ columns: cols, rows: d.channels, totalRow: tot, emptyMessage: 'Không có công nợ phải thu' });
 }
 
-async function agingChart(d) {
+async function agingChart(d, isCurrent) {
     const rows = d.channels.filter((c) => c.receivable > 0);
     if (!rows.length) { fill('cn-chart-wrap', emptyState({ title: 'Không có công nợ phải thu' })); return; }
     const Chart = await loadChartLib();
     const el = document.getElementById('cn-chart');
-    if (!el) return;
+    if (!isCurrent() || !el) return;  // lượt vẽ cũ (Làm mới / chuyển trang lúc đang tải Chart.js) không chiếm canvas mới
     charts.add(new Chart(el, {
         type: 'bar',
         data: {
@@ -145,9 +145,13 @@ export async function render({ container, isCurrent }) {
             hoá đơn mới nhất trước; hạn = hạn trên hoá đơn, trống thì ngày hoá đơn + ${fmtNum(d.meta.due_days)} ngày. Phần nợ không
             gắn được hoá đơn (vd nợ đầu kỳ ghi bằng bút toán) để ở cột "Chưa rõ hạn". Kênh theo nhóm khách hiện tại.
             DSO tính như Kế toán: nợ sổ cái toàn công ty / doanh thu gồm VAT.`);
-        await agingChart(d);
+        // Biểu đồ lỗi (CDN Chart.js chặn / mạng yếu) chỉ thay khung biểu đồ, không xoá số đã hiện.
+        try { await agingChart(d, isCurrent); } catch (e) {
+            if (isCurrent()) fill('cn-chart-wrap', emptyState({ title: 'Không tải được biểu đồ', message: e?.message || '' }));
+        }
     } catch (err) {
-        if (isCurrent()) fill('cn-kpis', errorState(err));
+        if (!isCurrent()) return;
+        fill('cn-kpis', errorState(err));
         ['cn-aging', 'cn-top', 'cn-mt'].forEach((id) => fill(id, ''));
     }
 }

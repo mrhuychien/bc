@@ -40,10 +40,29 @@ from bc.api._common import (
 #  · Material Receipt: phiếu nhập tay trước khi có app sx + hàng chưa có BOM của sx ("Nhập tạm —"),
 #    TRỪ phiếu điều chỉnh của app sx: kiểm kê / bù sau kiểm kê (custom_kiem_ke) và các lần dọn
 #    lô / tồn (remarks bắt đầu bằng GHI_CHU của sx/api/lo_cu.py, lo_am.py, tonam.py).
+#  · Material Transfer từ Kho Xưởng sản xuất (SX Settings.kho_xuong) vào Kho TP: trước D191 (12/10/2026)
+#    thành phẩm vào Kho TP bằng phiếu chuyển này mà không ghi sản xuất vào Xưởng (sx README D192/D193) —
+#    với lượng hàng đó phiếu chuyển là chứng từ DUY NHẤT đưa hàng vào Kho TP. Chuyển từ kho khác (cửa
+#    hàng, hàng trả về, cách ly) không phải sản xuất. Chưa đặt kho_xuong → không tính nhánh này.
 # Lọc theo `purpose` (chuẩn) chứ không theo tên Stock Entry Type (site có thể đổi tên loại).
 PRODUCTION_PURPOSES = ("Manufacture", "Material Receipt")
 ADJUSTMENT_REMARKS = ("Dọn tồn không lô sau bật lô", "Dọn âm lịch sử lô (D207)", "Dọn tồn âm thành phẩm")
 SX_WAREHOUSE_DEFAULT = "Thành phẩm - HGC"
+
+
+def _kho_xuong() -> str | None:
+	"""SX Settings.kho_xuong (đọc mềm) — như sx tonam D193: chỉ đúng kho này, không lấy kho khác thay."""
+	if not frappe.db.exists("DocType", "SX Settings"):
+		return None
+	try:
+		return frappe.db.get_single_value("SX Settings", "kho_xuong") or None
+	except Exception:
+		frappe.clear_last_message()
+		return None
+
+
+def production_purposes() -> list:
+	return [*PRODUCTION_PURPOSES, "Material Transfer"] if _kho_xuong() else list(PRODUCTION_PURPOSES)
 
 
 def production_filter() -> str:
@@ -52,9 +71,13 @@ def production_filter() -> str:
 	not_adjust = " AND ".join(f"LOCATE({frappe.db.escape(p)}, IFNULL(se.remarks, '')) != 1" for p in ADJUSTMENT_REMARKS)
 	if frappe.db.has_column("Stock Entry", "custom_kiem_ke"):  # field của app sx — site không cài sx thì không có
 		not_adjust += " AND IFNULL(se.custom_kiem_ke, '') = ''"
+	xuong = _kho_xuong()
+	transfer = (f"""
+		OR (se.purpose = 'Material Transfer' AND sed.s_warehouse = {frappe.db.escape(xuong)} AND {not_adjust})"""
+		if xuong and xuong != _wh() else "")
 	return f"""se.docstatus = 1 AND sed.t_warehouse = %(sx_wh)s AND (
 		(se.purpose = 'Manufacture' AND sed.is_finished_item = 1)
-		OR (se.purpose = 'Material Receipt' AND {not_adjust}))"""
+		OR (se.purpose = 'Material Receipt' AND {not_adjust}){transfer})"""
 
 
 def _wh() -> str:
@@ -64,6 +87,7 @@ def _wh() -> str:
 		try:
 			wh = frappe.db.get_single_value("SX Settings", "kho_tp")
 		except Exception:
+			frappe.clear_last_message()
 			wh = None
 	return wh or SX_WAREHOUSE_DEFAULT
 
@@ -190,8 +214,8 @@ def _diagnose(f, t, has_production: bool) -> dict:
 	return {
 		"has_production": has_production,
 		"entries_by_purpose": by_purpose,
-		"entry_types": list(PRODUCTION_PURPOSES),
-		"entry_type": " / ".join(PRODUCTION_PURPOSES),
+		"entry_types": production_purposes(),
+		"entry_type": " / ".join(production_purposes()),
 		"warehouse": _wh(),
 		"last_manufacture": iso(last),
 		"prev_from": iso(add_months(f, -12)),

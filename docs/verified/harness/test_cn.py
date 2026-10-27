@@ -134,6 +134,15 @@ if __name__ == "__main__":
 	c("Che số tài khoản ngân hàng", any(r["account"] == "TGNH VCB •••7890" for r in cash["rows"]), cash["rows"])
 	c("Không trả số TK đầy đủ ra ngoài", "0011004567890" not in str(p), "")
 
+	for raw, want in [("TGNH Techcombank 1903 5678 9012 34", "TGNH Techcombank •••1234"), ("BIDV 1234.5678.9012", "BIDV •••9012"),
+			("VCB 0071-000-123456", "VCB •••3456"), ("TK 112 - 2024", "TK 112 - 2024"), ("Tiền mặt", "Tiền mặt")]:
+		c(f"Che số TK viết theo nhóm: {raw!r}", cn.mask_account(raw) == want, cn.mask_account(raw))
+
+	print("\nA2. DSO như ketoan.get_dso: hoá đơn ghi ngày tương lai vẫn vào doanh thu (chỉ có cận dưới)")
+	si("INV-FUT", "NPP-A", "NPP", "2026-10-30", 10, due="2026-11-29")
+	k = cn.get_receivables(refresh=1)["kpis"]
+	c("DSO = 218 / 320 × 365 = 248,7", k["dso"]["dso"] == 248.7 and approx(k["dso"]["revenue"], 320 * M), k["dso"])
+
 	print("\nB. Site chưa có bảng kê MT → MT tính theo sổ cái")
 	reset(); seed(); drop_doctype("MT Payment Advice Line"); drop_doctype("MT Payment Advice")
 	d = cn.get_receivables(refresh=1)

@@ -106,6 +106,21 @@ if __name__ == "__main__":
 	# Không có cột kiểm kê → phiếu kiểm kê (30) không nhận diện được, chỉ còn loại theo remarks.
 	run(c, "không sx", expect_tet=150.0, expect_trad=60.0, vouchers=4)
 
+	print("\nD. Phiếu chuyển Xưởng → Kho TP (trước D191 thành phẩm vào kho bằng phiếu này)")
+	reset(); seed()
+	insert("Warehouse", name="Cửa hàng - HGC", warehouse_name="Cửa hàng", lft=40, rgt=41, is_group=0)
+	se("Material Transfer", [{"item_code": "TRAD1", "s_warehouse": XUONG, "t_warehouse": TP, "transfer_qty": 15, "qty": 15}],
+		time="11:00:00")
+	se("Material Transfer", [{"item_code": "TRAD1", "s_warehouse": "Cửa hàng - HGC", "t_warehouse": TP, "transfer_qty": 4, "qty": 4}])
+	se("Material Transfer", [{"item_code": "TET1", "s_warehouse": XUONG, "t_warehouse": TP, "transfer_qty": 6, "qty": 6}],
+		kiem_ke="KK-0002")
+	frappe.cache().store.clear()
+	run(c, "chưa đặt kho_xuong", expect_tet=120.0, expect_trad=60.0)
+	frappe.db.set_single_value("SX Settings", "kho_xuong", XUONG)
+	run(c, "kho_xuong = Xưởng", expect_tet=120.0, expect_trad=75.0, vouchers=4)
+	from bc.api import sx as SXA
+	c("diag: entry_types thêm Material Transfer khi có kho_xuong", "Material Transfer" in SXA.production_purposes())
+
 	print("\nC. Kho thành phẩm lấy từ SX Settings khi BC Settings để trống")
 	reset(); seed(); frappe.db.sql("DELETE FROM tabSingles WHERE doctype='BC Settings' AND field='sx_warehouse'")
 	frappe.db.set_single_value("SX Settings", "kho_tp", "Kho Xưởng - HGC")

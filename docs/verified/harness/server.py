@@ -87,6 +87,10 @@ class H(BaseHTTPRequestHandler):
 			full = os.path.normpath(os.path.join(PUBLIC, rel))
 			if not full.startswith(PUBLIC) or not os.path.isfile(full):
 				return self._send(404, "not found", "text/plain")
+			# Mô phỏng tab mở TRƯỚC deploy: lib/ (import map ?v= cũ) vẫn là bản cũ trong module map của tab.
+			old = os.environ.get("BC_OLD_PUBLIC")
+			if old and rel.startswith("lib/") and os.path.isfile(os.path.join(old, rel)):
+				full = os.path.join(old, rel)
 			ctype = {"js": "text/javascript", "css": "text/css", "html": "text/html", "png": "image/png",
 				"svg": "image/svg+xml"}.get(full.rsplit(".", 1)[-1], "application/octet-stream")
 			return self._send(200, open(full, "rb").read(), ctype)

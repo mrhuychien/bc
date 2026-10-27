@@ -21,6 +21,7 @@ pip install pymysql
 | `test_cn.py` | Phải thu FIFO + tuổi nợ theo kênh, MT theo bảng kê (code ketoan thật), DSO, phải trả, quỹ, che số TK; các nhánh dự phòng |
 | `test_attp.py` | So vi sai với `sx.api.qc_attp.tong_quan` / `qc_baocao.so_lieu` THẬT (bc dưới BC Viewer, sx dưới System Manager) |
 | `test_tet_source.py`, `lunar_check.mjs` | Ngày Tết một nguồn BC Settings (pkd đọc mềm, lịch frontend) |
+| `old_tab_check.mjs` | Tab mở TRƯỚC deploy (lib/ cũ trong module map, view mới): view vẫn vẽ được — `BC_OLD_PUBLIC=<public/bc bản cũ> ./run_all.sh` |
 | `ui_check.mjs` | Playwright: trang dựng từ chính `www/bc.html` (import map thật), API Python thật; desktop + 390px; lỗi JS/HTTP, cuộn ngang |
 
 Thử phá: `BC_APP_ROOT=<bản bc đã sửa hỏng> python3 test_xxx.py` phải đỏ.

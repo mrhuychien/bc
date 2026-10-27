@@ -211,8 +211,7 @@ def _dso(comp: str, today) -> dict:
 	rev = flt(frappe.db.sql(
 		"""SELECT SUM(base_grand_total) FROM `tabSales Invoice`
 		   WHERE docstatus = 1 AND company = %(company)s AND IFNULL(is_opening, 'No') != 'Yes'
-		     AND IFNULL(is_return, 0) = 0 AND posting_date >= DATE_SUB(%(today)s, INTERVAL %(window)s DAY)
-		     AND posting_date <= %(today)s""",
+		     AND IFNULL(is_return, 0) = 0 AND posting_date >= DATE_SUB(%(today)s, INTERVAL %(window)s DAY)""",
 		p)[0][0])
 	return {"debt": debt, "revenue": rev, "window_days": window, "dso": round(debt / rev * window, 1) if rev else None}
 
@@ -390,12 +389,13 @@ def get_receivables(refresh=0):
 
 
 # ─── Phải trả + quỹ ──────────────────────────────────────────────────────────
-_LONG_DIGITS = re.compile(r"\d{6,}")
+# ≥ 6 chữ số, cho phép 1 dấu cách / chấm / gạch giữa các chữ số (số TK hay viết theo nhóm: "1903 5678 9012").
+_LONG_DIGITS = re.compile(r"\d(?:[ .\-]?\d){5,}")
 
 
 def mask_account(name: str | None) -> str:
-	"""Che số tài khoản ngân hàng trong tên TK: 'TGNH VCB 0011004567890' → 'TGNH VCB •••7890'."""
-	return _LONG_DIGITS.sub(lambda m: "•••" + m.group(0)[-4:], name or "")
+	"""Che số tài khoản ngân hàng trong tên TK, giữ 4 số cuối: 'TGNH VCB 0011 0045 67890' → 'TGNH VCB •••7890'."""
+	return _LONG_DIGITS.sub(lambda m: "•••" + re.sub(r"\D", "", m.group(0))[-4:], name or "")
 
 
 def cash_types() -> tuple:

@@ -80,7 +80,8 @@ export async function render({ container, isCurrent }) {
                 { key: 'balance', label: 'Số dư', render: (r) => `<span class="${r.balance < 0 ? 'bc-txt-danger' : ''}">${money(r.balance)}</span>` },
             ] }));
     } catch (err) {
-        if (isCurrent()) fill('pt-kpis', errorState(err));
+        if (!isCurrent()) return;
+        fill('pt-kpis', errorState(err));
         ['pt-aging', 'pt-top', 'pt-due', 'pt-cash'].forEach((id) => fill(id, ''));
     }
 }

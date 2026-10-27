@@ -3,7 +3,9 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtMoney, fmtMoneyFull, fmtPct, salesBasisNote } from '../lib/format.js';
+import { escapeHtml, fmtMoney, fmtMoneyFull, fmtPct } from '../lib/format.js';
+// Namespace (không import theo tên): tab mở trước deploy giữ format.js cũ chưa có export này.
+import * as fmt from '../lib/format.js';
 import { loadChartLib, chartRegistry, PALETTE } from '../lib/chart.js';
 import { statCard } from '../components/stat-card.js';
 import { skeletonGrid } from '../components/skeleton.js';
@@ -100,7 +102,7 @@ export async function render({ container, isCurrent }) {
         <div class="bc-grid bc-grid-charts">
             ${chartCard('tq-c-groups', 'Ngành hàng')}${chartCard('tq-c-channels', 'Kênh bán')}${chartCard('tq-c-customers', 'Top khách hàng')}
         </div>
-        ${salesBasisNote()}`;
+        ${fmt.salesBasisNote ? fmt.salesBasisNote() : ''}`;
 
     const block = (promise, onOk, targetId) => promise.then((res) => { if (isCurrent()) onOk(res); })
         .catch((err) => { if (isCurrent()) fill(targetId, errorState(err)); });

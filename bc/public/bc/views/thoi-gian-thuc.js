@@ -5,7 +5,9 @@
 
 import { call } from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtMoney, fmtNum, growthClass, growthText, salesBasisNote } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtMoney, fmtNum, growthClass, growthText } from '../lib/format.js';
+// Namespace (không import theo tên): tab mở trước deploy giữ format.js cũ chưa có export này.
+import * as fmt from '../lib/format.js';
 import { solarToLunar } from '../lib/lunar.js';
 import { loadChartLib, chartRegistry } from '../lib/chart.js';
 import { skeleton } from '../components/skeleton.js';
@@ -409,7 +411,7 @@ export async function render({ container, isCurrent }) {
                     <div class="bc-lv-card"><div class="bc-lv-title">🥇 Sản xuất nhiều nhất hôm nay</div><div id="lv-top">${skeleton(32, 4, 6)}</div></div>
                 </div>
             </div>
-            ${salesBasisNote()}
+            ${fmt.salesBasisNote ? fmt.salesBasisNote() : ''}
         </section>`;
     document.getElementById('lv-3d')?.addEventListener('load', () => setTimeout(sendTo3d, 300));
     tickClock();

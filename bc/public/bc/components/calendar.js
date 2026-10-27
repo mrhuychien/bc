@@ -2,7 +2,11 @@
 // ngày âm (Hồ Ngọc Đức), 1–2 dòng giá trị; ô có dữ liệu bấm được; nút ◀ ● ▶.
 
 import { escapeHtml, isoOf, todayISO } from '../lib/format.js';
-import { lunarLabel, isTetDay } from '../lib/lunar.js';
+import { lunarLabel } from '../lib/lunar.js';
+import * as lunar from '../lib/lunar.js';
+
+// Ngày Tết theo BC Settings; tab mở trước deploy giữ lunar.js cũ (chưa có isTetDay) → thuật toán âm lịch.
+const isTetDay = lunar.isTetDay || lunar.isTetHoliday;
 
 const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 

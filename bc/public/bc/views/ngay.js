@@ -4,7 +4,9 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtMoney, fmtMoneyFull, fmtNum, todayISO, salesBasisNote } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtMoney, fmtMoneyFull, fmtNum, todayISO } from '../lib/format.js';
+// Namespace (không import theo tên): tab mở trước deploy giữ format.js cũ chưa có export này.
+import * as fmt from '../lib/format.js';
 import { loadChartLib, chartRegistry } from '../lib/chart.js';
 import { renderCalendar } from '../components/calendar.js';
 import { kpiGrid } from '../components/kpi-grid.js';
@@ -152,6 +154,6 @@ export async function render({ container, query }) {
         <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Doanh số & trả hàng theo ngày</div></div>
             <div class="bc-chart-wrap" id="ng-line-wrap"><canvas id="ng-line"></canvas></div></div>
         <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Chi tiết đơn hàng</div></div><div id="ng-orders"></div></div>
-        ${salesBasisNote()}`;
+        ${fmt.salesBasisNote ? fmt.salesBasisNote() : ''}`;
     await loadMonth(year, month);
 }

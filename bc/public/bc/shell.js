@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p5-r1';
+const BUILD = 'bc-p5-r2';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -130,6 +130,25 @@ function highlight(path) {
 }
 
 // ─── Render route ──────────────────────────────────────────────────────────
+// View mới nạp trong tab mở từ bản cũ có thể đòi export mà lib/ cũ trong tab chưa có → SyntaxError lúc link
+// (Chrome/Safari/Firefox đều là SyntaxError). Module map giữ bản hỏng tới khi tải lại trang → tự tải lại
+// ĐÚNG 1 lần mỗi route (cờ sessionStorage theo route, như router self-heal), lần sau thì báo lỗi.
+async function importView(route) {
+    const key = 'bc_modreload:' + route;
+    try {
+        const mod = await VIEW_MODULES[route]();
+        try { sessionStorage.removeItem(key); } catch { /* private mode */ }
+        return mod;
+    } catch (e) {
+        if (e instanceof SyntaxError) {
+            let first = false;
+            try { first = !sessionStorage.getItem(key); if (first) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* ignore */ }
+            if (first) { location.reload(); return new Promise(() => {}); }
+        }
+        throw e;
+    }
+}
+
 let renderSeq = 0;
 async function renderRoute(route, query) {
     const seq = ++renderSeq;
@@ -141,7 +160,7 @@ async function renderRoute(route, query) {
     setStatus('Đang tải…');
     const t0 = performance.now();
     try {
-        const mod = await VIEW_MODULES[route]();
+        const mod = await importView(route);
         if (typeof mod.render !== 'function') throw new Error(`View ${route} thiếu render()`);
         await mod.render({ container: view, query, isCurrent: () => seq === renderSeq });
         if (seq === renderSeq) setStatus(`Hoàn thành – ${((performance.now() - t0) / 1000).toFixed(2)} s`);

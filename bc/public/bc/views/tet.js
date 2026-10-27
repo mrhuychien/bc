@@ -3,7 +3,9 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtNum, fmtPct, growthClass, growthText, salesBasisNote } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtNum, fmtPct, growthClass, growthText } from '../lib/format.js';
+// Namespace (không import theo tên): tab mở trước deploy giữ format.js cũ chưa có export này.
+import * as fmt from '../lib/format.js';
 import { dataTable } from '../components/data-table.js';
 import { skeleton } from '../components/skeleton.js';
 import { errorState } from '../components/empty-state.js';
@@ -124,7 +126,7 @@ export async function render({ container, isCurrent }) {
         ${panel('tet-npp', 'NPP chi tiết Hàng Tết', `Cột NT + ${fmtNum(targetPct)}% = mục tiêu trong BC Settings`)}
         ${panel('tet-mt', 'Siêu thị (MT)')}
         ${panel('tet-items', 'Mã hàng Tết')}
-        ${salesBasisNote()}`;
+        ${fmt.salesBasisNote ? fmt.salesBasisNote() : ''}`;
 
     const block = (promise, id, toHtml) => promise.then((res) => {
         if (!isCurrent()) return;
