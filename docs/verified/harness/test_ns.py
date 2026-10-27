@@ -72,7 +72,7 @@ def seed():
 	emp(21, "Active", unicodedata.normalize("NFD", CK), "2026-05-10", ly_do="Thời vụ dưới 1 tháng")  # bộ phận lưu NFD
 	# ── Tạm nghỉ (3) / Đã nghỉ (3) ──
 	emp(22, "Inactive", CK, old, **{LTK: 1_000_000, "bank_ac_no": None})
-	emp(23, "Inactive", CK, old)
+	emp(23, "Inactive", CK, old, 1, 0)                                      # tạm nghỉ, cờ BHXH còn bật, không mức trừ
 	emp(24, "Suspended", VP, old)
 	emp(25, "Left", CN, "2026-01-10", relieving_date="2026-08-15")
 	emp(26, "Left", CN, old)                                               # nghỉ không có ngày
@@ -82,24 +82,34 @@ def seed():
 	sd(1, 0, 0, 2, 1, 1)                                                   # lỗi kỳ nhưng đã huỷ → không đếm
 	for e in (1, 2, 3, 4, 5):
 		sd(e, 2026, 5, 1, 6_000_000, 5_500_000)
-		sd(e, 2026, 6, 1, 6_000_000, 5_500_000)
-	sd(1, 2026, 6, 0, 9_999_000, 9_999_000, mod="2026-10-20 08:00:00")    # nháp SỬA SAU phiếu duyệt — vẫn chọn phiếu duyệt
-	sd(6, 2026, 6, 0, 6_000_000, 5_500_000)                                # tháng đã chốt: nháp không tính, chỉ đếm
-	sd(1, 2026, 7, 1, 6_000_000, 5_000_000, mod="2026-08-01 08:00:00")
-	sd(1, 2026, 7, 1, 6_000_000, 5_812_345, mod="2026-08-05 08:00:00")    # 2 phiếu duyệt: lấy phiếu sửa sau
+	sd(1, 2026, 6, 1, 6_000_000, 5_000_000, mod="2026-08-01 08:00:00")
+	sd(1, 2026, 6, 1, 6_000_000, 5_812_345, mod="2026-08-05 08:00:00")    # 2 phiếu duyệt: lấy phiếu sửa sau
+	sd(1, 2026, 6, 0, 9_999_000, 9_999_000, mod="2026-10-20 08:00:00")    # nháp SỬA SAU CÙNG — vẫn chọn phiếu duyệt
 	for e in (2, 3, 4, 5):
-		sd(e, 2026, 7, 1, 6_000_000, 5_500_000)
-	sd(6, 2026, 7, 2, 6_000_000, 5_500_000)                                # đã huỷ
+		sd(e, 2026, 6, 1, 6_000_000, 5_500_000)
+	sd(6, 2026, 6, 0, 6_000_000, 5_500_000)                                # tháng đã chốt: nháp không tính, chỉ đếm
+	sd(6, 2026, 6, 2, 6_000_000, 5_500_000)                                # đã huỷ
+	# T7: đã có dữ liệu nhưng không phiếu nào → 0.
+	# T8 = tháng đã chốt gần nhất → bảng theo bộ phận. Bộ phận theo snapshot trên phiếu; trống (NULL / '') →
+	# bộ phận hiện tại của nhân viên (E06 công nhật, E10 văn phòng — khác nhau, không được gom chung).
+	for e, snap in [(1, CN), (2, CN), (3, CN), (5, CN), (6, None), (7, VP), (8, VP), (9, VP), (11, VP), (10, None),
+			(13, VP), (12, SR), (14, "")]:                               # E13 nay ở Showroom, phiếu T8 ghi Văn phòng
+		sd(e, 2026, 8, 1, 7_000_000, 6_543_210, snap)
+	sd(4, 2026, 8, 0, 7_000_000, 6_543_210, CN)                            # nháp tháng đã chốt: không vào bảng
+	sd(24, 2026, 8, 1, 0, 0, VP)                                           # phiếu 0 đ: đếm người, không đếm vào ngưỡng K
 	for e, ds, dept in [(1, 1, CN), (2, 1, CN), (3, 1, CN), (4, 0, CN), (5, 0, CN), (7, 1, VP), (8, 1, VP), (9, 1, VP),
-			(10, 1, VP), (11, 1, VP), (12, 1, SR), (13, 0, VP), (14, 0, "")]:  # E13 nay ở Showroom, phiếu T9 ghi Văn phòng
+			(10, 1, VP), (11, 1, VP), (12, 1, SR), (13, 0, VP), (14, 0, "")]:  # T9 tạm tính (cảnh báo "tháng trước")
 		sd(e, 2026, 9, ds, 7_000_000, 6_543_210, dept)
 	sd(2, 2026, 9, 0, 7_000_000, 1, CN)                                   # E02 trùng nháp cả T9 (bên cạnh phiếu duyệt)…
 	sd(2, 2026, 9, 0, 7_000_000, 1, CN)
 	for e in (1, 2, 3):
 		sd(e, 2026, 10, 0, 7_000_000, 6_000_000, CN)
 	sd(2, 2026, 10, 0, 7_000_000, 6_000_000, CN, mod="2026-10-02 08:00:00")  # …và T10: ns báo 2 lượt, bc đếm 1 người
+	sd(5, 2026, 10, 0, 0, 0, CN)                                           # T10: 5 phiếu nhưng 2 phiếu 0 đ (chưa tính lại)
+	sd(7, 2026, 10, 0, 0, 0, VP)                                           # → chỉ 3 người có tiền → vẫn ẩn
 	# ── Phiếu khoán (SX Phieu Luong) ──
 	for e in (15, 16, 17, 18, 19):
+		pl(e, 2026, 8, 1, 8_000_000, 7_000_000)
 		pl(e, 2026, 9, 1, 8_000_000, 7_000_000)
 	for e in range(15, 22):
 		pl(e, 2026, 10, 0, 8_000_000, 7_500_000)
@@ -186,7 +196,8 @@ if __name__ == "__main__":
 	h = d["bhxh"]
 	c("đóng BHXH / đang làm", (h["dong"], h["dang_lam"], h["ty_le"], h["uoc_tinh"]) == (8, 21, 38.1, False),
 		(h["dong"], h["dang_lam"], h["ty_le"]))
-	c("chưa có mức trừ / lệch cờ / rủi ro", (h["chua_muc"], h["lech"], h["rui_ro"]) == (2, 1, 4), (h["chua_muc"], h["lech"], h["rui_ro"]))
+	c("chưa có mức trừ (mọi người chưa nghỉ, như ns) / lệch cờ / rủi ro", (h["chua_muc"], h["lech"], h["rui_ro"]) == (3, 1, 4),
+		(h["chua_muc"], h["lech"], h["rui_ro"]))
 	c("lý do không đóng: nhóm < 5 gộp, không lộ 'lương hưu'",
 		h["ly_do"] == [{"ly_do": "Chưa ghi lý do", "n": 5}, {"ly_do": "Thời vụ dưới 1 tháng + nhóm nhỏ", "n": 8}], h["ly_do"])
 
@@ -194,30 +205,35 @@ if __name__ == "__main__":
 	L = d["luong"]
 	c("có công nhật + khoán; hook P1 tắt; 1 phiếu lỗi kỳ", L["co"] == {"nhat": True, "khoan": True} and L["hook_tat"] is True
 		and L["loi_ky"] == 1, (L["co"], L["hook_tat"], L["loi_ky"]))
-	c("tháng đầu có dữ liệu", L["dau_ky"] == {"nhat": "2026-05", "khoan": "2026-09"}, L["dau_ky"])
+	c("tháng đầu có dữ liệu", L["dau_ky"] == {"nhat": "2026-05", "khoan": "2026-08"}, L["dau_ky"])
 	S = {s["thang"]: s for s in L["series"]}
-	c("trước tháng đầu: chưa có dữ liệu (None, không phải 0)", S["2026-04"]["nhat"] is None and S["2026-08"]["khoan"] is None
+	c("trước tháng đầu: chưa có dữ liệu (None, không phải 0)", S["2026-04"]["nhat"] is None and S["2026-07"]["khoan"] is None
 		and S["2025-11"]["nhat"] is None)
 	n5 = S["2026-05"]["nhat"]
 	c("T5 đã chốt", (n5["so_nguoi"], n5["thuc_nhan"], n5["tong_tien"], S["2026-05"]["tam_tinh"]) == (5, 27_500_000, 30_000_000, False), n5)
 	n6 = S["2026-06"]["nhat"]
-	c("T6: nháp mới hơn không thay phiếu duyệt; nháp tháng đã chốt chỉ đếm", (n6["so_nguoi"], n6["thuc_nhan"], n6["so_nhap"]) == (5, 27_500_000, 1), n6)
-	n7 = S["2026-07"]["nhat"]
-	c("T7: 2 phiếu duyệt → lấy phiếu sửa sau; phiếu huỷ bỏ", (n7["so_nguoi"], n7["thuc_nhan"]) == (5, 27_800_000), n7)
-	c("T8: đã có dữ liệu mà không phiếu → 0", S["2026-08"]["nhat"]["so_nguoi"] == 0 and S["2026-08"]["nhat"]["thuc_nhan"] == 0)
+	c("T6: 2 phiếu duyệt → lấy phiếu sửa sau; nháp sửa sau cùng không thay phiếu duyệt; nháp tháng chốt chỉ đếm; phiếu huỷ bỏ",
+		(n6["so_nguoi"], n6["thuc_nhan"], n6["so_nhap"]) == (5, 27_800_000, 1), n6)
+	c("T7: đã có dữ liệu mà không phiếu → 0", S["2026-07"]["nhat"]["so_nguoi"] == 0 and S["2026-07"]["nhat"]["thuc_nhan"] == 0)
+	n8 = S["2026-08"]["nhat"]
+	c("T8 đã chốt: chỉ phiếu duyệt (phiếu 0 đ vẫn đếm người)", (S["2026-08"]["tam_tinh"], n8["so_nguoi"], n8["so_nhap"], n8["thuc_nhan"],
+		n8["tong_tien"], n8["an"]) == (False, 14, 1, 85_100_000, 91_000_000, False), n8)
 	n9 = S["2026-09"]["nhat"]
 	c("T9 tạm tính gồm nháp, làm tròn 100.000", (S["2026-09"]["tam_tinh"], n9["so_nguoi"], n9["so_nhap"], n9["thuc_nhan"], n9["tong_tien"])
 		== (True, 13, 4, 85_100_000, 91_000_000), n9)
 	n10 = S["2026-10"]["nhat"]
-	c("T10 < 5 người → ẩn tiền (trùng nháp chỉ tính 1)", (n10["so_nguoi"], n10["so_nhap"], n10["an"], n10["thuc_nhan"]) == (3, 3, True, None), n10)
+	c("T10: 5 phiếu nhưng < 5 người có tiền → ẩn tiền (trùng nháp chỉ tính 1)", (n10["so_nguoi"], n10["so_nhap"], n10["an"], n10["thuc_nhan"])
+		== (5, 5, True, None), n10)
+	c("khoán T8", (S["2026-08"]["khoan"]["so_nguoi"], S["2026-08"]["khoan"]["thuc_nhan"]) == (5, 35_000_000), S["2026-08"]["khoan"])
 	k9, k10 = S["2026-09"]["khoan"], S["2026-10"]["khoan"]
 	c("khoán T9 / T10", (k9["so_nguoi"], k9["thuc_nhan"], k10["so_nguoi"], k10["so_nhap"], k10["thuc_nhan"]) == (5, 35_000_000, 7, 7, 52_500_000),
 		(k9, k10))
-	bp = [(x["nhom"], x["loai"], x["n"], x["thuc_nhan"], x["tong_tien"]) for x in L["bo_phan"]]
-	c("T9 theo bộ phận: snapshot bộ phận trên phiếu, nhóm < 5 nhập nhóm lớn nhỏ nhất, khoán một nhóm",
-		sorted(bp) == sorted([("Công nhật + nhóm nhỏ", "Công nhật", 7, 45_800_000, 49_000_000), ("Văn phòng", "Công nhật", 6, 39_300_000, 42_000_000),
+	c("bảng bộ phận lấy tháng đã chốt gần nhất", L["ky_bo_phan"] == "2026-08", L["ky_bo_phan"])
+	bp = [(x["nhom"], x["loai"], x["so_nguoi"], x["thuc_nhan"], x["tong_tien"]) for x in L["bo_phan"]]
+	c("T8 theo bộ phận: snapshot trên phiếu, trống → bộ phận hiện tại (không gom chung), ngưỡng theo người có tiền, nhóm nhỏ nhập nhóm lớn nhỏ nhất, khoán một nhóm",
+		sorted(bp) == sorted([("Công nhật + nhóm nhỏ", "Công nhật", 7, 45_800_000, 49_000_000), ("Văn phòng", "Công nhật", 7, 39_300_000, 42_000_000),
 			("Công khoán", "Khoán", 5, 35_000_000, 40_000_000)]), bp)
-	c("T9 theo bộ phận cộng lại = tổng tháng (không mất ai)", sum(x["n"] for x in L["bo_phan"] if x["loai"] == "Công nhật") == n9["so_nguoi"])
+	c("T8 theo bộ phận cộng lại = tổng tháng (không mất ai)", sum(x["so_nguoi"] for x in L["bo_phan"] if x["loai"] == "Công nhật") == n8["so_nguoi"])
 
 	# ── Giấy tờ ──
 	g = d["giay_to"]
@@ -230,7 +246,7 @@ if __name__ == "__main__":
 	cb = d["canh_bao"]
 	dem = {x["ma"]: x["so_nguoi"] for x in cb["rows"]}
 	c("cảnh báo theo số người", dem == {"thieu_cccd": 2, "thieu_bo_phan": 1, "thieu_ma_may": 1, "thieu_luong_cb": 1, "thieu_tk": 2,
-		"bhxh_rui_ro": 4, "bhxh_chua_muc": 2, "luong_thieu_phieu": 2, "luong_con_nhap": 4, "luong_trung": 1}, dem)
+		"bhxh_rui_ro": 4, "bhxh_chua_muc": 3, "luong_thieu_phieu": 2, "luong_con_nhap": 4, "luong_trung": 1}, dem)
 	c("đỏ trước, rồi theo thứ tự của ns", [x["ma"] for x in cb["rows"]][:2] == ["bhxh_rui_ro", "luong_trung"], [x["ma"] for x in cb["rows"]])
 	c("không có sinh nhật / mã giấy tờ trong cảnh báo", not ({"sinh_nhat", "hd_het_han", "kham_sk_het_han", "attp_het_han"} & set(dem)))
 	c("khoán thiếu phiếu tháng trước", (cb["khoan_thieu_phieu"], cb["thang_truoc"]) == (1, "2026-09"), (cb["khoan_thieu_phieu"], cb["thang_truoc"]))
@@ -238,6 +254,7 @@ if __name__ == "__main__":
 	# ── So vi sai với ns thật ──
 	goc = ns_dem()
 	c("vi sai: BHXH rủi ro = ns", goc.get("bhxh_rui_ro", {}).get("do") == h["rui_ro"], goc.get("bhxh_rui_ro"))
+	c("vi sai: đóng mà chưa có mức trừ = ns", goc.get("bhxh_chua_muc", {}).get("vang") == h["chua_muc"], goc.get("bhxh_chua_muc"))
 	c("vi sai: HĐ = ns", {k: goc.get("hd_het_han", {}).get(k, 0) for k in ("do", "vang")} == g["hd"], goc.get("hd_het_han"))
 	c("vi sai: khám SK = ns", {k: goc.get("kham_sk_het_han", {}).get(k, 0) for k in ("do", "vang")} == g["ksk"], goc.get("kham_sk_het_han"))
 	c("vi sai: ATTP — ns bỏ sót dòng option sai chữ (bc khớp lỏng)", goc.get("attp_het_han") == {"do": 0, "vang": 1, "xanh": 0},
@@ -257,6 +274,31 @@ if __name__ == "__main__":
 		c("người không có quyền bị chặn", True)
 	finally:
 		frappe.session.user = "viewer@example.com"
+
+	# ── Làm mới: người xem không bỏ qua cache được (không lấy mẫu dày số tạm tính) ──
+	from seed import single
+	single("BC Settings", cache_ttl=300)
+	frappe.cache().store.clear()
+	try:
+		a1 = ns.get_overview(refresh=1)
+		emp(90, "Active", CN, "2024-03-01")
+		a2 = ns.get_overview(refresh=1)
+		c("người xem bấm làm mới vẫn nhận bản cache", a2["meta"]["cached"] is True and a2["nhan_su"]["dang_lam"] == a1["nhan_su"]["dang_lam"],
+			a2["meta"])
+		frappe.session.user = "Administrator"
+		a3 = ns.get_overview(refresh=1)
+		c("quản trị làm mới được", a3["meta"]["cached"] is False and a3["nhan_su"]["dang_lam"] == a1["nhan_su"]["dang_lam"] + 1)
+	finally:
+		frappe.session.user = "viewer@example.com"
+		single("BC Settings", cache_ttl=0)
+		frappe.db.sql("DELETE FROM `tabEmployee` WHERE name = 'HR-EMP-00090'")
+
+	# ── SalaryDay không có cột department: bộ phận theo hồ sơ, vẫn tách nhóm ──
+	drop_column("SalaryDay", "department")
+	L6 = run()["luong"]
+	cn6 = [x for x in L6["bo_phan"] if x["loai"] == "Công nhật"]
+	c("không có snapshot bộ phận: theo hồ sơ, vẫn ≥ 2 nhóm, mỗi nhóm ≥ 5 người có tiền, không mất ai",
+		len(cn6) == 2 and all(x["n"] >= 5 for x in cn6) and sum(x["so_nguoi"] for x in cn6) == 14, cn6)
 
 	# ── Cấu hình / thiếu từng phần ──
 	frappe.conf["ns_tinh_lai_salaryday"] = 1

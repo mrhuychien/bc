@@ -10,7 +10,9 @@ Một lượt gọi get_overview() trả 6 khối, khối nào thiếu bảng / 
 - luong: quỹ lương THỰC NHẬN 12 tháng theo loại (công nhật / khoán), mỗi (nhân viên, tháng) một phiếu như
   ns.phieu.chon_phieu (đã duyệt mới nhất, không có thì nháp mới nhất). Tháng trước + tháng này = tạm tính
   (gồm nháp); tháng cũ hơn chỉ phiếu đã duyệt. Trước tháng đầu tiên có phiếu → None ("chưa có dữ liệu").
-  Theo bộ phận chỉ cho tháng trước, ẩn nhóm < K người (an_danh), làm tròn 100.000 đ. Không gồm Ban lãnh đạo.
+  Theo bộ phận chỉ cho THÁNG ĐÃ CHỐT gần nhất (tháng trước nữa, phiếu đã duyệt — tháng tạm tính đổi theo
+  từng phiếu HR nhập nên so hai lần xem sẽ ra lương một người). Ngưỡng K đếm người CÓ TIỀN trên phiếu (phiếu
+  0 đ / chưa tính lại không che được ai); nhóm < K gộp (an_danh), làm tròn 100.000 đ. Không gồm Ban lãnh đạo.
 - giay_to: HĐ / khám SK / ATTP hết hạn (đỏ) / ≤ 30 ngày (vàng) như ns.canh_bao — ATTP khớp lỏng vì option
   trong NS Giay To lưu sai chữ ("Xác nhậ3n kiến thức ATTP").
 - canh_bao: đếm số NGƯỜI theo từng mã cảnh báo của ns (gọi hàm thuần ns.api.canh_bao.tinh), bỏ sinh nhật
@@ -27,9 +29,8 @@ import unicodedata
 import frappe
 from frappe.utils import add_days, cint, flt, getdate, nowdate
 
-from bc.api._common import _guard, iso, pct, real_column, run_cached
+from bc.api._common import K_AN_DANH, _guard, iso, pct, real_column, run_cached, safe_block
 
-K_AN_DANH = 5                   # nhóm < K người: không hiện tiền (gộp nhóm nhỏ)
 LAM_TRON = -5                   # làm tròn tiền 100.000 đ
 BO_PHAN_KHOAN = "Công khoán - HGC"  # = ns.api.common.BO_PHAN_KHOAN
 KHONG_BO_PHAN = "__none__"
@@ -74,25 +75,27 @@ def _tron(v):
 	return None if v is None else round(flt(v), LAM_TRON)
 
 
-def an_danh(cells: list, k: int = K_AN_DANH, keys=("tong_tien", "thuc_nhan"), gop="Nhóm nhỏ (gộp)", tat_ca="Tất cả") -> list:
-	"""Ẩn nhóm < k người. cells: [{"nhom", "n", <keys>}] của MỘT kỳ. Nhóm nhỏ gộp lại; gộp vẫn < k thì nhập vào
-	nhóm lớn nhỏ nhất (không để đúng một ô ẩn suy ra được bằng tổng − các ô hiện); không có nhóm lớn nào thì
-	chỉ trả tổng số người, không tiền."""
+def an_danh(cells: list, k: int = K_AN_DANH, keys=("tong_tien", "thuc_nhan"), giu=(), gop="Nhóm nhỏ (gộp)",
+		tat_ca="Tất cả") -> list:
+	"""Ẩn nhóm < k người. cells: [{"nhom", "n", <keys>, <giu>}] của MỘT kỳ — n là số người tính ngưỡng. Nhóm nhỏ
+	gộp lại; gộp vẫn < k thì nhập vào nhóm lớn nhỏ nhất (không để đúng một ô ẩn suy ra được bằng tổng − các ô
+	hiện); không có nhóm lớn nào thì không tiền. `giu`: cột cộng dồn khi gộp nhưng không bao giờ bị ẩn (số người)."""
+	cong = tuple(keys) + tuple(giu)
 	lon = [dict(c) for c in cells if c["n"] >= k]
 	nho = [c for c in cells if 0 < c["n"] < k]
 	if not nho:
 		return lon
-	g = {"nhom": gop, "n": sum(c["n"] for c in nho), **{x: sum(flt(c[x]) for c in nho) for x in keys}}
+	g = {"nhom": gop, "n": sum(c["n"] for c in nho), **{x: sum(flt(c[x]) for c in nho) for x in cong}}
 	if g["n"] >= k:
 		return lon + [g]
 	if lon:
 		m = min(lon, key=lambda c: c["n"])
 		m["nhom"] += " + nhóm nhỏ"
 		m["n"] += g["n"]
-		for x in keys:
+		for x in cong:
 			m[x] = flt(m[x]) + g[x]
 		return lon
-	return [{"nhom": tat_ca, "n": g["n"], **{x: None for x in keys}}]
+	return [{"nhom": tat_ca, "n": g["n"], **{x: g[x] for x in giu}, **{x: None for x in keys}}]
 
 
 # ─── 1. Quân số ──────────────────────────────────────────────────────────────
@@ -151,7 +154,8 @@ def _bhxh(today) -> dict:
 	ly = frappe.db.has_column("Employee", "ns_ly_do_khong_bhxh")
 	r = frappe.db.sql(
 		f"""SELECT COUNT(*) AS n, SUM(ns_dong_bhxh = 1) AS dong,
-			{f"SUM(ns_dong_bhxh = 1 AND {bh_sql} = 0)" if bh_sql else "NULL"} AS chua_muc,
+			{f"""(SELECT COUNT(*) FROM `tabEmployee` WHERE status != 'Left' AND ns_dong_bhxh = 1
+				AND {bh_sql} = 0)""" if bh_sql else "NULL"} AS chua_muc,
 			{f"SUM(ns_dong_bhxh = 0 AND {bh_sql} > 0)" if bh_sql else "NULL"} AS lech,
 			SUM(ns_dong_bhxh = 0 AND date_of_joining <= %(moc)s
 				{"AND IFNULL(ns_ly_do_khong_bhxh, '') = ''" if ly else ""}) AS rui_ro
@@ -187,18 +191,21 @@ def _nguon_co(loai: str) -> bool:
 
 
 def _phieu(loai: str, tu: int, den: int) -> list:
-	"""Mỗi (nhân viên, tháng) 1 phiếu như ns.phieu.chon_phieu → gom theo (ym, bộ phận, docstatus phiếu chọn)."""
+	"""Mỗi (nhân viên, tháng) 1 phiếu như ns.phieu.chon_phieu → gom theo (ym, bộ phận, docstatus phiếu chọn).
+	n = số phiếu, n_tien = số phiếu có tiền (ngưỡng K). GROUP BY cả biểu thức bộ phận (tên alias trùng cột
+	trong FROM thì MariaDB gom theo cột thô)."""
 	dt, y, m, tong, thuc = NGUON[loai]
 	if loai == "nhat":
 		snap = "sd.department" if frappe.db.has_column(dt, "department") else "NULL"
-		dept = f"IFNULL(NULLIF(t.dept, ''), IFNULL(NULLIF(e.department, ''), '{KHONG_BO_PHAN}'))"
+		dept = f"IFNULL(NULLIF(t.snap_dept, ''), IFNULL(NULLIF(e.department, ''), '{KHONG_BO_PHAN}'))"
 	else:
 		snap, dept = "NULL", "NULL"  # khoán: không lưu bộ phận theo kỳ — cả loại là một nhóm
 	return frappe.db.sql(
 		f"""
-		SELECT t.ym, {dept} AS dept, t.docstatus, COUNT(*) AS n, SUM(t.tong) AS tong, SUM(t.thuc) AS thuc
+		SELECT t.ym, {dept} AS dept, t.docstatus, COUNT(*) AS n,
+			SUM(IFNULL(t.tong, 0) != 0 OR IFNULL(t.thuc, 0) != 0) AS n_tien, SUM(t.tong) AS tong, SUM(t.thuc) AS thuc
 		FROM (
-			SELECT sd.employee, sd.`{y}` * 100 + sd.`{m}` AS ym, {snap} AS dept, sd.docstatus,
+			SELECT sd.employee, sd.`{y}` * 100 + sd.`{m}` AS ym, {snap} AS snap_dept, sd.docstatus,
 				sd.`{tong}` AS tong, sd.`{thuc}` AS thuc,
 				ROW_NUMBER() OVER (PARTITION BY sd.employee, sd.`{y}`, sd.`{m}` ORDER BY sd.docstatus DESC, sd.modified DESC) AS rn
 			FROM `tab{dt}` sd
@@ -208,7 +215,7 @@ def _phieu(loai: str, tu: int, den: int) -> list:
 		) t
 		LEFT JOIN `tabEmployee` e ON e.name = t.employee
 		WHERE t.rn = 1
-		GROUP BY t.ym, dept, t.docstatus""", {"tu": tu, "den": den}, as_dict=True)
+		GROUP BY t.ym, {dept}, t.docstatus""", {"tu": tu, "den": den}, as_dict=True)
 
 
 def _dau_ky(loai: str):
@@ -227,10 +234,10 @@ def _loi_ky(loai: str) -> int:
 def _o(rows: list, tam_tinh: bool) -> dict:
 	"""Một ô (tháng, loại): tạm tính gồm phiếu nháp được chọn; tháng đã chốt chỉ phiếu đã duyệt."""
 	dung = [r for r in rows if tam_tinh or cint(r.docstatus) == 1]
-	n = sum(cint(r.n) for r in dung)
-	cell = {"so_nguoi": n, "so_nhap": sum(cint(r.n) for r in rows if cint(r.docstatus) == 0),
+	n_tien = sum(cint(r.n_tien) for r in dung)
+	cell = {"so_nguoi": sum(cint(r.n) for r in dung), "so_nhap": sum(cint(r.n) for r in rows if cint(r.docstatus) == 0),
 		"tong_tien": _tron(sum(flt(r.tong) for r in dung)), "thuc_nhan": _tron(sum(flt(r.thuc) for r in dung)), "an": False}
-	if 0 < n < K_AN_DANH:
+	if 0 < n_tien < K_AN_DANH:
 		cell.update(tong_tien=None, thuc_nhan=None, an=True)
 	return cell
 
@@ -240,8 +247,9 @@ def _luong(months: list, ky: int) -> dict:
 	if not any(co.values()):
 		return {"available": False}
 	tam_tu = ky  # tháng trước + tháng này: tạm tính
+	chot = _ym(*_lui(ky // 100, ky % 100, 1))  # tháng đã chốt gần nhất: theo bộ phận chỉ tháng này
 	series = [{"thang": _nhan(ym), "tam_tinh": ym >= tam_tu} for ym in months]
-	out = {"available": True, "k": K_AN_DANH, "ky": _nhan(ky), "co": co, "dau_ky": {}, "loi_ky": 0,
+	out = {"available": True, "k": K_AN_DANH, "ky": _nhan(ky), "ky_bo_phan": _nhan(chot), "co": co, "dau_ky": {}, "loi_ky": 0,
 		"hook_tat": bool(co["nhat"]) and not cint(frappe.conf.get("ns_tinh_lai_salaryday")),
 		"series": series, "bo_phan": []}
 	cells_ky = []
@@ -256,24 +264,27 @@ def _luong(months: list, ky: int) -> dict:
 		rows = _phieu(loai, months[0], months[-1])
 		for s, ym in zip(series, months):
 			s[loai] = None if (not dau or ym < dau) else _o([r for r in rows if cint(r.ym) == ym], s["tam_tinh"])
-		if dau and ky >= dau:
-			ky_rows = [r for r in rows if cint(r.ym) == ky]
+		if dau and chot >= dau:
+			ky_rows = [r for r in rows if cint(r.ym) == chot and cint(r.docstatus) == 1]  # chỉ phiếu đã duyệt
 			if loai == "nhat":
 				by: dict = {}
 				for r in ky_rows:
-					c = by.setdefault(_nfc(r.dept), {"nhom": ten_bo_phan(r.dept), "loai": "Công nhật", "n": 0, "tong_tien": 0.0, "thuc_nhan": 0.0})
-					c["n"] += cint(r.n)
+					c = by.setdefault(_nfc(r.dept), {"nhom": ten_bo_phan(r.dept), "n": 0, "so_nguoi": 0, "tong_tien": 0.0, "thuc_nhan": 0.0})
+					c["n"] += cint(r.n_tien)
+					c["so_nguoi"] += cint(r.n)
 					c["tong_tien"] += flt(r.tong)
 					c["thuc_nhan"] += flt(r.thuc)
-				cells_ky += [{**c, "loai": "Công nhật"} for c in an_danh(list(by.values()))]
+				cells_ky += [{**c, "loai": "Công nhật"} for c in an_danh(list(by.values()), giu=("so_nguoi",))]
 			else:
-				n = sum(cint(r.n) for r in ky_rows)
-				if n:
-					an = n < K_AN_DANH
-					cells_ky.append({"nhom": "Công khoán", "loai": "Khoán", "n": n,
+				so = sum(cint(r.n) for r in ky_rows)
+				if so:
+					nt = sum(cint(r.n_tien) for r in ky_rows)
+					an = 0 < nt < K_AN_DANH
+					cells_ky.append({"nhom": "Công khoán", "loai": "Khoán", "n": nt, "so_nguoi": so,
 						"tong_tien": None if an else sum(flt(r.tong) for r in ky_rows),
 						"thuc_nhan": None if an else sum(flt(r.thuc) for r in ky_rows)})
-	out["bo_phan"] = [{**c, "tong_tien": _tron(c["tong_tien"]), "thuc_nhan": _tron(c["thuc_nhan"])} for c in cells_ky]
+	out["bo_phan"] = [{**c, "so_nguoi": cint(c["so_nguoi"]), "tong_tien": _tron(c["tong_tien"]), "thuc_nhan": _tron(c["thuc_nhan"])}
+		for c in cells_ky]
 	return out
 
 
@@ -376,6 +387,10 @@ def get_overview(refresh=0):
 	_guard()
 	if not frappe.db.table_exists("Employee"):
 		return {"available": False, "meta": {}}
+	# Số tạm tính đổi theo từng phiếu HR nhập: chỉ quản trị được bỏ qua cache (người xem không lấy mẫu dày
+	# để trừ hai lần xem ra lương một người).
+	if "System Manager" not in frappe.get_roles():
+		refresh = 0
 	today = getdate(nowdate())
 
 	def build():
@@ -385,8 +400,9 @@ def get_overview(refresh=0):
 		return {
 			"available": True,
 			"meta": {"as_of": iso(today), "thang": _nhan(months[-1]), "ky": _nhan(ky), "k": K_AN_DANH},
-			"nhan_su": _nhan_su(today), "bien_dong": _bien_dong(today, months), "bhxh": _bhxh(today),
-			"luong": _luong(months, ky), "giay_to": _giay_to(today), "canh_bao": _canh_bao(),
+			"nhan_su": safe_block("ns.nhan_su", _nhan_su, today), "bien_dong": safe_block("ns.bien_dong", _bien_dong, today, months),
+			"bhxh": safe_block("ns.bhxh", _bhxh, today), "luong": safe_block("ns.luong", _luong, months, ky),
+			"giay_to": safe_block("ns.giay_to", _giay_to, today), "canh_bao": safe_block("ns.canh_bao", _canh_bao),
 		}
 
 	return run_cached("ns.get_overview", {"d": iso(today)}, build, refresh)

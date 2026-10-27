@@ -30,9 +30,9 @@ def si(name, date, ht, st, net, kien=0, **kw):
 	return insert("Sales Invoice", name=name, **base)
 
 
-def trip(name, ngay, docstatus, tt, rows, **kw):
+def trip(name, ngay, docstatus, tt, rows, lai_xe="DRV-1", **kw):
 	insert("Chuyen Xe", name=name, ngay_giao=ngay, docstatus=docstatus, trang_thai=tt, ten_lai_xe="Nguyễn Văn Lái",
-		sdt_lai_xe="0901234567", lai_xe="DRV-1", creation=f"{ngay} 08:00:00", **kw)
+		sdt_lai_xe="0901234567", lai_xe=lai_xe, creation=f"{ngay} 08:00:00", **kw)
 	for i, (s, k, g) in enumerate(rows, 1):
 		insert("Chuyen Xe Don Hang", parent=name, parenttype="Chuyen Xe", parentfield="don_hang", idx=i,
 			sales_invoice=s, so_kien=k, trang_thai_giao=g, khach_hang="Khách Bí Mật", dia_chi="Số 1 Ngõ Kín")
@@ -57,23 +57,27 @@ def seed():
 	si("X4", "2026-10-12", TVC, "Chờ xử lý", 9_999_999, 3, is_opening="Yes")
 	si("X5", "2026-09-20", TVC, "Đang xử lý", 700_000, 7)    # tháng trước: chỉ vào ảnh chụp chờ giao
 	si("X6", "2026-03-01", NT, "Chờ xử lý", 9_999_999)       # cũ hơn 180 ngày: bỏ khỏi ảnh chụp
+	si("X7", "2026-09-29", TVC, "Chờ xử lý", 300_000, 3)     # tháng trước, chưa lên chuyến: vẫn trong pool chưa xếp
 	# ── Chuyến ──
 	trip("CX1", "2026-10-21", 1, "Hoàn thành", [("S1", 10, "Đã giao"), ("S2", 8, "Đã giao"), ("S3", 5, "Hoàn")],
 		tong_don=3, tong_kien=23, tong_the_tich=2.0, the_tich_xe=4.0, ti_le_tai=50,
 		cuoc_goc=500_000, phu_phi_gui_xe=100_000, tong_cuoc=600_000, da_tra_cuoc=1, cuoc_je="JE-1")
-	trip("CX2", "2026-10-24", 1, "Đang giao", [("S2", 4, "Chờ giao")],
+	trip("CX2", "2026-10-24", 1, "Đang giao", [("S2", 4, "Chờ giao")], lai_xe="DRV-2",
 		tong_don=1, tong_kien=4, tong_the_tich=1.5, the_tich_xe=1.0, ti_le_tai=150,
 		cuoc_goc=300_000, phu_phi_chuyen_2=100_000, tong_cuoc=450_000, cuoc_thu_cong=1, da_tra_cuoc=1, cuoc_je="JE-2")
 	trip("CX3", "2026-10-26", 0, "", [("S8", 4, "Chờ giao"), ("S4", 0, "Chờ giao")],
 		tong_don=2, tong_kien=4, tong_the_tich=0.5, the_tich_xe=0, ti_le_tai=0, tong_cuoc=999)
-	trip("CX4", "2026-10-21", 2, "Đang giao", [("S3", 5, "Chờ giao")],
-		tong_don=1, tong_kien=5, tong_the_tich=0.4, the_tich_xe=2.0, ti_le_tai=20, tong_cuoc=777, da_tra_cuoc=1)
+	trip("CX4", "2026-10-21", 2, "Đang giao", [("S3", 5, "Chờ giao")],   # đã trả cước (bút toán còn) rồi huỷ chuyến
+		tong_don=1, tong_kien=5, tong_the_tich=0.4, the_tich_xe=2.0, ti_le_tai=20, tong_cuoc=777, da_tra_cuoc=1, cuoc_je="JE-3")
 	trip("CX5", "2026-09-28", 1, "Hoàn thành", [("X5", 7, "Khách hẹn")], tong_don=1, tong_kien=7, tong_cuoc=888)
-	trip("CX6", "2026-10-03", 1, "Hoàn thành", [("X5", 7, "Đã giao")],
+	trip("CX6", "2026-10-03", 1, "Hoàn thành", [("X5", 7, "Đã giao")], lai_xe="DRV-3",
 		tong_don=1, tong_kien=7, tong_the_tich=1.0, the_tich_xe=5.0, ti_le_tai=20,
 		cuoc_goc=200_000, phu_phi_xe=50_000, tong_cuoc=250_000)
+	for n, lx in (("CX7", "DRV-4"), ("CX8", "DRV-5")):  # đủ 5 lái xe trong tháng → được hiện tiền cước
+		trip(n, "2026-10-15", 1, "Hoàn thành", [], lai_xe=lx, the_tich_xe=2.0)
 	insert("Journal Entry", name="JE-1", docstatus=1)
 	insert("Journal Entry", name="JE-2", docstatus=2)
+	insert("Journal Entry", name="JE-3", docstatus=1)
 	# ── Sự cố ──
 	sc = dict(customer="Khách Bí Mật", mo_ta="MÔ TẢ RIÊNG", nguoi_phu_trach="Phụ Trách Y")
 	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-10-05", loai_su_co="Hư hỏng, móp méo", trang_thai="Đã xử lý",
@@ -82,13 +86,16 @@ def seed():
 	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-10-15", loai_su_co="Hoàn hàng", trang_thai="Mới",
 		gia_tri_anh_huong=300_000, boi_thuong_trang_thai="Đã đòi", boi_thuong_so_tien=100_000,
 		hang_ve_trang_thai="Chưa về", **sc)
-	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-10-25", loai_su_co="Hư hỏng, móp méo", trang_thai=None,
+	sc3 = insert("Su Co Van Chuyen", ngay_phat_sinh="2026-10-25", loai_su_co="Hư hỏng, móp méo", trang_thai=None,
 		gia_tri_anh_huong=50_000, boi_thuong_trang_thai="Không đòi", boi_thuong_so_tien=999,
 		hang_ve_trang_thai="Đang về", **sc)
+	insert("Su Co Hang Ve", parent=sc3, parenttype="Su Co Van Chuyen", parentfield="items", idx=1, sl_tra=2)  # có hàng quay về
 	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-09-10", loai_su_co="Giao nhầm", trang_thai="Đang xử lý",
 		gia_tri_anh_huong=1_000_000, hang_ve_trang_thai="Đã về sân", **sc)
 	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-09-01", loai_su_co="Khác", trang_thai="Đóng",
 		ngay_dong="2026-10-11", **sc)
+	insert("Su Co Van Chuyen", ngay_phat_sinh="2026-09-20", loai_su_co="Chậm, thất lạc", trang_thai="Mới",
+		hang_ve_trang_thai="Chưa về", **sc)  # 'Chưa về' là mặc định của field — không có hàng quay về
 	# ── Thu hồi ──
 	lo = dict(nguoi_lien_he="Người Liên Hệ X", sdt_lien_he="0987654321", customer_name="Khách Bí Mật")
 	for name, ngay, tt, kiem in [("L1", "2026-10-20", "Tạo yêu cầu", None), ("L2", "2026-10-01", "Đã nhận hàng", "Đang kiểm"),
@@ -147,30 +154,32 @@ if __name__ == "__main__":
 	c("Tự vận chuyển đứng đầu, Chưa phân công cuối", g["by_type"][0]["hinh_thuc"] == TVC
 		and g["by_type"][-1]["hinh_thuc"] == "Chưa phân công", [x["hinh_thuc"] for x in g["by_type"]])
 	ch = g["cho_qua_han"]
-	c("chờ giao quá 3 ngày (ảnh chụp, gồm đơn tháng trước, bỏ đơn > 180 ngày)", ch["qua_n"] == 5, ch)
-	c("chờ giao theo hình thức", by(ch["rows"], "hinh_thuc", TVC) == {"hinh_thuc": TVC, "cho": 6, "qua_n": 4}
+	c("chờ giao quá 3 ngày (ảnh chụp, gồm đơn tháng trước, bỏ đơn > 180 ngày)", ch["qua_n"] == 6, ch)
+	c("chờ giao theo hình thức", by(ch["rows"], "hinh_thuc", TVC) == {"hinh_thuc": TVC, "cho": 7, "qua_n": 5}
 		and by(ch["rows"], "hinh_thuc", VP) == {"hinh_thuc": VP, "cho": 1, "qua_n": 0}
 		and by(ch["rows"], "hinh_thuc", NT) is None, ch["rows"])
-	c("xếp chuyến tính theo dòng chuyến (chuyến nháp có tính, dòng Hoàn trên chuyến Hoàn thành được nhả)",
-		g["xep"] == {"chua_xep": 2, "mot_phan": 1, "da_xep": 2}, g["xep"])
+	c("xếp chuyến: ảnh chụp như pool (gồm đơn tháng trước), theo dòng chuyến (chuyến nháp có tính, dòng Hoàn trên chuyến Hoàn thành được nhả)",
+		g["xep"] == {"chua_xep": 3, "mot_phan": 1, "da_xep": 3}, g["xep"])
 	c("giao được ngay lần đầu: dòng kết thúc ĐẦU TIÊN của mỗi đơn, theo ngày giao trong kỳ",
 		g["lan_dau"] == {"so_don": 3, "da_giao": 2, "khach_hen": 0, "hoan": 1, "ty_le": 66.7}, g["lan_dau"])
 
 	# ── Chuyến ──
 	x = d["chuyen"]
-	c("số chuyến (bỏ chuyến huỷ, ngoài kỳ)", x["so_chuyen"] == 4, x["so_chuyen"])
-	c("chuyến theo trạng thái (trống = Nháp)", x["by_status"] == {"Nháp": 1, "Đang giao": 1, "Hoàn thành": 2}, x["by_status"])
-	c("đơn / chuyến", x["don_moi_chuyen"] == 1.8, x["don_moi_chuyen"])
-	c("chuyến / ngày có chuyến", x["chuyen_moi_ngay"] == 1.0, x["chuyen_moi_ngay"])
-	c("tải TB có trọng số, bỏ xe chưa khai sức chứa", x["tai_tb"] == 45.0, x["tai_tb"])
+	c("số chuyến (bỏ chuyến huỷ, ngoài kỳ)", x["so_chuyen"] == 6, x["so_chuyen"])
+	c("chuyến theo trạng thái (trống = Nháp)", x["by_status"] == {"Nháp": 1, "Đang giao": 1, "Hoàn thành": 4}, x["by_status"])
+	c("đơn / chuyến", x["don_moi_chuyen"] == 1.2, x["don_moi_chuyen"])
+	c("chuyến / ngày có chuyến", x["chuyen_moi_ngay"] == 1.2, x["chuyen_moi_ngay"])
+	c("tải TB có trọng số, bỏ xe chưa khai sức chứa", x["tai_tb"] == 32.1, x["tai_tb"])
 	c("quá tải / thiếu sức chứa", (x["qua_tai"], x["thieu_cap"]) == (1, 1), (x["qua_tai"], x["thieu_cap"]))
-	c("chuyến theo ngày", [r["date"] for r in x["by_day"]] == ["2026-10-03", "2026-10-21", "2026-10-24", "2026-10-26"],
+	c("chuyến theo ngày", [(r["date"], r["n"]) for r in x["by_day"]] == [("2026-10-03", 1), ("2026-10-15", 2), ("2026-10-21", 1),
+		("2026-10-24", 1), ("2026-10-26", 1)],
 		x["by_day"])
 
 	# ── Cước ──
 	k = d["cuoc"]
-	c("tổng cước chỉ chuyến đã duyệt", (k["tong"], k["so_chuyen"]) == (1_300_000, 3), (k["tong"], k["so_chuyen"]))
-	c("cước / chuyến, / điểm", (k["moi_chuyen"], k["moi_diem"]) == (433_333, 260_000), (k["moi_chuyen"], k["moi_diem"]))
+	c("tổng cước chỉ chuyến đã duyệt; đủ 5 lái xe → hiện tiền", (k["tong"], k["so_chuyen"], k["so_lai_xe"], k["an"]) == (1_300_000, 5, 5, False),
+		(k["tong"], k["so_chuyen"], k["so_lai_xe"], k["an"]))
+	c("cước / chuyến, / điểm", (k["moi_chuyen"], k["moi_diem"]) == (260_000, 260_000), (k["moi_chuyen"], k["moi_diem"]))
 	tp = {r["key"]: r["tien"] for r in k["thanh_phan"]}
 	c("thành phần + điều chỉnh tay", tp == {"goc": 1_000_000, "gui": 100_000, "nhieu_diem": 0, "chuyen_2": 100_000,
 		"pp_xe": 50_000, "tay": 50_000}, tp)
@@ -178,9 +187,12 @@ if __name__ == "__main__":
 	c("đã trả / chưa trả", (k["da_tra"], k["chua_tra"], k["so_chua_tra"]) == (1_050_000, 250_000, 1),
 		(k["da_tra"], k["chua_tra"], k["so_chua_tra"]))
 	c("đánh dấu đã trả mà bút toán đã huỷ", k["tra_bat_thuong"] == 1, k["tra_bat_thuong"])
-	c("doanh thu đã giao chia theo kiện (đơn tách 2 chuyến không đếm đôi)",
+	c("chuyến đã huỷ mà bút toán trả cước còn hiệu lực", (k["tra_chuyen_huy"], k["tra_chuyen_huy_tien"]) == (1, 777),
+		(k["tra_chuyen_huy"], k["tra_chuyen_huy_tien"]))
+	c("doanh thu đã giao trên chuyến hoàn thành, chia theo kiện (đơn tách 2 chuyến không đếm đôi)",
 		(k["don_da_giao"], k["dt_da_giao"]) == (3, 3_033_333.33), (k["don_da_giao"], k["dt_da_giao"]))
-	c("% cước / doanh thu đã giao", k["ty_le_doanh_thu"] == 42.86, k["ty_le_doanh_thu"])
+	c("% cước / doanh thu: cả hai vế chỉ chuyến hoàn thành (chuyến đang giao không đẩy % lên)", k["ty_le_doanh_thu"] == 28.02,
+		k["ty_le_doanh_thu"])
 
 	# ── Sự cố ──
 	s = d["su_co"]
@@ -190,8 +202,8 @@ if __name__ == "__main__":
 		(s["boi_thuong_da_thu"], s["boi_thuong_con_doi"]))
 	c("theo loại", s["by_type"] == [{"loai": "Hư hỏng, móp méo", "n": 2, "gt": 250_000}, {"loai": "Hoàn hàng", "n": 1, "gt": 300_000}],
 		s["by_type"])
-	c("đang mở gồm trạng thái trống; quá 7 ngày; hàng chưa về",
-		(s["dang_mo"], s["mo_qua_n"], s["hang_chua_ve"]) == (3, 2, 2), (s["dang_mo"], s["mo_qua_n"], s["hang_chua_ve"]))
+	c("đang mở gồm trạng thái trống; quá 7 ngày; hàng chưa về chỉ sự cố có hàng quay về",
+		(s["dang_mo"], s["mo_qua_n"], s["hang_chua_ve"]) == (4, 3, 2), (s["dang_mo"], s["mo_qua_n"], s["hang_chua_ve"]))
 	c("ngày xử lý TB theo ngày đóng trong kỳ", s["ngay_xu_ly_tb"] == 22.0, s["ngay_xu_ly_tb"])
 
 	# ── Thu hồi ──
@@ -226,8 +238,12 @@ if __name__ == "__main__":
 	d9 = run("2026-09")
 	c("tháng 9 trọn tháng", (d9["meta"]["from"], d9["meta"]["to"], d9["meta"]["prev"]) == ("2026-09-01", "2026-09-30", "2026-08"),
 		d9["meta"])
-	c("tháng 9: 1 đơn X5, ngày giao lần đầu X5 = Khách hẹn 28/09", (d9["giao"]["total"], d9["giao"]["lan_dau"]["khach_hen"]) == (1, 1),
+	c("tháng 9: 2 đơn (X5, X7), ngày giao lần đầu X5 = Khách hẹn 28/09", (d9["giao"]["total"], d9["giao"]["lan_dau"]["khach_hen"]) == (2, 1),
 		(d9["giao"]["total"], d9["giao"]["lan_dau"]))
+	c("tháng 9: xếp chuyến là ảnh chụp hôm nay — như tháng 10", d9["giao"]["xep"] == g["xep"], d9["giao"]["xep"])
+	k9 = d9["cuoc"]
+	c("tháng 9: 1 lái xe → không hiện tiền cước, chỉ số chuyến", (k9["an"], k9["so_chuyen"], k9["tong"], k9["ty_le_doanh_thu"], k9["thanh_phan"])
+		== (True, 1, None, None, []), k9)
 	for bad in ("2026-11", "2026-13", "abc", "", None, "2026-1"):
 		c(f"tháng không hợp lệ / tương lai ({bad!r}) → tháng này", run(bad)["meta"]["thang"] == "2026-10")
 
@@ -251,6 +267,18 @@ if __name__ == "__main__":
 		c("cột hình thức dạng NFD vẫn đọc được", g2.get("available") and g2["total"] == 9 and g2["xep"]["mot_phan"] == 1, g2)
 	frappe.db.sql(f"ALTER TABLE `tabSales Invoice` CHANGE `{nfd}` `{HT}` varchar(140)")
 
+	# ── Bản vanchuyen cũ: thiếu cột nhóm hàng-về / bồi thường / trả cước → chỉ mất chỉ số đó ──
+	for col_ in ("tong_mat_duong", "boi_thuong_trang_thai", "boi_thuong_so_tien", "hang_ve_trang_thai"):
+		drop_column("Su Co Van Chuyen", col_)
+	for col_ in ("cuoc_thu_cong", "da_tra_cuoc", "cuoc_je"):
+		drop_column("Chuyen Xe", col_)
+	d5 = run()
+	s5, k5 = d5["su_co"], d5["cuoc"]
+	c("sự cố thiếu cột hàng-về / bồi thường: khối vẫn có, chỉ số đó None",
+		s5.get("available") and (s5["dang_mo"], s5["mat_duong"], s5["boi_thuong_da_thu"], s5["hang_chua_ve"]) == (4, None, None, None), s5)
+	c("cước thiếu cột trả cước: tổng vẫn có, đã trả / chưa trả None", k5.get("available") and (k5["tong"], k5["da_tra"], k5["chua_tra"],
+		k5["tra_bat_thuong"], k5["sua_tay"], k5["tra_chuyen_huy"]) == (1_300_000, None, None, 0, 0, 0), k5)
+
 	# ── Thiếu từng phần ──
 	frappe.INSTALLED_APPS.remove("ketoan")
 	try:
@@ -271,6 +299,10 @@ if __name__ == "__main__":
 	c("thiếu bảng Nhật ký xe: lịch vẫn có (không có bảo dưỡng), chi phí rỗng",
 		d3["xe"]["available"] and d3["xe"]["chi_phi_nam"]["rows"] == []
 		and [r["xe"] for r in d3["xe"]["can_xu_ly"]] == ["29C-111.11"], d3["xe"])
+	drop_column("Lo Thu Hoi", "ngay_yeu_cau")  # lỗi bất kỳ trong một khối: chỉ khối đó tắt, có ghi Error Log
+	d6 = run()
+	c("một khối lỗi không làm hỏng cả trang", d6["thu_hoi"] == {"available": False, "error": True} and d6["chuyen"]["available"]
+		and d6["xe"]["available"], d6["thu_hoi"])
 	frappe.INSTALLED_APPS.remove("vanchuyen")
 	try:
 		c("chưa cài vanchuyen → không có dữ liệu", run() == {"available": False, "meta": {}})

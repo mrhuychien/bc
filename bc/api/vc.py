@@ -3,16 +3,18 @@
 
 Một lượt gọi get_overview(thang) trả 6 khối, khối nào thiếu bảng / cột thì `available: False`:
 - giao: đơn trong kỳ theo hình thức × trạng thái vận chuyển (SI docstatus=1, không trả, bỏ đúng nhóm
-  'Showroom' như vanchuyen.tong_quan, loại hoá đơn đầu kỳ như mọi số doanh số của bc), đơn Tự vận chuyển
-  chưa xếp chuyến (tính theo dòng chuyến như chuyen_xe.da_xep — reconcile chỉ chạy lúc submit nên cột
-  custom_trang_thai_xep trễ với chuyến nháp), giao được ngay lần đầu, đơn chờ giao quá N ngày (ảnh chụp).
+  'Showroom' như vanchuyen.tong_quan, loại hoá đơn đầu kỳ như mọi số doanh số của bc), giao được ngay lần
+  đầu; ẢNH CHỤP hôm nay (mọi tháng, ≤ 180 ngày, như pool điều phối): đơn chờ giao quá N ngày và đơn Tự vận
+  chuyển chưa xếp chuyến (tính theo dòng chuyến như chuyen_xe.da_xep — reconcile chỉ chạy lúc submit nên
+  cột custom_trang_thai_xep trễ với chuyến nháp).
 - chuyen: chuyến theo ngày giao (kế hoạch), đơn/chuyến, tải theo m³ có trọng số (bỏ xe chưa khai sức chứa).
-- cuoc: chỉ chuyến docstatus=1 (như chi_cuoc); % trên doanh thu ĐÃ GIAO chia theo kiện (đơn tách nhiều
-  chuyến không đếm 2 lần) — doanh thu trước VAT.
+- cuoc: chỉ chuyến docstatus=1 (như chi_cuoc); % = cước / doanh thu đã giao, CẢ HAI trên chuyến đã hoàn
+  thành (doanh thu chia theo kiện, trước VAT). Tháng < K lái xe: không hiện tiền (cước = thu nhập lái xe).
 - su_co, thu_hoi (chặng tổng = phiếu kiểm ketoan nếu có, như vanchuyen/ketoan api.thu_hoi), xe (gọi helper
   thuần nhat_ky_xe.lich_cua_xe / bao_duong_moi_nhat).
 Không trả tên lái xe, SĐT, tên khách / người liên hệ, ghi chú tự do (chỉ số tổng hợp). Biển số xe là tài sản
 công ty nên được hiện. Không gọi whitelisted method nào của vanchuyen/ketoan (đều guard theo phiên).
+Cột thêm ở bản vanchuyen sau (nhóm hàng-về, cước) đọc qua _cot; mỗi khối chạy trong safe_block.
 """
 
 from __future__ import annotations
@@ -24,7 +26,8 @@ import re
 import frappe
 from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
 
-from bc.api._common import OPENING_FILTER, SI_AMOUNT, _guard, iso, pct, real_column, run_cached
+from bc.api._common import (K_AN_DANH, OPENING_FILTER, SI_AMOUNT, _guard, iso, pct, real_column, run_cached,
+	safe_block)
 
 CHO_QUA_NGAY = 3        # đơn chưa giao quá N ngày từ ngày hoá đơn → "chờ giao quá hạn"
 CHO_TU_NGAY = 180       # không xét đơn cũ hơn (trạng thái hãng ngoài nhập tay, hay bị bỏ quên)
@@ -49,6 +52,12 @@ def _has(*doctypes) -> bool:
 	return all(frappe.db.table_exists(d) for d in doctypes)
 
 
+def _cot(dt: str, field: str, alias: str = "", default: str = "NULL") -> str:
+	"""Cột tuỳ chọn (thêm ở bản vanchuyen sau bảng — vd nhóm hàng-về, cước): có thì `alias.field`, không có
+	thì giá trị mặc định — bản vanchuyen cũ chỉ mất chỉ số đó, không vỡ cả khối (như ketoan mt_hoan._sc_col)."""
+	return f"{alias + '.' if alias else ''}`{field}`" if frappe.db.has_column(dt, field) else default
+
+
 def period(thang=None) -> tuple:
 	"""(từ, đến, nhãn 'YYYY-MM'): tháng chọn (mặc định tháng này), cắt ở hôm nay."""
 	today = getdate(nowdate())
@@ -65,6 +74,14 @@ def _scope(st: str, ht: str) -> str:
 	"""Đơn trong kỳ — alias si; tham số %(f)s %(t)s %(showroom)s."""
 	return f"""si.docstatus = 1 AND si.is_return = 0 AND {OPENING_FILTER}
 		AND COALESCE(si.customer_group, '') != %(showroom)s AND si.posting_date BETWEEN %(f)s AND %(t)s"""
+
+
+def _cho(st: str) -> str:
+	"""ẢNH CHỤP hôm nay: đơn chưa giao xong, mọi tháng trong CHO_TU_NGAY ngày — alias si; tham số %(floor)s
+	%(today)s %(showroom)s %(da_giao)s. Như pool điều phối của vanchuyen (không giới hạn tháng)."""
+	return f"""si.docstatus = 1 AND si.is_return = 0 AND {OPENING_FILTER}
+		AND COALESCE(si.customer_group, '') != %(showroom)s AND COALESCE(si.`{st}`, '') NOT IN %(da_giao)s
+		AND si.posting_date BETWEEN %(floor)s AND %(today)s"""
 
 
 def _rollup(st: str | None) -> str:
@@ -105,29 +122,26 @@ def _giao(p: dict, today) -> dict:
 		"ty_le_phan_cong": pct(total - by.get(CHUA_PHAN_CONG, {}).get("n", 0), total),
 		"by_type": [{**x, "gt": round(x["gt"], 2), "ty_le_giao": pct(x["da"], x["n"])} for x in types],
 	}
-	# Đơn chờ giao quá N ngày — ẢNH CHỤP hôm nay, không theo kỳ.
+	# Đơn chờ giao quá N ngày + xếp chuyến — ẢNH CHỤP hôm nay (mọi tháng), không theo kỳ chọn.
+	ps = {**p, "today": today, "floor": getdate(add_days(today, -CHO_TU_NGAY)), "da_giao": DA_GIAO_SI}
 	cho = frappe.db.sql(
 		f"""
 		SELECT COALESCE(NULLIF(si.`{ht}`, ''), %(cpc)s) AS ht, COUNT(*) AS cho,
 			SUM(DATEDIFF(%(today)s, si.posting_date) > %(n)s) AS qua_n
-		FROM `tabSales Invoice` si
-		WHERE si.docstatus = 1 AND si.is_return = 0 AND {OPENING_FILTER} AND COALESCE(si.customer_group, '') != %(showroom)s
-		  AND COALESCE(si.`{st}`, '') NOT IN %(da_giao)s
-		  AND si.posting_date BETWEEN %(floor)s AND %(today)s
-		GROUP BY ht""",
-		{**p, "cpc": CHUA_PHAN_CONG, "today": today, "n": CHO_QUA_NGAY, "da_giao": DA_GIAO_SI,
-			"floor": getdate(add_days(today, -CHO_TU_NGAY))}, as_dict=True)
+		FROM `tabSales Invoice` si WHERE {_cho(st)}
+		GROUP BY ht""", {**ps, "cpc": CHUA_PHAN_CONG, "n": CHO_QUA_NGAY}, as_dict=True)
 	out["cho_qua_han"] = {"so_ngay": CHO_QUA_NGAY, "tu_ngay": CHO_TU_NGAY,
 		"rows": sorted(({"hinh_thuc": r.ht, "cho": cint(r.cho), "qua_n": cint(r.qua_n)} for r in cho),
 			key=lambda x: -x["qua_n"]),
 		"qua_n": sum(cint(r.qua_n) for r in cho)}
-	out["xep"] = _xep(p, st, ht) if _has("Chuyen Xe", "Chuyen Xe Don Hang") else None
+	out["xep"] = _xep(ps, st, ht) if _has("Chuyen Xe", "Chuyen Xe Don Hang") else None
 	out["lan_dau"] = _lan_dau(p) if _has("Chuyen Xe", "Chuyen Xe Don Hang") else None
 	return out
 
 
 def _xep(p: dict, st: str, ht: str) -> dict:
-	"""Đơn Tự vận chuyển trong kỳ chưa giao: chưa xếp / một phần / đã xếp (như chuyen_xe.da_xep, gom 1 SQL)."""
+	"""Đơn Tự vận chuyển chưa giao (ảnh chụp như `_cho`): chưa xếp / một phần / đã xếp — như pool điều phối
+	và chuyen_xe.da_xep, gom 1 SQL."""
 	kien = col("Sales Invoice", "custom_tổng_kiện")
 	tong = f"COALESCE(si.`{kien}`, 0)" if kien else "0"
 	rows = frappe.db.sql(
@@ -141,8 +155,7 @@ def _xep(p: dict, st: str, ht: str) -> dict:
 			WHERE cx.docstatus < 2 AND NOT (cx.trang_thai = 'Hoàn thành' AND cxd.trang_thai_giao != 'Đã giao')
 			GROUP BY cxd.sales_invoice
 		) h ON h.sales_invoice = si.name
-		WHERE {_scope(st, ht)} AND si.`{ht}` = %(tvc)s AND COALESCE(si.`{st}`, '') NOT IN %(da_giao)s""",
-		{**p, "tvc": TU_VAN_CHUYEN, "da_giao": DA_GIAO_SI}, as_dict=True)
+		WHERE {_cho(st)} AND si.`{ht}` = %(tvc)s""", {**p, "tvc": TU_VAN_CHUYEN}, as_dict=True)
 	out = {"chua_xep": 0, "mot_phan": 0, "da_xep": 0}
 	for r in rows:
 		t, h = flt(r.tong), flt(r.held)
@@ -216,23 +229,44 @@ def _chuyen(p: dict) -> dict:
 
 
 # ─── 3. Cước ─────────────────────────────────────────────────────────────────
+CX, SC = "Chuyen Xe", "Su Co Van Chuyen"
+HOAN_THANH = "Hoàn thành"
+THANH_PHAN = (("cuoc_goc", "goc", "Cước gốc theo tỉnh"), ("phu_phi_gui_xe", "gui", "Phụ phí gửi xe"),
+	("phu_phi_nhieu_diem", "nhieu_diem", "Phụ phí nhiều điểm"), ("phu_phi_chuyen_2", "chuyen_2", "Phụ phí chuyến thứ 2"),
+	("phu_phi_xe", "pp_xe", "Phụ phí xe"))
+
+
 def _cuoc(p: dict) -> dict:
-	if not _has("Chuyen Xe", "Chuyen Xe Don Hang"):
+	"""Cước chuyến ĐÃ DUYỆT theo ngày giao (như chi_cuoc). Cước là thu nhập của lái xe: tháng có < K lái xe
+	chạy thì không hiện tiền (như lương nhóm < K người), chỉ còn số chuyến."""
+	if not _has(CX, "Chuyen Xe Don Hang") or not frappe.db.has_column(CX, "tong_cuoc"):
 		return {"available": False}
+	c = {f: _cot(CX, f, "cx", "0") for f, _k, _l in THANH_PHAN}
+	da = _cot(CX, "da_tra_cuoc", "cx")
+	je = _cot(CX, "cuoc_je", "cx")  # thiếu cột → NULL: LEFT JOIN không khớp gì
 	r = frappe.db.sql(
-		"""
-		SELECT COUNT(*) AS so_chuyen, COALESCE(SUM(cx.tong_don), 0) AS so_diem, COALESCE(SUM(cx.tong_cuoc), 0) AS tong,
-			COALESCE(SUM(cx.cuoc_goc), 0) AS goc, COALESCE(SUM(cx.phu_phi_gui_xe), 0) AS gui,
-			COALESCE(SUM(cx.phu_phi_nhieu_diem), 0) AS nhieu_diem, COALESCE(SUM(cx.phu_phi_chuyen_2), 0) AS chuyen_2,
-			COALESCE(SUM(cx.phu_phi_xe), 0) AS pp_xe, SUM(COALESCE(cx.cuoc_thu_cong, 0) = 1) AS sua_tay,
-			SUM(CASE WHEN COALESCE(cx.da_tra_cuoc, 0) = 1 THEN cx.tong_cuoc ELSE 0 END) AS da_tra,
-			SUM(CASE WHEN COALESCE(cx.da_tra_cuoc, 0) = 0 AND cx.tong_cuoc > 0 THEN cx.tong_cuoc ELSE 0 END) AS chua_tra,
-			SUM(COALESCE(cx.da_tra_cuoc, 0) = 0 AND cx.tong_cuoc > 0) AS so_chua_tra,
-			SUM(COALESCE(cx.da_tra_cuoc, 0) = 1 AND COALESCE(je.docstatus, -1) != 1) AS tra_bat_thuong
-		FROM `tabChuyen Xe` cx LEFT JOIN `tabJournal Entry` je ON je.name = cx.cuoc_je
-		WHERE cx.docstatus = 1 AND cx.ngay_giao BETWEEN %(f)s AND %(t)s""", p, as_dict=True)[0]
+		f"""
+		SELECT COUNT(*) AS so_chuyen, COUNT(DISTINCT NULLIF({_cot(CX, "lai_xe", "cx")}, '')) AS so_lai_xe,
+			COALESCE(SUM(cx.tong_don), 0) AS so_diem, COALESCE(SUM(cx.tong_cuoc), 0) AS tong,
+			COALESCE(SUM(CASE WHEN cx.trang_thai = %(ht)s THEN cx.tong_cuoc ELSE 0 END), 0) AS tong_ht,
+			{", ".join(f"COALESCE(SUM({c[f]}), 0) AS {k}" for f, k, _l in THANH_PHAN)},
+			SUM(COALESCE({_cot(CX, "cuoc_thu_cong", "cx", "0")}, 0) = 1) AS sua_tay,
+			SUM(CASE WHEN COALESCE({da}, 0) = 1 THEN cx.tong_cuoc ELSE 0 END) AS da_tra,
+			SUM(CASE WHEN COALESCE({da}, 0) = 0 AND cx.tong_cuoc > 0 THEN cx.tong_cuoc ELSE 0 END) AS chua_tra,
+			SUM(COALESCE({da}, 0) = 0 AND cx.tong_cuoc > 0) AS so_chua_tra,
+			SUM(COALESCE({da}, 0) = 1 AND COALESCE(je.docstatus, -1) != 1) AS tra_bat_thuong
+		FROM `tabChuyen Xe` cx LEFT JOIN `tabJournal Entry` je ON je.name = {je}
+		WHERE cx.docstatus = 1 AND cx.ngay_giao BETWEEN %(f)s AND %(t)s""", {**p, "ht": HOAN_THANH}, as_dict=True)[0]
+	# Chuyến đã trả cước (bút toán còn hiệu lực) rồi bị huỷ: chi_cuoc.cancel_trip không chặn — tiền đã ra.
+	huy = frappe.db.sql(
+		f"""SELECT COUNT(*) AS n, COALESCE(SUM(cx.tong_cuoc), 0) AS tien
+		FROM `tabChuyen Xe` cx JOIN `tabJournal Entry` je ON je.name = {je}
+		WHERE cx.docstatus = 2 AND COALESCE({da}, 0) = 1 AND je.docstatus = 1
+			AND cx.ngay_giao BETWEEN %(f)s AND %(t)s""", p, as_dict=True)[0]
 	kien = col("Sales Invoice", "custom_tổng_kiện")
 	tong = f"COALESCE(si.`{kien}`, 0)" if kien else "0"
+	# % cước / doanh thu: CẢ HAI vế chỉ trên chuyến đã hoàn thành (chuyến đang giao có cước mà chưa có dòng
+	# 'Đã giao' → % ảo). Đơn tách nhiều chuyến chia doanh thu theo kiện.
 	dt = frappe.db.sql(
 		f"""
 		SELECT COUNT(DISTINCT cxd.sales_invoice) AS so_don,
@@ -241,38 +275,52 @@ def _cuoc(p: dict) -> dict:
 		FROM `tabChuyen Xe Don Hang` cxd
 		JOIN `tabChuyen Xe` cx ON cx.name = cxd.parent AND cxd.parenttype = 'Chuyen Xe'
 		JOIN `tabSales Invoice` si ON si.name = cxd.sales_invoice
-		WHERE cx.docstatus = 1 AND cxd.trang_thai_giao = 'Đã giao' AND cx.ngay_giao BETWEEN %(f)s AND %(t)s""",
-		p, as_dict=True)[0]
+		WHERE cx.docstatus = 1 AND cx.trang_thai = %(ht)s AND cxd.trang_thai_giao = 'Đã giao'
+			AND cx.ngay_giao BETWEEN %(f)s AND %(t)s""", {**p, "ht": HOAN_THANH}, as_dict=True)[0]
+	so_chuyen, so_lx = cint(r.so_chuyen), cint(r.so_lai_xe)
 	tong_cuoc = flt(r.tong)
-	thanh_phan = flt(r.goc) + flt(r.gui) + flt(r.nhieu_diem) + flt(r.chuyen_2) + flt(r.pp_xe)
-	return {
-		"available": True, "tong": round(tong_cuoc, 2), "so_chuyen": cint(r.so_chuyen),
-		"moi_chuyen": round(tong_cuoc / cint(r.so_chuyen), 0) if cint(r.so_chuyen) else None,
+	co_tra = da != "NULL"
+	sum_tp = sum(flt(r[k]) for _f, k, _l in THANH_PHAN)
+	out = {
+		"available": True, "so_chuyen": so_chuyen, "so_lai_xe": so_lx, "k": K_AN_DANH,
+		"an": bool(so_chuyen) and so_lx < K_AN_DANH,
+		"tong": round(tong_cuoc, 2),
+		"moi_chuyen": round(tong_cuoc / so_chuyen, 0) if so_chuyen else None,
 		"moi_diem": round(tong_cuoc / cint(r.so_diem), 0) if cint(r.so_diem) else None,
 		"don_da_giao": cint(dt.so_don), "dt_da_giao": round(flt(dt.dt), 2),
-		"ty_le_doanh_thu": pct(tong_cuoc, flt(dt.dt), 2),
-		"thanh_phan": [{"key": k, "label": lbl, "tien": round(flt(v), 2)} for k, lbl, v in (
-			("goc", "Cước gốc theo tỉnh", r.goc), ("gui", "Phụ phí gửi xe", r.gui),
-			("nhieu_diem", "Phụ phí nhiều điểm", r.nhieu_diem), ("chuyen_2", "Phụ phí chuyến thứ 2", r.chuyen_2),
-			("pp_xe", "Phụ phí xe", r.pp_xe))] + (
-			[{"key": "tay", "label": "Điều chỉnh tay", "tien": round(tong_cuoc - thanh_phan, 2)}]
-			if abs(tong_cuoc - thanh_phan) >= 1 else []),
+		"ty_le_doanh_thu": pct(flt(r.tong_ht), flt(dt.dt), 2),
+		"thanh_phan": [{"key": k, "label": lbl, "tien": round(flt(r[k]), 2)} for _f, k, lbl in THANH_PHAN] + (
+			[{"key": "tay", "label": "Điều chỉnh tay", "tien": round(tong_cuoc - sum_tp, 2)}]
+			if abs(tong_cuoc - sum_tp) >= 1 else []),
 		"sua_tay": cint(r.sua_tay),
-		"da_tra": round(flt(r.da_tra), 2), "chua_tra": round(flt(r.chua_tra), 2), "so_chua_tra": cint(r.so_chua_tra),
-		"tra_bat_thuong": cint(r.tra_bat_thuong),  # đánh dấu đã trả mà bút toán chưa duyệt / đã huỷ
+		"da_tra": round(flt(r.da_tra), 2) if co_tra else None,
+		"chua_tra": round(flt(r.chua_tra), 2) if co_tra else None,
+		"so_chua_tra": cint(r.so_chua_tra) if co_tra else None,
+		"tra_bat_thuong": cint(r.tra_bat_thuong) if co_tra else 0,  # đã trả mà bút toán chưa duyệt / đã huỷ
+		"tra_chuyen_huy": cint(huy.n), "tra_chuyen_huy_tien": round(flt(huy.tien), 2),
 	}
+	if out["an"]:  # dưới K lái xe: tổng cước ≈ thu nhập từng người → chỉ giữ số đếm
+		for key in ("tong", "moi_chuyen", "moi_diem", "ty_le_doanh_thu", "da_tra", "chua_tra", "tra_chuyen_huy_tien"):
+			out[key] = None
+		out["thanh_phan"] = []
+	return out
 
 
 # ─── 4. Sự cố ────────────────────────────────────────────────────────────────
+HANG_VE_LOAI = ("Hoàn hàng", "Giao một phần", "Khách từ chối, sai địa chỉ", "Giao nhầm")
+
+
 def _su_co(p: dict, today) -> dict:
-	if not _has("Su Co Van Chuyen"):
+	if not _has(SC):
 		return {"available": False}
+	gia, mat = _cot(SC, "gia_tri_anh_huong", "sc", "0"), _cot(SC, "tong_mat_duong", "sc")
+	btt, bts = _cot(SC, "boi_thuong_trang_thai", "sc"), _cot(SC, "boi_thuong_so_tien", "sc", "0")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT COALESCE(NULLIF(sc.trang_thai, ''), 'Mới') AS tt, COALESCE(NULLIF(sc.loai_su_co, ''), 'Khác') AS loai,
-			COUNT(*) AS n, SUM(COALESCE(sc.gia_tri_anh_huong, 0)) AS gt, SUM(COALESCE(sc.tong_mat_duong, 0)) AS mat,
-			SUM(CASE WHEN sc.boi_thuong_trang_thai = 'Đã thu' THEN COALESCE(sc.boi_thuong_so_tien, 0) ELSE 0 END) AS bt_thu,
-			SUM(CASE WHEN sc.boi_thuong_trang_thai IN ('Chưa đòi', 'Đã đòi') THEN COALESCE(sc.boi_thuong_so_tien, 0) ELSE 0 END) AS bt_con
+			COUNT(*) AS n, SUM(COALESCE({gia}, 0)) AS gt, SUM(COALESCE({mat}, 0)) AS mat,
+			SUM(CASE WHEN {btt} = 'Đã thu' THEN COALESCE({bts}, 0) ELSE 0 END) AS bt_thu,
+			SUM(CASE WHEN {btt} IN ('Chưa đòi', 'Đã đòi') THEN COALESCE({bts}, 0) ELSE 0 END) AS bt_con
 		FROM `tabSu Co Van Chuyen` sc WHERE sc.ngay_phat_sinh BETWEEN %(f)s AND %(t)s
 		GROUP BY tt, loai""", p, as_dict=True)
 	loai: dict = {}
@@ -280,22 +328,35 @@ def _su_co(p: dict, today) -> dict:
 		x = loai.setdefault(r.loai, {"loai": r.loai, "n": 0, "gt": 0.0})
 		x["n"] += cint(r.n)
 		x["gt"] += flt(r.gt)
+	# "Hàng chưa về": hang_ve_trang_thai mặc định 'Chưa về' trên MỌI sự cố → chỉ tính sự cố có hàng quay về
+	# (loại trả hàng, hướng xử lý hoàn / giao một phần, hoặc có dòng hàng trả).
+	hv = _cot(SC, "hang_ve_trang_thai", "sc")
+	if hv != "NULL":
+		con = (" OR EXISTS (SELECT 1 FROM `tabSu Co Hang Ve` h WHERE h.parent = sc.name"
+			" AND h.parenttype = 'Su Co Van Chuyen' AND h.sl_tra > 0)") if (
+			_has("Su Co Hang Ve") and frappe.db.has_column("Su Co Hang Ve", "sl_tra")) else ""
+		hang = (f"SUM({hv} IN ('Chưa về', 'Đang về') AND (sc.loai_su_co IN %(tra)s"
+			f" OR {_cot(SC, 'huong_xu_ly', 'sc')} IN ('Hoàn toàn bộ', 'Giao một phần'){con}))")
+	else:
+		hang = "NULL"
 	snap = frappe.db.sql(
-		"""SELECT COUNT(*) AS mo, SUM(DATEDIFF(%(today)s, ngay_phat_sinh) > %(n)s) AS qua_n,
-			SUM(hang_ve_trang_thai IN ('Chưa về', 'Đang về')) AS hang_chua_ve
-		   FROM `tabSu Co Van Chuyen` WHERE COALESCE(trang_thai, '') NOT IN %(dong)s""",
-		{"today": today, "n": SU_CO_QUA_NGAY, "dong": SC_DONG}, as_dict=True)[0]
+		f"""SELECT COUNT(*) AS mo, SUM(DATEDIFF(%(today)s, sc.ngay_phat_sinh) > %(n)s) AS qua_n, {hang} AS hang_chua_ve
+		   FROM `tabSu Co Van Chuyen` sc WHERE COALESCE(sc.trang_thai, '') NOT IN %(dong)s""",
+		{"today": today, "n": SU_CO_QUA_NGAY, "dong": SC_DONG, "tra": HANG_VE_LOAI}, as_dict=True)[0]
+	dong = _cot(SC, "ngay_dong")
 	xu_ly = frappe.db.sql(
-		"""SELECT AVG(DATEDIFF(ngay_dong, ngay_phat_sinh)) FROM `tabSu Co Van Chuyen`
-		   WHERE ngay_dong BETWEEN %(f)s AND %(t)s""", p)[0][0]
+		f"""SELECT AVG(DATEDIFF({dong}, ngay_phat_sinh)) FROM `tabSu Co Van Chuyen`
+		   WHERE {dong} BETWEEN %(f)s AND %(t)s""", p)[0][0] if dong != "NULL" else None
+	co_bt = btt != "NULL"
 	return {
 		"available": True, "trong_ky": sum(cint(r.n) for r in rows),
-		"gia_tri_anh_huong": round(sum(flt(r.gt) for r in rows), 2), "mat_duong": round(sum(flt(r.mat) for r in rows), 2),
-		"boi_thuong_da_thu": round(sum(flt(r.bt_thu) for r in rows), 2),
-		"boi_thuong_con_doi": round(sum(flt(r.bt_con) for r in rows), 2),
+		"gia_tri_anh_huong": round(sum(flt(r.gt) for r in rows), 2),
+		"mat_duong": round(sum(flt(r.mat) for r in rows), 2) if mat != "NULL" else None,
+		"boi_thuong_da_thu": round(sum(flt(r.bt_thu) for r in rows), 2) if co_bt else None,
+		"boi_thuong_con_doi": round(sum(flt(r.bt_con) for r in rows), 2) if co_bt else None,
 		"by_type": sorted(({**x, "gt": round(x["gt"], 2)} for x in loai.values()), key=lambda x: -x["n"]),
 		"dang_mo": cint(snap.mo), "mo_qua_n": cint(snap.qua_n), "so_ngay": SU_CO_QUA_NGAY,
-		"hang_chua_ve": cint(snap.hang_chua_ve),
+		"hang_chua_ve": None if hang == "NULL" else cint(snap.hang_chua_ve),
 		"ngay_xu_ly_tb": round(flt(xu_ly), 1) if xu_ly is not None else None,
 	}
 
@@ -416,8 +477,9 @@ def get_overview(thang=None, refresh=0):
 			"available": True,
 			"meta": {"thang": label, "from": iso(f), "to": iso(t), "as_of": iso(today),
 				"prev": f"{getdate(add_months(f, -1)).year:04d}-{getdate(add_months(f, -1)).month:02d}"},
-			"giao": _giao(p, today), "chuyen": _chuyen(p), "cuoc": _cuoc(p),
-			"su_co": _su_co(p, today), "thu_hoi": _thu_hoi(p, today), "xe": _xe(today),
+			"giao": safe_block("vc.giao", _giao, p, today), "chuyen": safe_block("vc.chuyen", _chuyen, p),
+			"cuoc": safe_block("vc.cuoc", _cuoc, p), "su_co": safe_block("vc.su_co", _su_co, p, today),
+			"thu_hoi": safe_block("vc.thu_hoi", _thu_hoi, p, today), "xe": safe_block("vc.xe", _xe, today),
 		}
 
 	return run_cached("vc.get_overview", {"t": label, "d": iso(today)}, build, refresh)

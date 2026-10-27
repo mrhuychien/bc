@@ -374,6 +374,20 @@ def to_cartons(boxes, factor) -> float:
 	return round(flt(boxes) / factor, 2) if factor else 0.0
 
 
+# ─── Riêng tư / cách ly từng khối ────────────────────────────────────────────
+K_AN_DANH = 5  # nhóm < K người (lương, cước lái xe): không hiện tiền
+
+
+def safe_block(name: str, fn, *args) -> dict:
+	"""Một khối của trang tổng hợp: lỗi (cột chưa migrate, helper app khác đổi…) chỉ tắt khối đó —
+	ghi Error Log, trả {available: False} — không làm 500 cả trang."""
+	try:
+		return fn(*args)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), f"bc.{name}")
+		return {"available": False, "error": True}
+
+
 # ─── Cột có dấu (Customize Form) ─────────────────────────────────────────────
 def real_column(doctype: str, name: str) -> str | None:
 	"""Tên cột thật của field có dấu: thử NFC rồi NFD (field tạo từ Customize Form có thể lưu NFD;
