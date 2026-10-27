@@ -53,6 +53,12 @@ def doctype_files():
 			if not isinstance(d, dict) or d.get("doctype") != "DocType" or not d.get("name"):
 				continue
 			seen.setdefault(d["name"], (f, d))
+	# DocType chỉ có trên site (tạo tay trên Desk, không nằm trong repo nào) — vd SalaryDay: khai trong
+	# site_doctypes.json theo đúng dạng DocType JSON, kèm nguồn suy ra fieldtype.
+	extra = os.path.join(SCRATCH, "site_doctypes.json")
+	if os.path.exists(extra):
+		for d in json.load(open(extra)):
+			seen.setdefault(d["name"], (extra, d))
 	return seen
 
 
@@ -64,9 +70,10 @@ def custom_fields():
 				out.append(cf)
 		except Exception:
 			pass
-	extra = os.path.join(SCRATCH, "extra_custom_fields.json")
-	if os.path.exists(extra):
-		out += json.load(open(extra))
+	for name in ("extra_custom_fields.json", "site_custom_fields.json"):  # install.py (sinh) + chỉ có trên site (viết tay)
+		extra = os.path.join(SCRATCH, name)
+		if os.path.exists(extra):
+			out += json.load(open(extra))
 	return out
 
 
