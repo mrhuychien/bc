@@ -6,7 +6,8 @@ cd "$(dirname "$0")"
 [ -d .src/erpnext ] || ./fetch_schema.sh
 python3 -B extract_cf.py >/dev/null
 fail=0
-for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py test_ns.py test_sections.py; do
+for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py test_ns.py test_sections.py \
+		test_kho_ton.py test_kho_han.py test_kho_kk.py test_kho_nhap.py; do
 	echo "═══ $t"; python3 -B "$t" | tail -1 || fail=1
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done
@@ -19,6 +20,15 @@ if node -e "require('playwright')" 2>/dev/null; then
 	echo "═══ sections_check.mjs"; node sections_check.mjs http://127.0.0.1:8124 http://127.0.0.1:8126 | tail -1 || fail=1
 	pkill -f '^python3 -B server.py 8124' || true
 	pkill -f '^python3 -B server.py 8126' || true
+	# Nhóm Kho: số liệu trên seed sổ kho riêng (DB khác) — 4 màn so với API
+	pkill -f '^python3 -B server.py 8127' || true; sleep 0.5
+	BC_TEST_DB=bc_test_kho_ui python3 -B seed_ui_kho.py >/dev/null \
+		&& (env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_kho_ui python3 -B server.py 8127 > /tmp/bc-ui-server-kho.log 2>&1 &) && sleep 1
+	for u in ui_kho_ton.mjs ui_kho_han.mjs ui_kho_kk.mjs ui_kho_nhap.mjs; do
+		echo "═══ $u"; out=$(node "$u" http://127.0.0.1:8127 2>&1); rc=$?
+		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	done
+	pkill -f '^python3 -B server.py 8127' || true
 	if [ -n "${BC_OLD_PUBLIC:-}" ]; then  # public/bc của bản đang chạy trên site trước deploy
 		(BC_OLD_PUBLIC="$BC_OLD_PUBLIC" python3 -B server.py 8125 > /tmp/bc-ui-server-old.log 2>&1 &) && sleep 1
 		echo "═══ old_tab_check.mjs"; node old_tab_check.mjs http://127.0.0.1:8125 | tail -1 || fail=1

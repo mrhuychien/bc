@@ -140,6 +140,17 @@ const SCEN = {
     },
 };
 
+// Nhóm Kho trên seed chung (không có sổ kho): mọi màn phải dựng xong, không lỗi tải, không treo khung chờ.
+// Số liệu Kho kiểm riêng trên seed sổ kho (ui_kho_*.mjs, seed_ui_kho.py).
+for (const r of ['/ton-kho', '/han-dung', '/kiem-ke', '/nhap-tp']) {
+    SCEN[r] = async (page) => {
+        await page.waitForSelector('.bc-view-banner', { timeout: 15000 });
+        await page.waitForFunction(() => !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+        const t = await page.textContent('.bc-main');
+        check(`${r}: dựng xong khi chưa có sổ kho, không lỗi tải`, !t.includes('Không tải được'), t.replace(/\s+/g, ' ').slice(0, 200));
+    };
+}
+
 const routes = process.argv.slice(3).length ? process.argv.slice(3) : Object.keys(SCEN);
 const browser = await chromium.launch();
 for (const mobile of [false, true]) {
