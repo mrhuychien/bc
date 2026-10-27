@@ -1,0 +1,14 @@
+"""Seed gộp cho kiểm giao diện: SX + Công nợ + ATTP + bán hàng."""
+import sys
+
+from seed import reset
+import seed_ui, test_attp, test_cn, test_sx
+reset()
+test_sx.seed()
+test_cn.seed()
+test_attp.seed()
+from seed import insert
+for n, par, l, r in [("Showroom", "All Customer Groups", 11, 14), ("Showroom HN", "Showroom", 12, 13), ("Co.op", "MT", 15, 16)]:
+    insert("Customer Group", name=n, customer_group_name=n, parent_customer_group=par, lft=l, rgt=r)
+seed_ui.sales()
+print("seeded")
