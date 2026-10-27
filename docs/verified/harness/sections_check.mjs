@@ -12,8 +12,8 @@ function check(label, ok, detail = '') {
     checks.push(ok);
     console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  ${String(detail).slice(0, 300)}`}`);
 }
-const ALL = ['thoi-gian-thuc', 'tong-quan', 'ngay', 'thang', 'tet', 'tinh-thanh', 'san-pham', 'sx-tet', 'van-chuyen',
-    'cong-no', 'phai-tra', 'nhan-su', 'attp'];
+const ALL = ['thoi-gian-thuc', 'tong-quan', 'ngay', 'thang', 'tet', 'tinh-thanh', 'san-pham', 'sx-tet',
+    'ton-kho', 'han-dung', 'kiem-ke', 'nhap-tp', 'van-chuyen', 'cong-no', 'phai-tra', 'nhan-su', 'attp'];  // = SECTIONS
 
 function watch(page, errors) {
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -57,13 +57,15 @@ const V = await (await browser.newContext({ viewport: { width: 1366, height: 900
 
 try {
     await setHidden(A, ALL, false);  // trạng thái sạch
+    check('danh sách mảng của bộ thử = SECTIONS máy chủ', JSON.stringify((await api(A, admin, 'bc.api.sections.get_hidden')).msg?.sections)
+        === JSON.stringify(ALL));
 
     console.log('— Quản trị: #/an-mang');
     await A.goto(`${admin}/bc#/an-mang`);
     await A.waitForSelector('.bc-switch', { timeout: 20000 });
     const n = await A.$$eval('.bc-switch', (els) => els.length);
     const on = await A.$$eval('.bc-switch', (els) => els.filter((e) => e.checked).length);
-    check('13 công tắc, đều đang hiện', n === 13 && on === 13, `${n}/${on}`);
+    check(`${ALL.length} công tắc, đều đang hiện`, n === ALL.length && on === ALL.length, `${n}/${on}`);
     check('menu quản trị có mục Ẩn / hiện mảng', (await A.textContent('#bc-sidebar')).includes('Ẩn / hiện mảng'));
 
     await A.click('.bc-am-row:has([data-section="cong-no"])');
@@ -115,7 +117,8 @@ try {
     await V.waitForSelector('#bc-sidebar .bc-side-link', { timeout: 20000 });
     const side = await V.textContent('#bc-sidebar');
     check('menu người xem: không Phải thu, còn Phải trả', await V.$('a[data-route="/cong-no"]') === null && await V.$('a[data-route="/phai-tra"]') !== null);
-    check('nhóm ẩn hết (Nhân sự) mất hẳn; nhóm chưa làm (Kho) vẫn "Sắp có"', !side.includes('Nhân sự') && side.includes('Kho') && side.includes('Sắp có'),
+    check('nhóm ẩn hết (Nhân sự) mất hẳn; nhóm Kho đủ 4 màn', !side.includes('Nhân sự')
+        && ['Tồn kho', 'Hạn dùng & tồn âm', 'Kiểm kê & điều chỉnh', 'Nhập TP & giá vốn'].every((x) => side.includes(x)),
         side.replace(/\s+/g, ' '));
     check('người xem không thấy dấu "đang ẩn" / mục quản trị', await V.$('.bc-side-hidden') === null && !side.includes('Ẩn / hiện mảng'));
     await V.waitForSelector('.bc-stat', { timeout: 20000 });
@@ -193,7 +196,7 @@ try {
     check('Hiện tất cả: mở cả mảng ai đó vừa ẩn ở tab khác', await hiddenNow(A) === '[]');
     await fresh(V, `${viewer}/bc#/tong-quan`);
     await V.waitForSelector('a[data-route="/cong-no"]', { timeout: 20000 });
-    check('mở lại → người xem thấy đủ menu', await V.$$eval('#bc-sidebar .bc-side-link', (els) => els.length) === 13);
+    check('mở lại → người xem thấy đủ menu', await V.$$eval('#bc-sidebar .bc-side-link', (els) => els.length) === ALL.length);
 } catch (e) {
     check('kịch bản chạy hết', false, e.message.split('\n')[0]);
 } finally {
