@@ -277,19 +277,23 @@ def bin_rows(co: str | None = None, whs: dict | None = None) -> list:
 
 
 # ─── Giá vốn dự phòng ────────────────────────────────────────────────────────
-def rates(pairs) -> dict:
+def rates(pairs, co: str | None = None) -> dict:
 	"""{(item, kho): (đơn giá, nguồn)} cho các cặp — nguồn 'bin' | 'bin_khac' | 'so_kho' | 'item' | None (chưa có giá
-	vốn, đơn giá 0). Thứ tự như ERPNext get_valuation_rate, DỪNG ở Item.valuation_rate (không Item Price)."""
+	vốn, đơn giá 0). Thứ tự như ERPNext get_valuation_rate, DỪNG ở Item.valuation_rate (không Item Price). Nấc "Bin
+	khác" và "sổ kho" chỉ đọc kho của công ty `co` (tabWarehouse.company): công ty khác giữ cùng mã với giá vốn khác
+	không được dùng."""
 	pairs = list(dict.fromkeys(pairs))
 	if not pairs:
 		return {}
+	co = co or company()
 	items = in_tuple(i for i, _ in pairs)
 	own, other = {}, {}
-	# "Bin khác": dòng có đơn giá > 0 và tồn lớn nhất của mã (xác định, không phụ thuộc thứ tự đọc).
+	# "Bin khác": dòng có đơn giá > 0 và tồn lớn nhất của mã ở kho công ty (xác định, không phụ thuộc thứ tự đọc).
 	for r in frappe.db.sql(
-			"""SELECT item_code, warehouse, valuation_rate, actual_qty FROM `tabBin`
-			WHERE item_code IN %(items)s AND valuation_rate > 0
-			ORDER BY item_code, actual_qty DESC, warehouse""", {"items": items}, as_dict=True):
+			"""SELECT b.item_code, b.warehouse, b.valuation_rate FROM `tabBin` b
+			JOIN `tabWarehouse` w ON w.name = b.warehouse AND w.company = %(co)s
+			WHERE b.item_code IN %(items)s AND b.valuation_rate > 0
+			ORDER BY b.item_code, b.actual_qty DESC, b.warehouse""", {"items": items, "co": co}, as_dict=True):
 		own[(r.item_code, r.warehouse)] = flt(r.valuation_rate)
 		other.setdefault(r.item_code, flt(r.valuation_rate))
 	need = in_tuple(i for i, w in pairs if (i, w) not in own and i not in other)
@@ -297,11 +301,12 @@ def rates(pairs) -> dict:
 	if need != ("\x00",):
 		for r in frappe.db.sql(
 				"""SELECT t.item_code, t.valuation_rate FROM (
-					SELECT item_code, valuation_rate, ROW_NUMBER() OVER (PARTITION BY item_code
-						ORDER BY posting_datetime DESC, creation DESC) AS rn
-					FROM `tabStock Ledger Entry`
-					WHERE is_cancelled = 0 AND item_code IN %(items)s AND valuation_rate > 0) t
-				WHERE t.rn = 1""", {"items": need}, as_dict=True):
+					SELECT sle.item_code, sle.valuation_rate, ROW_NUMBER() OVER (PARTITION BY sle.item_code
+						ORDER BY sle.posting_datetime DESC, sle.creation DESC) AS rn
+					FROM `tabStock Ledger Entry` sle
+					JOIN `tabWarehouse` w ON w.name = sle.warehouse AND w.company = %(co)s
+					WHERE sle.is_cancelled = 0 AND sle.item_code IN %(items)s AND sle.valuation_rate > 0) t
+				WHERE t.rn = 1""", {"items": need, "co": co}, as_dict=True):
 			sle[r.item_code] = flt(r.valuation_rate)
 	need2 = in_tuple(i for i in need if i not in sle)
 	item = {}
