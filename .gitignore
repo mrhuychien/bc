@@ -30,3 +30,7 @@ npm-debug.log*
 # Env
 .env
 .env.local
+
+# Bộ kiểm thử docs/verified/harness
+docs/verified/harness/.src
+docs/verified/harness/extra_custom_fields.json

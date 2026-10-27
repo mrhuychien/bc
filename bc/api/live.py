@@ -2,8 +2,8 @@
 """bc.api.live — "Báo cáo thời gian thực": ảnh chụp vận hành HÔM NAY cho tab #/thoi-gian-thuc.
 
 Một lượt gọi trả đủ khối: bán hàng hôm nay (so cùng giờ hôm qua), luỹ kế tháng (so cùng
-kỳ tháng trước), sản xuất hôm nay (phiếu Material Receipt vào kho thành phẩm — cùng nguồn
-với SX Hàng Tết), tồn kho thành phẩm, đơn chờ giao, nhập nguyên vật liệu, theo giờ, top
+kỳ tháng trước), sản xuất hôm nay (phiếu sản xuất nhập kho thành phẩm — cùng nguồn
+với SX Hàng Tết, xem bc.api.sx.production_filter), tồn kho thành phẩm, đơn chờ giao, nhập nguyên vật liệu, theo giờ, top
 mã SX hôm nay và dòng sự kiện mới nhất; thêm số liệu THEO KHU cho card khi bấm vào sơ đồ 3D
 (tồn từng kho ERPNext, doanh số theo kênh / khách, đơn chờ giao gần hạn, luỹ kế năm TC).
 Cache 30 giây (dùng chung mọi người xem); SPA tự làm mới mỗi 60 giây. Mọi mốc thời gian
@@ -32,7 +32,7 @@ from bc.api._common import (
 	short_name,
 	to_cartons,
 )
-from bc.api.sx import _wh
+from bc.api.sx import _wh, production_filter
 
 LIVE_TTL = 30
 SO_OPEN = ("To Deliver and Bill", "To Deliver")
@@ -74,20 +74,18 @@ def _production_rows(day, wh, until_time=None) -> list:
 			SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount, COUNT(DISTINCT se.name) AS vouchers
 		FROM `tabStock Entry Detail` sed
 		JOIN `tabStock Entry` se ON se.name = sed.parent
-		WHERE se.docstatus = 1 AND se.stock_entry_type = 'Material Receipt' AND sed.t_warehouse = %(wh)s
-		  AND se.posting_date = %(d)s {cond}
+		WHERE {production_filter()} AND se.posting_date = %(d)s {cond}
 		GROUP BY sed.item_code, HOUR(se.posting_time)
 		""",
-		{"d": day, "wh": wh, "t": until_time},
+		{"d": day, "sx_wh": wh, "t": until_time},
 		as_dict=True,
 	)
 
 
 def _voucher_count(day, wh) -> int:
 	return cint(frappe.db.sql(
-		"""SELECT COUNT(DISTINCT se.name) FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-		   WHERE se.docstatus = 1 AND se.stock_entry_type = 'Material Receipt' AND sed.t_warehouse = %s
-		     AND se.posting_date = %s""", (wh, day))[0][0])
+		f"""SELECT COUNT(DISTINCT se.name) FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+		    WHERE {production_filter()} AND se.posting_date = %(d)s""", {"sx_wh": wh, "d": day})[0][0])
 
 
 def _finished_stock(wh) -> dict:
@@ -214,12 +212,12 @@ def _feed(day, wh, limit=14) -> list:
 			"title": r.customer_name, "sub": CHANNEL_LABELS[channel_of(r.customer_group)],
 			"amount": abs(flt(r.amount)), "doc": r.name, "doctype": "sales-invoice"})
 	for r in frappe.db.sql(
-		"""SELECT se.name, se.posting_time, SUM(sed.transfer_qty) AS boxes, COUNT(DISTINCT sed.item_code) AS items,
+		f"""SELECT se.name, se.posting_time, SUM(sed.transfer_qty) AS boxes, COUNT(DISTINCT sed.item_code) AS items,
 		          MAX(sed.item_name) AS item_name
-		   FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-		   WHERE se.docstatus = 1 AND se.stock_entry_type = 'Material Receipt' AND sed.t_warehouse = %s
-		     AND se.posting_date = %s
-		   GROUP BY se.name, se.posting_time ORDER BY se.posting_time DESC LIMIT %s""", (wh, day, limit), as_dict=True):
+		    FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+		    WHERE {production_filter()} AND se.posting_date = %(d)s
+		    GROUP BY se.name, se.posting_time ORDER BY se.posting_time DESC LIMIT %(n)s""",
+		{"sx_wh": wh, "d": day, "n": limit}, as_dict=True):
 		ev.append({"kind": "production", "time": str(r.posting_time or "")[:5],
 			"title": short_name(r.item_name) + (f" +{cint(r.items) - 1} mã" if cint(r.items) > 1 else ""),
 			"sub": "Nhập kho thành phẩm", "boxes": flt(r.boxes), "doc": r.name, "doctype": "stock-entry"})

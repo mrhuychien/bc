@@ -2,7 +2,7 @@
 // ngày âm (Hồ Ngọc Đức), 1–2 dòng giá trị; ô có dữ liệu bấm được; nút ◀ ● ▶.
 
 import { escapeHtml, isoOf, todayISO } from '../lib/format.js';
-import { lunarLabel, isTetHoliday } from '../lib/lunar.js';
+import { lunarLabel, isTetDay } from '../lib/lunar.js';
 
 const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -30,7 +30,7 @@ export function renderCalendar(el, opts) {
         if (c?.hot) cls.push('bc-hot');
         if (iso === today) cls.push('bc-today');
         if (iso === selected) cls.push('bc-selected');
-        if (markTet && isTetHoliday(d, month, year)) cls.push('bc-tet');
+        if (markTet && isTetDay(d, month, year)) cls.push('bc-tet');
         const tag = c ? 'button type="button"' : 'div';
         grid += `<${tag} class="${cls.join(' ')}" ${c ? `data-cal-date="${iso}"` : ''} ${c?.title ? `title="${escapeHtml(c.title)}"` : ''}>
             <div class="bc-cal-top"><span class="bc-cal-day">${d}</span><span class="bc-cal-lunar">${lunarLabel(d, month, year, d === 1)}</span></div>

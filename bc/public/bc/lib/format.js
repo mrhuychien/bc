@@ -46,6 +46,11 @@ export function escapeHtml(s) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** Cơ sở số doanh số (đã chốt: giữ net_total) — ghi rõ dưới mọi màn có doanh số. */
+export const SALES_BASIS = 'Doanh số = tiền hàng trước VAT (net_total), không gồm hoá đơn số dư đầu kỳ. '
+    + 'Portal NPP và Kế toán tính gồm VAT (grand_total) nên số ở đó cao hơn.';
+export function salesBasisNote() { return `<div class="bc-note bc-mt-3">ⓘ ${escapeHtml(SALES_BASIS)}</div>`; }
+
 export function pad2(n) { return String(n).padStart(2, '0'); }
 export function isoOf(y, m, d) { return `${y}-${pad2(m)}-${pad2(d)}`; }
 export function todayISO() { const d = new Date(); return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate()); }

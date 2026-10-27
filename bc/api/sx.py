@@ -2,8 +2,9 @@
 """bc.api.sx — Sản xuất Hàng Tết (port "Quản lý sản xuất Hàng Tết" + "Sản lượng sản
 xuất theo ngày").
 
-Nguồn: Stock Entry loại Material Receipt (docstatus=1), dòng nhập vào kho thành phẩm
-(BC Settings.sx_warehouse, mặc định "Thành phẩm - HGC"); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
+Nguồn: phiếu SẢN XUẤT nhập kho thành phẩm (production_filter(): Manufacture dòng thành phẩm +
+Material Receipt không phải điều chỉnh kho), dòng nhập vào kho thành phẩm (BC Settings.sx_warehouse →
+SX Settings.kho_tp → "Thành phẩm - HGC"); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
 hệ số UOM "Thùng" của Item. Xuất bán = Sales Invoice (stock_qty, không tính trả).
 Tồn kho = Bin.actual_qty hiện tại CHỈ kho thành phẩm (sx_warehouse, gồm kho con nếu là nhóm). Ảnh + nhóm hàng join Item ngay trong
 SQL (bỏ frappe.client.get_list phía client).
@@ -33,15 +34,38 @@ from bc.api._common import (
 	traditional_group,
 )
 
-# Phiếu nhập thành phẩm = Material Receipt vào kho thành phẩm (đã chốt với người dùng).
-# Mọi truy vấn dùng filter này PHẢI truyền tham số %(sx_wh)s (xem _wh()).
-SX_ENTRY_TYPE = "Material Receipt"
-FINISHED_FILTER = """se.docstatus = 1 AND se.stock_entry_type = 'Material Receipt' AND sed.t_warehouse = %(sx_wh)s"""
+# Phiếu SẢN XUẤT nhập kho thành phẩm. Trước chỉ đếm Material Receipt → thiếu hàng có BOM (app sx
+# ghi Work Order + Manufacture, sx_phieu_nhap_tp.py on_submit) và thừa phiếu điều chỉnh kho:
+#  · Manufacture: chỉ dòng thành phẩm (is_finished_item) — bỏ dòng nguyên liệu / phế phẩm.
+#  · Material Receipt: phiếu nhập tay trước khi có app sx + hàng chưa có BOM của sx ("Nhập tạm —"),
+#    TRỪ phiếu điều chỉnh của app sx: kiểm kê / bù sau kiểm kê (custom_kiem_ke) và các lần dọn
+#    lô / tồn (remarks bắt đầu bằng GHI_CHU của sx/api/lo_cu.py, lo_am.py, tonam.py).
+# Lọc theo `purpose` (chuẩn) chứ không theo tên Stock Entry Type (site có thể đổi tên loại).
+PRODUCTION_PURPOSES = ("Manufacture", "Material Receipt")
+ADJUSTMENT_REMARKS = ("Dọn tồn không lô sau bật lô", "Dọn âm lịch sử lô (D207)", "Dọn tồn âm thành phẩm")
 SX_WAREHOUSE_DEFAULT = "Thành phẩm - HGC"
 
 
+def production_filter() -> str:
+	"""Điều kiện WHERE cho dòng thành phẩm sản xuất — alias `se`/`sed`, PHẢI truyền %(sx_wh)s (xem _wh())."""
+	# LOCATE(...) != 1 thay vì NOT LIKE 'x%': chuỗi không chứa % nên không vướng pyformat của frappe.db.sql.
+	not_adjust = " AND ".join(f"LOCATE({frappe.db.escape(p)}, IFNULL(se.remarks, '')) != 1" for p in ADJUSTMENT_REMARKS)
+	if frappe.db.has_column("Stock Entry", "custom_kiem_ke"):  # field của app sx — site không cài sx thì không có
+		not_adjust += " AND IFNULL(se.custom_kiem_ke, '') = ''"
+	return f"""se.docstatus = 1 AND sed.t_warehouse = %(sx_wh)s AND (
+		(se.purpose = 'Manufacture' AND sed.is_finished_item = 1)
+		OR (se.purpose = 'Material Receipt' AND {not_adjust}))"""
+
+
 def _wh() -> str:
-	return get_settings().get("sx_warehouse") or SX_WAREHOUSE_DEFAULT
+	"""Kho thành phẩm: BC Settings → kho TP của app sx (đọc mềm) → mặc định."""
+	wh = get_settings().get("sx_warehouse")
+	if not wh and frappe.db.exists("DocType", "SX Settings"):
+		try:
+			wh = frappe.db.get_single_value("SX Settings", "kho_tp")
+		except Exception:
+			wh = None
+	return wh or SX_WAREHOUSE_DEFAULT
 
 
 def _range(from_date, to_date) -> tuple:
@@ -86,7 +110,7 @@ def get_items(from_date=None, to_date=None, refresh=0):
 			SELECT sed.item_code, SUM(sed.transfer_qty) AS qty
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {FINISHED_FILTER} AND se.posting_date BETWEEN %(f)s AND %(t)s
+			WHERE {production_filter()} AND se.posting_date BETWEEN %(f)s AND %(t)s
 			GROUP BY sed.item_code
 			""", p, as_dict=True)}
 		outgoing = {r.item_code: flt(r.qty) for r in frappe.db.sql(
@@ -156,17 +180,18 @@ def get_items(from_date=None, to_date=None, refresh=0):
 def _diagnose(f, t, has_production: bool) -> dict:
 	"""Giải thích khi khoảng lọc không có số SX: phiếu theo loại trong khoảng, phiếu SX gần nhất,
 	và khoảng mùa trước để UI gợi ý xem lại."""
-	by_purpose = {(r.stock_entry_type or r.purpose): cint(r.n) for r in frappe.db.sql(
-		"""SELECT stock_entry_type, purpose, COUNT(*) AS n FROM `tabStock Entry`
-		   WHERE docstatus = 1 AND posting_date BETWEEN %(f)s AND %(t)s GROUP BY stock_entry_type, purpose""",
+	by_purpose = {r.purpose: cint(r.n) for r in frappe.db.sql(
+		"""SELECT purpose, COUNT(*) AS n FROM `tabStock Entry`
+		   WHERE docstatus = 1 AND posting_date BETWEEN %(f)s AND %(t)s GROUP BY purpose""",
 		{"f": f, "t": t}, as_dict=True)}
 	last = frappe.db.sql(
 		f"""SELECT MAX(se.posting_date) FROM `tabStock Entry Detail` sed
-		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {FINISHED_FILTER}""", {"sx_wh": _wh()})[0][0]
+		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {production_filter()}""", {"sx_wh": _wh()})[0][0]
 	return {
 		"has_production": has_production,
 		"entries_by_purpose": by_purpose,
-		"entry_type": SX_ENTRY_TYPE,
+		"entry_types": list(PRODUCTION_PURPOSES),
+		"entry_type": " / ".join(PRODUCTION_PURPOSES),
 		"warehouse": _wh(),
 		"last_manufacture": iso(last),
 		"prev_from": iso(add_months(f, -12)),
@@ -203,7 +228,7 @@ def get_daily_summary(year=None, month=None, refresh=0):
 			SELECT se.posting_date AS date, sed.item_code, SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {FINISHED_FILTER} AND se.posting_date BETWEEN %(s)s AND %(e)s
+			WHERE {production_filter()} AND se.posting_date BETWEEN %(s)s AND %(e)s
 			GROUP BY se.posting_date, sed.item_code
 			""",
 			{"s": start, "e": end, "sx_wh": _wh()},
@@ -241,7 +266,7 @@ def get_daily_detail(date=None, refresh=0):
 				SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {FINISHED_FILTER} AND se.posting_date = %(d)s
+			WHERE {production_filter()} AND se.posting_date = %(d)s
 			GROUP BY se.name, sed.item_code
 			ORDER BY se.name, sed.item_code
 			""",

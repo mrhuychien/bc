@@ -13,6 +13,53 @@ qua desk API.
   truyền thống, % mục tiêu Tết, bảng ngày mùng 1 Tết, khoảng SX mặc định, TTL cache,
   cách tính cùng kỳ Tết. Không còn hardcode năm/ngày/tên nhóm trong JS.
 
+## Định nghĩa số liệu dùng chung (đã chốt)
+
+- **Doanh số** = `net_total` (tiền hàng trước VAT, loại hoá đơn số dư đầu kỳ). Mọi màn có doanh số ghi
+  rõ dòng này ở cuối trang (`salesBasisNote()` trong `lib/format.js`). Portal NPP và Kế toán dùng
+  `grand_total` (gồm VAT) nên số ở đó cao hơn.
+- **Công nợ** tính như app **ketoan**: số dư sổ cái; riêng **MT theo bảng kê thanh toán của chuỗi**.
+  Tiền ở nhóm Công nợ GỒM VAT.
+- **Ngày Tết**: một nguồn duy nhất là **BC Settings › Ngày mùng 1 Tết**. Frontend nhận
+  `BC_CONTEXT.tetDates` (lịch SX Tết tô mùng 1–3 theo bảng này, năm chưa khai mới dùng thuật toán âm
+  lịch); app **pkd** đọc mềm bảng này (đè từng năm lên hằng số dự phòng của nó).
+- **Kênh**: NPP / MT / Du lịch / **Showroom** / Khác — theo 4 nhóm gốc trong PKD Settings (`kenh_*`,
+  đọc từng field: pkd chưa có `kenh_showroom` thì chỉ mất Showroom), không có PKD Settings thì dò từ
+  khoá tên nhóm. Showroom chỉ hiện thẻ khi có số.
+- **Sản xuất** = phiếu SẢN XUẤT nhập kho thành phẩm (`bc.api.sx.production_filter`): Manufacture (dòng
+  thành phẩm — app sx ghi Work Order + Manufacture cho mã có BOM) + Material Receipt, TRỪ phiếu điều
+  chỉnh của app sx (kiểm kê / bù sau kiểm kê có `custom_kiem_ke`; dọn lô / tồn âm theo `remarks`). Trước
+  đây chỉ đếm Material Receipt → thiếu hàng có BOM, thừa phiếu kiểm kê. Kho thành phẩm: BC Settings →
+  `SX Settings.kho_tp` → "Thành phẩm - HGC".
+
+## Công nợ (`#/cong-no`, `#/phai-tra`)
+
+`bc.api.cn` — công ty do server chọn (Ketoan Portal Settings.default_company → Global Defaults), không
+nhận từ client; cache dùng chung theo ngày.
+- **Phải thu**: số dư GL từng khách trên TK phải thu (Ketoan Portal Settings.receivable_account, trống thì
+  mọi TK loại Receivable). Quá hạn phân bổ FIFO như danh sách công nợ của Kế toán (số dư thuộc hoá đơn
+  mới nhất; hạn = due_date, trống thì ngày HĐ + invoice_due_days); phần không gắn được hoá đơn → cột
+  "Chưa rõ hạn". Tuổi nợ theo aging_bucket_1/2/3 (mặc định 30/60/90). DSO như `ketoan.get_dso`.
+- **MT**: gọi thẳng helper của ketoan (`mt_debt._fetch/_enrich/_rollup/_orphan_returns` — không guard,
+  không phụ thuộc phiên); khách MT (nhóm = Ketoan Portal Settings.mt_customer_group) bị loại khỏi phần GL.
+  Không có bảng kê / helper lỗi → MT tính theo GL, trang ghi rõ.
+- **Phải trả & quỹ**: GL TK loại Payable (tuổi nợ theo hạn Purchase Invoice, lịch trả 14 ngày); số dư TK
+  Cash/Bank (`cash_bank_account_filter`), số tài khoản ngân hàng trong tên TK được che (`•••1234`).
+
+## ATTP (`#/attp`)
+
+`bc.api.attp` — cùng số với màn **Tổng quan ATTP** và **Báo cáo tháng** của Ban ISO (app sx): gọi helper
+của sx (19 mảng, hộp nhắc, luật đèn), chỉ làm lại 2 chỗ phụ thuộc người xem: chỉ số Vòng kiểm (sx gọi
+`dashboard` có guard) và mục biên bản (sx tính "chờ BẠN ký" theo người mở màn). Không trả route SPA của
+sx, bỏ chi tiết dòng sổ. Site không cài sx → trang báo "chưa có số liệu".
+
+## Kiểm thử
+
+Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
+bench): sản xuất 22, kênh 9, công nợ 24 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
+/ `so_lieu` của sx thật), ngày Tết 6 + 5, giao diện Playwright 64 (desktop + điện thoại). Mỗi bản sửa
+đều đã thử phá (đưa code về bản lỗi → test phải đỏ).
+
 ## Cài đặt / deploy
 
 ```bash
@@ -59,8 +106,8 @@ RVHG-Xuong-3D, three.js 0.180 MIT, tại `bc/public/bc/xuong3d/`) với bảng s
 vòng sáng trên từng khu; dòng sự kiện trong ngày; biểu đồ theo giờ; top mã SX hôm nay.
 
 - API `bc.api.live.get_snapshot` (cache 30 giây, dùng chung): bán hôm nay so cùng giờ hôm
-  qua, luỹ kế tháng so cùng kỳ, SX hôm nay (Material Receipt vào kho thành phẩm như SX
-  Hàng Tết), tồn kho thành phẩm, Sales Order chờ giao, Purchase Receipt hôm nay, sự kiện.
+  qua, luỹ kế tháng so cùng kỳ, SX hôm nay (phiếu sản xuất nhập kho thành phẩm như SX
+  Hàng Tết — `production_filter`), tồn kho thành phẩm, Sales Order chờ giao, Purchase Receipt hôm nay, sự kiện.
 - 3D chạy trong iframe `/bc_xuong` (www page riêng, cùng quyền BC Viewer/System Manager);
   SPA gửi số liệu bằng postMessage cùng origin → `xuong3d/bridge.js` dùng `window.__RVHG`
   của mô hình để gắn nhãn; KHÔNG sửa lõi 3D (`app.js`, `view-ui.js` giữ nguyên bản gốc).
@@ -101,7 +148,7 @@ grand_total), `_KEYWORDS` (map kênh), `PLAN_COLUMNS` (cột kế hoạch trên 
 
 ```
 bc/api/        _common.py (guard, settings, fy_range, tet_season, cache, kênh),
-               common.py, kd.py, tet.py, sx.py, _provinces.py
+               common.py, kd.py, tet.py, sx.py, live.py, cn.py (công nợ), attp.py, _provinces.py
 bc/www/        bc.py (guard + BC_CONTEXT), bc.html (import map + shell)
 bc/public/bc/  shell.js, shell.css, lib/, components/, views/
 bc/scripts/    dump_report_sql.py, compare_tet_reports.py

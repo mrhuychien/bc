@@ -3,7 +3,7 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtMoney, fmtNum, fmtPct } from '../lib/format.js';
+import { escapeHtml, fmtMoney, fmtNum, fmtPct, salesBasisNote } from '../lib/format.js';
 import { loadLeaflet } from '../lib/leaflet.js';
 import { PROVINCE_COORDS, VN_CENTER, VN_ZOOM } from '../lib/provinces.js';
 import { dataTable } from '../components/data-table.js';
@@ -82,7 +82,8 @@ export async function render({ container, isCurrent }) {
             <div class="bc-legend">${LEVELS.map(([, c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>
         </div>
         <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Bảng tỉnh</div><div class="bc-card-sub" id="tt-src"></div></div>
-            <div id="tt-table">${skeleton(220)}</div></div>`;
+            <div id="tt-table">${skeleton(220)}</div></div>
+        ${salesBasisNote()}`;
     let res;
     try {
         res = await api.kd.provinces();

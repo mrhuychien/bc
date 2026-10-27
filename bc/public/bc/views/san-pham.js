@@ -3,7 +3,7 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtNum, growthText } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtNum, growthText, salesBasisNote } from '../lib/format.js';
 import { tabs, bindTabs } from '../components/tabs.js';
 import { skeleton } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
@@ -71,7 +71,8 @@ export async function render({ container }) {
             <span class="bc-view-banner-badge">📦 Top SP</span>
         </div>
         ${tabs([{ key: 'all', label: 'Tất cả' }, { key: 'traditional', label: g.traditional || 'Hàng TT' }, { key: 'tet', label: g.tet || 'Hàng Tết' }], state.group, 'sp')}
-        <div class="bc-card"><div class="bc-card-sub" id="sp-sub" style="margin-bottom:.6rem"></div><div id="sp-list"></div></div>`;
+        <div class="bc-card"><div class="bc-card-sub" id="sp-sub" style="margin-bottom:.6rem"></div><div id="sp-list"></div></div>
+        ${salesBasisNote()}`;
     bindTabs(container, 'sp', (k) => load(k));
     bindHide(container.querySelector('#sp-list'), (code) => { state.rows = state.rows.filter((r) => r.item_code !== code); paint(); });
     container.querySelector('#sp-list').addEventListener('click', (e) => {

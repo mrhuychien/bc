@@ -3,7 +3,7 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtMoney, fmtNum, growthClass, growthText, calcGrowth } from '../lib/format.js';
+import { escapeHtml, fmtMoney, fmtNum, growthClass, growthText, calcGrowth, salesBasisNote } from '../lib/format.js';
 import { loadChartLib, chartRegistry } from '../lib/chart.js';
 import { dataTable } from '../components/data-table.js';
 import { kpiGrid } from '../components/kpi-grid.js';
@@ -24,7 +24,8 @@ export async function render({ container, isCurrent }) {
         <div id="th-kpi">${skeleton(70)}</div>
         <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Năm nay · Cùng kỳ · Trả hàng</div></div>
             <div class="bc-chart-wrap bc-tall" id="th-wrap"><canvas id="th-bar"></canvas></div></div>
-        <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Chi tiết tháng</div></div><div id="th-table">${skeleton(200)}</div></div>`;
+        <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Chi tiết tháng</div></div><div id="th-table">${skeleton(200)}</div></div>
+        ${salesBasisNote()}`;
     let res;
     try {
         res = await api.kd.monthly();

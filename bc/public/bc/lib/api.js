@@ -68,6 +68,16 @@ export const sx = {
     dailyDetail:  (date)               => call('bc.api.sx.get_daily_detail', { date }),
 };
 
+export const cn = {
+    receivables: () => call('bc.api.cn.get_receivables'),
+    payables:    () => call('bc.api.cn.get_payables'),
+};
+
+export const attp = {
+    overview: ()      => call('bc.api.attp.get_overview'),
+    report:   (thang) => call('bc.api.attp.get_report', { thang }),
+};
+
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };

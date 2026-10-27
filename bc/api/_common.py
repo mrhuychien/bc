@@ -270,13 +270,14 @@ def short_name(name: str | None) -> str:
 	return s or (name or "")
 
 
-# ─── Kênh (NPP / MT / Du lịch / Khác) theo Customer Group snapshot trên hoá đơn ─
-CHANNEL_LABELS = {"npp": "NPP", "mt": "MT", "dulich": "Du lịch", "khac": "Khác"}
+# ─── Kênh (NPP / MT / Du lịch / Showroom / Khác) theo Customer Group snapshot trên hoá đơn ─
+CHANNEL_LABELS = {"npp": "NPP", "mt": "MT", "dulich": "Du lịch", "showroom": "Showroom", "khac": "Khác"}
 _CHANNEL_KEY = CACHE_PREFIX + "channel_map"
 _KEYWORDS = (
 	("npp", (r"phan phoi", r"\bnpp\b", r"dai ly")),
 	("mt", (r"sieu thi", r"\bmt\b", r"modern trade", r"chuoi")),
 	("dulich", (r"du lich", r"\btour")),
+	("showroom", (r"showroom",)),
 )
 
 
@@ -287,7 +288,7 @@ def _plain(s: str) -> str:
 
 
 def channel_map() -> dict[str, str]:
-	"""{customer_group: 'npp'|'mt'|'dulich'|'khac'} — cache 10 phút.
+	"""{customer_group: 'npp'|'mt'|'dulich'|'showroom'|'khac'} — cache 10 phút.
 
 	Ưu tiên cấu hình kênh của app pkd (PKD Settings: 3 root nested-set) nếu site có
 	— đọc mềm, không phụ thuộc cứng (shipping-gotchas #22). Không có thì dò từ khoá
@@ -302,13 +303,17 @@ def channel_map() -> dict[str, str]:
 
 	roots = {}
 	if frappe.db.exists("DocType", "PKD Settings"):  # Single → không có bảng tab riêng
-		try:
-			for key, field in (("npp", "kenh_npp"), ("mt", "kenh_mt"), ("dulich", "kenh_dulich")):
+		# Cùng thứ tự với pkd.api.utils.channel_map: root đọc sau ghi đè nhóm con nằm trong root trước.
+		# Từng field một: kenh_showroom mới có ở pkd sau này — site chưa migrate thì chỉ bỏ showroom.
+		for key, field in (("npp", "kenh_npp"), ("mt", "kenh_mt"), ("dulich", "kenh_dulich"),
+				("showroom", "kenh_showroom")):
+			try:
 				v = frappe.db.get_single_value("PKD Settings", field)
-				if v:
-					roots[key] = v
-		except Exception:
-			roots = {}
+			except Exception:  # v16: field chưa có trong meta → frappe.throw (đã ghi message_log)
+				frappe.clear_last_message()
+				v = None
+			if v:
+				roots[key] = v
 	if roots:
 		by_name = {g.name: g for g in groups}
 		for key, root in roots.items():

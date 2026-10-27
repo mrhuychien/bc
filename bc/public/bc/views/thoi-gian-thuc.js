@@ -5,7 +5,7 @@
 
 import { call } from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtMoney, fmtNum, growthClass, growthText } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtMoney, fmtNum, growthClass, growthText, salesBasisNote } from '../lib/format.js';
 import { solarToLunar } from '../lib/lunar.js';
 import { loadChartLib, chartRegistry } from '../lib/chart.js';
 import { skeleton } from '../components/skeleton.js';
@@ -168,7 +168,7 @@ function prodInfo(d, isMain) {
         ],
         lists: [{ title: 'Sản xuất nhiều nhất hôm nay', empty: 'Chưa có phiếu nhập thành phẩm hôm nay',
             rows: p.top.slice(0, 5).map((t) => [t.short_name, boxesOrCartons(t)]) }],
-        note: isMain ? `Nguồn: phiếu Material Receipt nhập kho ${d.meta.warehouse} hôm nay.`
+        note: isMain ? `Nguồn: phiếu sản xuất (Manufacture + nhập thẳng, đã loại kiểm kê / dọn lô) nhập kho ${d.meta.warehouse} hôm nay.`
             : 'Số liệu chung toàn xưởng — hệ thống chưa ghi nhận sản lượng riêng theo công đoạn.',
     };
 }
@@ -409,6 +409,7 @@ export async function render({ container, isCurrent }) {
                     <div class="bc-lv-card"><div class="bc-lv-title">🥇 Sản xuất nhiều nhất hôm nay</div><div id="lv-top">${skeleton(32, 4, 6)}</div></div>
                 </div>
             </div>
+            ${salesBasisNote()}
         </section>`;
     document.getElementById('lv-3d')?.addEventListener('load', () => setTimeout(sendTo3d, 300));
     tickClock();

@@ -111,3 +111,13 @@ export function isTetHoliday(dd, mm, yy) {
     const l = solarToLunar(dd, mm, yy);
     return l.month === 1 && !l.leap && l.day <= 3;
 }
+
+/** Mùng 1–3 Tết theo BC Settings (nguồn duy nhất, BC_CONTEXT.tetDates); năm chưa khai → thuật toán âm lịch.
+ * Tết luôn rơi 21/01–20/02 nên mùng 1–3 không vắt qua năm dương — tra theo `yy` là đủ. */
+export function isTetDay(dd, mm, yy, tetDates = window.BC_CONTEXT?.tetDates) {
+    const t = tetDates?.[String(yy)];
+    if (!t) return isTetHoliday(dd, mm, yy);
+    const [ty, tm, td] = t.split('-').map(Number);
+    const diff = (Date.UTC(yy, mm - 1, dd) - Date.UTC(ty, tm - 1, td)) / 86400000;
+    return diff >= 0 && diff <= 2;
+}

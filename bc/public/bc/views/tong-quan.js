@@ -3,14 +3,14 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtMoney, fmtMoneyFull, fmtPct } from '../lib/format.js';
+import { escapeHtml, fmtMoney, fmtMoneyFull, fmtPct, salesBasisNote } from '../lib/format.js';
 import { loadChartLib, chartRegistry, PALETTE } from '../lib/chart.js';
 import { statCard } from '../components/stat-card.js';
 import { skeletonGrid } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
 
 const charts = chartRegistry();
-const CHANNEL_ICONS = { npp: '🚚', mt: '🏬', dulich: '🧳', khac: '📦' };
+const CHANNEL_ICONS = { npp: '🚚', mt: '🏬', dulich: '🧳', showroom: '🏪', khac: '📦' };
 
 function byPeriod(rows) { return Object.fromEntries(rows.map((r) => [r.period, r])); }
 function money(v) { return `<span title="${fmtMoneyFull(v)}">${fmtMoney(v)}</span>`; }
@@ -38,9 +38,11 @@ function summaryHtml(res) {
 }
 
 function channelsHtml(res) {
-    const keys = ['npp', 'mt', 'dulich', 'khac'];
     const get = (period, k) => res.rows.find((r) => r.period === period && r.channel_key === k) || {};
-    return `<div class="bc-grid bc-grid-4">${keys.map((k) => {
+    // Showroom chỉ hiện khi có số (site chưa khai kênh Showroom trong PKD Settings → giữ 4 thẻ như cũ).
+    const keys = ['npp', 'mt', 'dulich', 'showroom', 'khac'].filter((k) => k !== 'showroom'
+        || ['current', 'same_period'].some((p) => get(p, k).sales || get(p, k).returns));
+    return `<div class="bc-grid ${keys.length > 4 ? 'bc-grid-5' : 'bc-grid-4'}">${keys.map((k) => {
         const cur = get('current', k), sp = get('same_period', k);
         const g = sp.sales ? Math.round((cur.sales - sp.sales) / sp.sales * 1000) / 10 : null;
         return statCard({ label: cur.channel || k, icon: CHANNEL_ICONS[k], value: money(cur.sales),
@@ -97,7 +99,8 @@ export async function render({ container, isCurrent }) {
         <div class="bc-section-title">Cơ cấu doanh số</div>
         <div class="bc-grid bc-grid-charts">
             ${chartCard('tq-c-groups', 'Ngành hàng')}${chartCard('tq-c-channels', 'Kênh bán')}${chartCard('tq-c-customers', 'Top khách hàng')}
-        </div>`;
+        </div>
+        ${salesBasisNote()}`;
 
     const block = (promise, onOk, targetId) => promise.then((res) => { if (isCurrent()) onOk(res); })
         .catch((err) => { if (isCurrent()) fill(targetId, errorState(err)); });

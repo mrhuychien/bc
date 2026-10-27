@@ -156,9 +156,11 @@
 .bc-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-3 { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }  /* đủ chỗ 3 ô/hàng, hẹp thì tự xuống dòng */
 .bc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bc-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-charts { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) {
     .bc-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .bc-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .bc-grid-charts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .bc-grid-split { grid-template-columns: 2fr 1fr; }
 }
@@ -494,3 +496,27 @@
 .bc-lv .bc-progress { background: rgba(255, 255, 255, .08); }
 .bc-lv .bc-empty { color: var(--lv-muted); } .bc-app .bc-lv .bc-empty-title { color: #e2e8f0; }
 .bc-lv .bc-skeleton { background: linear-gradient(90deg, rgba(255,255,255,.05) 25%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.05) 75%); background-size: 200% 100%; }
+
+/* ─── ATTP (#/attp): thẻ mảng có đèn đỏ / vàng / xanh ───────────────────── */
+.bc-attp-grid { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .bc-attp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .bc-attp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.bc-attp-card { background: var(--bc-surface); border: 1px solid var(--bc-border); border-left: 5px solid var(--bc-success);
+    border-radius: var(--bc-radius-md); padding: .85rem .95rem; box-shadow: var(--bc-shadow-sm); min-width: 0; }
+.bc-attp-card.bc-attp-do { border-left-color: var(--bc-danger); background: #fffafa; }
+.bc-attp-card.bc-attp-vang { border-left-color: var(--bc-warning); }
+.bc-attp-head { display: flex; gap: .55rem; align-items: flex-start; }
+.bc-attp-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--bc-success); }
+.bc-attp-do .bc-attp-dot { background: var(--bc-danger); box-shadow: 0 0 0 4px rgba(239, 68, 68, .18); }
+.bc-attp-vang .bc-attp-dot { background: var(--bc-warning); }
+.bc-attp-name { font-weight: 800; font-size: .92rem; color: var(--bc-text); }
+.bc-attp-form { font-size: .72rem; color: var(--bc-text-3); }
+.bc-attp-num { font-size: 1.5rem; font-weight: 800; margin: .35rem 0 .2rem; color: var(--bc-text); }
+.bc-attp-num span { font-size: .78rem; font-weight: 600; color: var(--bc-text-2); margin-left: .4rem; }
+.bc-attp-line { font-size: .8rem; color: var(--bc-text-2); margin-top: 2px; }
+.bc-attp-todo { margin-top: .5rem; font-size: .8rem; }
+.bc-attp-todo summary { cursor: pointer; font-weight: 700; color: var(--bc-accent-1); padding: 4px 0; }
+.bc-attp-item { border-left: 3px solid var(--bc-warning); padding: 4px 8px; margin-top: 4px; background: var(--bc-surface-2);
+    border-radius: 6px; color: var(--bc-text-2); overflow-wrap: anywhere; }
+.bc-attp-item b { color: var(--bc-text); font-weight: 700; }
+.bc-attp-item-cao { border-left-color: var(--bc-danger); }

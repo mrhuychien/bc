@@ -3,7 +3,7 @@
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
-import { escapeHtml, fmtDate, fmtNum, fmtPct, growthClass, growthText } from '../lib/format.js';
+import { escapeHtml, fmtDate, fmtNum, fmtPct, growthClass, growthText, salesBasisNote } from '../lib/format.js';
 import { dataTable } from '../components/data-table.js';
 import { skeleton } from '../components/skeleton.js';
 import { errorState } from '../components/empty-state.js';
@@ -123,7 +123,8 @@ export async function render({ container, isCurrent }) {
         ${panel('tet-growth', 'NPP tăng trưởng')}
         ${panel('tet-npp', 'NPP chi tiết Hàng Tết', `Cột NT + ${fmtNum(targetPct)}% = mục tiêu trong BC Settings`)}
         ${panel('tet-mt', 'Siêu thị (MT)')}
-        ${panel('tet-items', 'Mã hàng Tết')}`;
+        ${panel('tet-items', 'Mã hàng Tết')}
+        ${salesBasisNote()}`;
 
     const block = (promise, id, toHtml) => promise.then((res) => {
         if (!isCurrent()) return;

@@ -18,6 +18,7 @@ from bc.api._common import (
 	iso,
 	setting_int,
 	target_pct,
+	tet_dates,
 	tet_group,
 	tet_season,
 	traditional_group,
@@ -63,6 +64,8 @@ def build_context_meta() -> dict:
 		"targetPct": target_pct(),
 		"cacheTtl": setting_int("cache_ttl", 300),
 		"hasTetDates": bool(get_settings().tet_dates),
+		# Nguồn ngày Tết duy nhất cho frontend (lịch tô mùng 1–3) — không tự tính âm lịch nữa.
+		"tetDates": {str(y): iso(d) for y, d in sorted(tet_dates().items())},
 	}
 
 

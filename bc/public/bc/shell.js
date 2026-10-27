@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p4-r3';
+const BUILD = 'bc-p5-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -22,6 +22,9 @@ const VIEW_MODULES = {
     '/tinh-thanh': () => import(withV('./views/tinh-thanh.js')),
     '/san-pham': () => import(withV('./views/san-pham.js')),
     '/sx-tet': () => import(withV('./views/sx-tet.js')),
+    '/cong-no': () => import(withV('./views/cong-no.js')),
+    '/phai-tra': () => import(withV('./views/phai-tra.js')),
+    '/attp': () => import(withV('./views/attp.js')),
 };
 // Màn quản trị chỉ đăng ký cho System Manager (server vẫn guard mọi method).
 if (CTX.isSysManager) {
@@ -29,7 +32,7 @@ if (CTX.isSysManager) {
     VIEW_MODULES['/an-sp'] = () => import(withV('./views/an-sp.js'));
 }
 
-// Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Công nợ, Nhân sự, ATTP).
+// Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Nhân sự).
 const NAV_GROUPS = [
     { title: 'Điều hành', items: [
         { route: '/thoi-gian-thuc', label: 'Thời gian thực', icon: 'fa-tower-broadcast' },
@@ -46,9 +49,14 @@ const NAV_GROUPS = [
         { route: '/sx-tet', label: 'SX Hàng Tết', icon: 'fa-industry' },
     ] },
     { title: 'Kho', items: [] },
-    { title: 'Công nợ', items: [] },
+    { title: 'Công nợ', items: [
+        { route: '/cong-no', label: 'Phải thu', icon: 'fa-hand-holding-dollar' },
+        { route: '/phai-tra', label: 'Phải trả & quỹ', icon: 'fa-building-columns' },
+    ] },
     { title: 'Nhân sự', items: [] },
-    { title: 'ATTP', items: [] },
+    { title: 'ATTP', items: [
+        { route: '/attp', label: 'An toàn thực phẩm', icon: 'fa-shield-halved' },
+    ] },
 ];
 if (CTX.isSysManager) NAV_GROUPS.push({ title: 'Quản trị', items: [
     { route: '/chia-se', label: 'Chia sẻ lãnh đạo', icon: 'fa-share-nodes' },

@@ -175,7 +175,8 @@ async function loadMonth(year, month) {
 
 function paintDiag(d) {
     if (!d || d.has_production) { fill('sx-diag', ''); return; }
-    const other = Object.entries(d.entries_by_purpose || {}).filter(([k]) => k !== d.entry_type);
+    const counted = d.entry_types || [d.entry_type];
+    const other = Object.entries(d.entries_by_purpose || {}).filter(([k]) => !counted.includes(k));
     const today = todayISO();
     const why = state.from > today
         ? `Mùa ${fmtDate(state.from)} → ${fmtDate(state.to)} chưa bắt đầu nên chưa có phiếu sản xuất.`
@@ -183,7 +184,7 @@ function paintDiag(d) {
     fill('sx-diag', `<div class="bc-alert">
         <b>${escapeHtml(why)}</b>
         ${d.last_manufacture ? `<br>Phiếu sản xuất gần nhất: ${fmtDate(d.last_manufacture)}.` : `<br>Chưa tìm thấy phiếu ${escapeHtml(d.entry_type)} nào nhập kho "${escapeHtml(d.warehouse)}".`}
-        ${other.length ? `<br>Trong khoảng này có phiếu kho loại khác: ${other.map(([k, n]) => `${escapeHtml(k)} (${n})`).join(', ')} — báo cáo chỉ tính phiếu ${escapeHtml(d.entry_type)} vào kho "${escapeHtml(d.warehouse)}".` : ''}
+        ${other.length ? `<br>Trong khoảng này có phiếu kho loại khác: ${other.map(([k, n]) => `${escapeHtml(k)} (${n})`).join(', ')} — báo cáo chỉ tính phiếu sản xuất (${escapeHtml(d.entry_type)}, đã loại kiểm kê / dọn lô) vào kho "${escapeHtml(d.warehouse)}".` : ''}
         <div class="bc-mt-2"><button type="button" class="bc-btn bc-btn-sm bc-btn-primary" id="sx-prev">Xem mùa trước (${fmtDate(d.prev_from)} → ${fmtDate(d.prev_to)})</button></div>
     </div>`);
     document.getElementById('sx-prev')?.addEventListener('click', async () => {
