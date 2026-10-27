@@ -84,14 +84,15 @@ const SCEN = {
             body: new URLSearchParams(t ? { thang: t } : {}) }).then((r) => r.json()).then((j) => j.message), thang);
         const d = await api();
         const k = await page.textContent('#vc-kpis');
-        check(`Vận chuyển: KPI khớp API (${d.giao.total} đơn, chờ quá 3 ngày ${d.giao.cho_qua_han.qua_n}, cước 1,3 tr, sự cố mở 3)`,
-            new RegExp(`Đơn giao trong tháng\\s*${d.giao.total}\\b`).test(k) && new RegExp(`quá 3 ngày\\s*${d.giao.cho_qua_han.qua_n}\\b`).test(k)
-            && k.includes('1,3 tr') && /Sự cố đang mở\s*3/.test(k), k.replace(/\s+/g, ' ').slice(0, 400));
+        check(`Vận chuyển: KPI khớp API (${d.giao.total} đơn, chờ quá 3 ngày ${d.giao.cho_qua_han.qua_n} đến hôm nay, cước 1,3 tr, sự cố mở ${d.su_co.dang_mo})`,
+            new RegExp(`Đơn giao trong tháng\\s*${d.giao.total}\\b`).test(k) && new RegExp(`quá 3 ngày \\(đến hôm nay\\)\\s*${d.giao.cho_qua_han.qua_n}\\b`).test(k)
+            && k.includes('1,3 tr') && new RegExp(`Sự cố đang mở\\s*${d.su_co.dang_mo}\\b`).test(k), k.replace(/\s+/g, ' ').slice(0, 400));
         const g = await page.textContent('#vc-giao');
         check('Vận chuyển: bảng hình thức có Tự vận chuyển, Chưa phân công; giao lần đầu 66,7%',
             g.includes('Tự vận chuyển') && g.includes('Chưa phân công') && g.includes('66,7%'), g.replace(/\s+/g, ' ').slice(0, 300));
         const cu = await page.textContent('#vc-cuoc');
-        check('Vận chuyển: cảnh báo trả cước bất thường + điều chỉnh tay', cu.includes('đã huỷ') && cu.includes('Điều chỉnh tay'), cu.slice(0, 300));
+        check('Vận chuyển: cảnh báo trả cước bất thường, chuyến huỷ còn bút toán, điều chỉnh tay',
+            cu.includes('chưa duyệt hoặc đã huỷ') && cu.includes('chuyến đã huỷ nhưng bút toán') && cu.includes('Điều chỉnh tay'), cu.slice(0, 400));
         const th = await page.textContent('#vc-thuhoi');
         check('Vận chuyển: thu hồi theo chặng phiếu kiểm', th.includes('Đang kiểm') && th.includes('Đã kiểm hàng') && !th.includes('Hủy tại chỗ'), th.slice(0, 300));
         const xe = await page.textContent('#vc-xe');
@@ -99,12 +100,16 @@ const SCEN = {
             xe.includes('29C-111.11') && xe.includes('quá hạn 7 ngày') && !xe.includes('29C-333.33'), xe.replace(/\s+/g, ' ').slice(0, 300));
         const all = await page.textContent('main');
         check('Vận chuyển: không lộ tên lái xe / khách', !all.includes('Nguyễn Văn Lái') && !all.includes('Khách Bí Mật'));
+        await page.focus('#vc-thang');  // người dùng bàn phím đang ở ô chọn tháng
         await page.selectOption('#vc-thang', '2026-09');
         await page.waitForFunction(() => /Từ 01\/09\/2026/.test(document.querySelector('#vc-filter')?.textContent || ''), null, { timeout: 15000 });
         const d9 = await api('2026-09');
         const k9 = await page.textContent('#vc-kpis');
         check(`Vận chuyển: đổi sang tháng 9 → khớp API (${d9.giao.total} đơn, khác tháng 10)`, d9.giao.total !== d.giao.total
             && new RegExp(`Đơn giao trong tháng\\s*${d9.giao.total}\\b`).test(k9), k9.replace(/\s+/g, ' ').slice(0, 200));
+        check('Vận chuyển: tháng 9 dưới 5 lái xe → cước ẩn tiền', d9.cuoc.an === true && /Cước xe nhà\s*ẩn/.test(k9)
+            && (await page.textContent('#vc-cuoc')).includes('không hiện tiền'), k9.replace(/\s+/g, ' ').slice(0, 300));
+        check('Vận chuyển: ô chọn tháng vẫn giữ focus sau khi tải', await page.evaluate(() => document.activeElement?.id === 'vc-thang'));
         const nav = await page.textContent('.bc-sidebar, nav, body');
         check('Menu: có nhóm Vận chuyển', nav.includes('Giao hàng & xe'));
     },
@@ -119,9 +124,11 @@ const SCEN = {
         const l = await page.textContent('#ns-luong');
         check('Nhân sự: lương có "chưa có dữ liệu", "tạm tính", "ẩn", cảnh báo hook, phiếu lỗi kỳ',
             ['chưa có dữ liệu', 'tạm tính', 'ẩn', 'chưa bật tính lại', 'tháng / năm hợp lệ'].every((x) => l.includes(x)), l.replace(/\s+/g, ' ').slice(0, 400));
+        check('Nhân sự: tháng có công nhật mà chưa có phiếu khoán ghi "chưa gồm khoán"', l.includes('chưa gồm khoán'), l.replace(/\s+/g, ' ').slice(0, 300));
         const bp = await page.textContent('#ns-luong-bp');
-        check('Nhân sự: lương T9 theo bộ phận gộp nhóm nhỏ, không có Showroom riêng',
-            bp.includes('nhóm nhỏ') && !/Showroom/.test(bp), bp.replace(/\s+/g, ' ').slice(0, 300));
+        const bpt = await page.textContent('#ns-luong-bp-title');
+        check('Nhân sự: lương theo bộ phận là tháng đã chốt T8/2026, gộp nhóm nhỏ, không có Showroom riêng',
+            bpt.includes('T8/2026') && bpt.includes('đã chốt') && bp.includes('nhóm nhỏ') && !/Showroom/.test(bp), `${bpt} | ${bp.replace(/\s+/g, ' ').slice(0, 300)}`);
         const bh = await page.textContent('#ns-bhxh');
         check('Nhân sự: lý do BHXH không lộ lương hưu', !bh.includes('lương hưu') && bh.includes('Chưa ghi lý do'), bh.replace(/\s+/g, ' ').slice(0, 200));
         const v = await page.textContent('#ns-viec');

@@ -159,6 +159,7 @@
 .bc-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bc-grid-charts { grid-template-columns: minmax(0, 1fr); }
 .bc-grid-even { grid-template-columns: minmax(0, 1fr); }  /* điện thoại 1 cột, desktop 2 cột bằng nhau */
+.bc-grid > .bc-card + .bc-card { margin-top: 0; }  /* trong lưới, khoảng cách do gap lo — không lệch thẻ thứ hai */
 @media (min-width: 900px) {
     .bc-grid-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .bc-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }

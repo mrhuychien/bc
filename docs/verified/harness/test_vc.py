@@ -62,7 +62,7 @@ def seed():
 	trip("CX1", "2026-10-21", 1, "Hoàn thành", [("S1", 10, "Đã giao"), ("S2", 8, "Đã giao"), ("S3", 5, "Hoàn")],
 		tong_don=3, tong_kien=23, tong_the_tich=2.0, the_tich_xe=4.0, ti_le_tai=50,
 		cuoc_goc=500_000, phu_phi_gui_xe=100_000, tong_cuoc=600_000, da_tra_cuoc=1, cuoc_je="JE-1")
-	trip("CX2", "2026-10-24", 1, "Đang giao", [("S2", 4, "Chờ giao")], lai_xe="DRV-2",
+	trip("CX2", "2026-10-24", 1, "Đang giao", [("S2", 4, "Đã giao")], lai_xe="DRV-2",   # đã giao trên chuyến CHƯA hoàn thành
 		tong_don=1, tong_kien=4, tong_the_tich=1.5, the_tich_xe=1.0, ti_le_tai=150,
 		cuoc_goc=300_000, phu_phi_chuyen_2=100_000, tong_cuoc=450_000, cuoc_thu_cong=1, da_tra_cuoc=1, cuoc_je="JE-2")
 	trip("CX3", "2026-10-26", 0, "", [("S8", 4, "Chờ giao"), ("S4", 0, "Chờ giao")],

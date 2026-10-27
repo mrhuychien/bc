@@ -23,16 +23,27 @@ function off(what) { return `<div class="bc-muted bc-text-sm">Hệ thống chưa
 /** Một ô lương: null = trước khi có phiếu; an = nhóm < K người. */
 function cellHtml(c) {
     if (c === null || c === undefined) return '<span class="bc-muted">chưa có dữ liệu</span>';
-    if (c.an) return `<span class="bc-muted" title="Dưới ${fmtNum(c.k)} người — không hiện tiền">${fmtNum(c.so_nguoi)} người · ẩn</span>`;
+    if (c.an) return `<span class="bc-muted" title="Dưới ${fmtNum(c.k)} người có tiền trên phiếu — không hiện tiền">${fmtNum(c.so_nguoi)} người · ẩn</span>`;
     return `${money(c.thuc_nhan)} <span class="bc-muted bc-text-sm">· ${fmtNum(c.so_nguoi)} ng${c.so_nhap ? ` · ${fmtNum(c.so_nhap)} nháp` : ''}</span>`;
+}
+
+const TEN_LOAI = { nhat: 'công nhật', khoan: 'khoán' };
+
+/** Tổng thực nhận của một tháng: null nếu chưa loại nào có phiếu; an nếu có ô bị ẩn; thieu = loại đã có trên
+ *  hệ thống nhưng tháng đó chưa có dữ liệu (vd khoán trước khi có phiếu khoán) — tổng khi đó KHÔNG đủ. */
+function monthTotal(L, s) {
+    const ks = ['nhat', 'khoan'].filter((k) => L.co[k]);
+    const parts = ks.map((k) => s[k]).filter(Boolean);
+    if (!parts.length) return null;
+    const thieu = ks.filter((k) => !s[k]).map((k) => TEN_LOAI[k]);
+    if (parts.some((p) => p.an)) return { an: true, thieu };
+    return { an: false, thieu, tong: parts.reduce((a, p) => a + (p.thuc_nhan || 0), 0), nhap: parts.reduce((a, p) => a + p.so_nhap, 0) };
 }
 
 function kyTotal(L) {
     const s = (L.series || []).find((x) => x.thang === L.ky) || {};
-    const parts = ['nhat', 'khoan'].map((k) => s[k]).filter(Boolean);
-    if (!parts.length) return null;
-    if (parts.some((p) => p.an)) return { an: true, parts: s };
-    return { tong: parts.reduce((a, p) => a + (p.thuc_nhan || 0), 0), nhap: parts.reduce((a, p) => a + p.so_nhap, 0), parts: s };
+    const t = monthTotal(L, s);
+    return t && { ...t, parts: s };
 }
 
 function kpisHtml(d) {
@@ -49,7 +60,7 @@ function kpisHtml(d) {
                 ...(h.rui_ro === null ? [] : [['Quá 30 ngày chưa đóng, chưa ghi lý do', `<span class="${h.rui_ro ? 'bc-txt-danger' : ''}">${fmtNum(h.rui_ro)}</span>`]]),
                 ...(h.chua_muc === null ? [] : [['Đóng nhưng chưa có mức trừ', fmtNum(h.chua_muc)]])] })
             : statCard({ label: 'Đóng BHXH', icon: '🛡️', value: '—', rows: [['', 'Chưa có dữ liệu BHXH']] })}
-        ${kt ? statCard({ label: `Quỹ lương ${thang(L.ky)} (tạm tính)`, icon: '💰', tone: 'danger',
+        ${kt ? statCard({ label: `Quỹ lương ${thang(L.ky)} (tạm tính${kt.thieu.length ? `, chưa gồm ${kt.thieu.join(', ')}` : ''})`, icon: '💰', tone: 'danger',
             value: kt.an ? '<span class="bc-muted">ẩn</span>' : money(kt.tong),
             rows: [['Công nhật', kt.parts.nhat ? (kt.parts.nhat.an ? 'ẩn' : money(kt.parts.nhat.thuc_nhan)) : '—'],
                 ['Công khoán', kt.parts.khoan ? (kt.parts.khoan.an ? 'ẩn' : money(kt.parts.khoan.thuc_nhan)) : '—'],
@@ -90,10 +101,11 @@ function luongHtml(L) {
     if (L.hook_tat) warn.push('Phiếu công nhật chưa bật tính lại tự động trên máy chủ: phiếu chấm công lưu từ màn chấm công có thể chưa cập nhật tổng tiền.');
     if (L.loi_ky) warn.push(`${fmtNum(L.loi_ky)} phiếu lương chưa có tháng / năm hợp lệ — không tính vào quỹ.`);
     const tot = (s) => {
-        const p = ['nhat', 'khoan'].map((k) => s[k]).filter(Boolean);
-        if (!p.length) return '<span class="bc-muted">—</span>';
-        if (p.some((x) => x.an)) return '<span class="bc-muted">ẩn</span>';
-        return `<b>${money(p.reduce((a, x) => a + (x.thuc_nhan || 0), 0))}</b>`;
+        const t = monthTotal(L, s);
+        if (!t) return '<span class="bc-muted">—</span>';
+        if (t.an) return '<span class="bc-muted">ẩn</span>';
+        return t.thieu.length ? `${money(t.tong)} <span class="bc-muted bc-text-sm">chưa gồm ${escapeHtml(t.thieu.join(', '))}</span>`
+            : `<b>${money(t.tong)}</b>`;
     };
     return `${warn.length ? `<div class="bc-alert">${warn.map(escapeHtml).join('<br>')}</div>` : ''}
         ${dataTable({ rows, pageSize: 12, columns: [
@@ -105,20 +117,21 @@ function luongHtml(L) {
         ] })}
         <div class="bc-note">Lương THỰC NHẬN (sau bảo hiểm, phạt), mỗi người mỗi tháng một phiếu như màn Lương của Nhân sự; làm tròn
             100.000 đ. Tháng trước và tháng này tạm tính (gồm phiếu nháp); tháng cũ hơn chỉ phiếu đã duyệt, "nháp" là phiếu còn treo
-            chưa tính. Không gồm lương Ban lãnh đạo. Nhóm dưới ${fmtNum(L.k)} người không hiện tiền.</div>`;
+            chưa tính. Không gồm lương Ban lãnh đạo. Dưới ${fmtNum(L.k)} người có tiền trên phiếu thì không hiện tiền.</div>`;
 }
 
 function luongBpHtml(L) {
     if (!L.available) return '';
-    if (!L.bo_phan.length) return `<div class="bc-muted bc-text-sm">Chưa có phiếu lương ${escapeHtml(thang(L.ky))}.</div>`;
-    return `${dataTable({ rows: L.bo_phan, sortKey: 'n', columns: [
+    if (!L.bo_phan.length) return `<div class="bc-muted bc-text-sm">Chưa có phiếu lương đã duyệt ${escapeHtml(thang(L.ky_bo_phan))}.</div>`;
+    return `${dataTable({ rows: L.bo_phan, sortKey: 'so_nguoi', columns: [
         { key: 'nhom', label: 'Nhóm', align: 'left' },
         { key: 'loai', label: 'Loại' },
-        { key: 'n', label: 'Số người', render: (r) => fmtNum(r.n) },
+        { key: 'so_nguoi', label: 'Số người', render: (r) => fmtNum(r.so_nguoi) },
         { key: 'thuc_nhan', label: 'Thực nhận', render: (r) => money(r.thuc_nhan), sortValue: (r) => r.thuc_nhan ?? -1 },
         { key: 'tong_tien', label: 'Tổng thu nhập', render: (r) => money(r.tong_tien), sortValue: (r) => r.tong_tien ?? -1 },
     ] })}
-        <div class="bc-note">Công nhật theo bộ phận ghi trên phiếu lương; bộ phận dưới ${fmtNum(L.k)} người được gộp để không suy ra lương
+        <div class="bc-note">Tháng đã chốt gần nhất, chỉ phiếu đã duyệt (tháng tạm tính thay đổi theo từng phiếu nên không chia bộ
+            phận). Công nhật theo bộ phận ghi trên phiếu lương; bộ phận dưới ${fmtNum(L.k)} người có tiền được gộp để không suy ra lương
             từng người. Công khoán tính chung một nhóm.</div>`;
 }
 
@@ -171,7 +184,7 @@ export async function render({ container, isCurrent }) {
         <div class="bc-section-title">Quỹ lương thực nhận 12 tháng</div>
         <div class="bc-card"><div id="ns-luong">${skeleton(260)}</div></div>
         <div class="bc-grid bc-grid-even bc-mt-3">
-            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title" id="ns-luong-bp-title">Quỹ lương tháng trước theo bộ phận</div></div><div id="ns-luong-bp">${skeleton(160)}</div></div>
+            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title" id="ns-luong-bp-title">Quỹ lương tháng đã chốt theo bộ phận</div></div><div id="ns-luong-bp">${skeleton(160)}</div></div>
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">BHXH — người chưa đóng</div></div><div id="ns-bhxh">${skeleton(160)}</div></div>
         </div>
         <div class="bc-section-title">Giấy tờ hết hạn</div>
@@ -192,7 +205,7 @@ export async function render({ container, isCurrent }) {
         fill('ns-move', `<div class="bc-chart-wrap" id="ns-move-wrap" style="height:220px"><canvas id="ns-move-chart"></canvas></div>
             <div class="bc-note">Theo ngày vào làm / ngày nghỉ việc trên hồ sơ. Công nhân thời vụ chuyển "tạm nghỉ" không tính là nghỉ việc.</div>`);
         fill('ns-luong', luongHtml(d.luong));
-        if (d.luong.available) fill('ns-luong-bp-title', `Quỹ lương ${escapeHtml(thang(d.luong.ky))} theo bộ phận (tạm tính)`);
+        if (d.luong.available) fill('ns-luong-bp-title', `Quỹ lương ${escapeHtml(thang(d.luong.ky_bo_phan))} theo bộ phận (đã chốt)`);
         fill('ns-luong-bp', luongBpHtml(d.luong));
         fill('ns-bhxh', bhxhHtml(d.bhxh, d.meta.k));
         fill('ns-giay', giayHtml(d.giay_to));

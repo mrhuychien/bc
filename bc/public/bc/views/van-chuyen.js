@@ -12,11 +12,12 @@ import { skeleton, skeletonGrid } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
 
 const charts = chartRegistry();
-const state = { thang: '' };
+const state = { thang: '' };  // CHỈ tháng người xem đã chọn và tải được — mặc định để trống = tháng hiện tại
 let seq = 0;  // lượt tải mới nhất — đổi tháng nhanh thì lượt cũ về sau không đè lượt mới
 const SECTIONS = ['vc-kpis', 'vc-giao', 'vc-cho', 'vc-chuyen', 'vc-cuoc', 'vc-suco', 'vc-thuhoi', 'vc-xe'];
 
-function money(v) { return `<span title="${fmtMoneyFull(v)}">${fmtMoney(v)}</span>`; }
+function money(v) { return v === null || v === undefined ? '<span class="bc-muted">—</span>' : `<span title="${fmtMoneyFull(v)}">${fmtMoney(v)}</span>`; }
+function cnt(v) { return v === null || v === undefined ? '<span class="bc-muted">—</span>' : fmtNum(v); }
 function off(what) { return `<div class="bc-muted bc-text-sm">Hệ thống Vận chuyển chưa có ${escapeHtml(what)}.</div>`; }
 function num1(v) { return v === null || v === undefined ? '—' : String(v).replace('.', ','); }
 
@@ -40,12 +41,12 @@ function kpisHtml(d) {
         ${g.available ? statCard({ label: 'Đơn giao trong tháng', icon: '📦', value: fmtNum(g.total),
             rows: [['Đã giao', `${fmtNum(g.da)} · ${fmtPct(g.ty_le_giao)}`], ['Đang giao', fmtNum(g.dang)], ['Chưa giao', fmtNum(g.cho)]] })
             : statCard({ label: 'Đơn giao trong tháng', icon: '📦', value: '—', rows: [['', 'Chưa có trạng thái vận chuyển']] })}
-        ${ch ? statCard({ label: `Chờ giao quá ${fmtNum(ch.so_ngay)} ngày`, icon: '⏰', tone: 'danger',
+        ${ch ? statCard({ label: `Chờ giao quá ${fmtNum(ch.so_ngay)} ngày (đến hôm nay)`, icon: '⏰', tone: 'danger',
             value: `<span class="${ch.qua_n ? 'bc-txt-danger' : ''}">${fmtNum(ch.qua_n)}</span>`,
-            rows: g.xep ? [['Tự giao chưa xếp chuyến', fmtNum(g.xep.chua_xep)], ['Xếp một phần', fmtNum(g.xep.mot_phan)]] : [] }) : ''}
-        ${k.available ? statCard({ label: 'Cước xe nhà', icon: '🚚', tone: 'warning', value: money(k.tong),
-            rows: [['% doanh thu đã giao', fmtPct(k.ty_le_doanh_thu)], ['Mỗi chuyến', k.moi_chuyen === null ? '—' : money(k.moi_chuyen)],
-                ['Chưa trả', money(k.chua_tra)]] }) : ''}
+            rows: g.xep ? [['Tự giao chưa xếp chuyến', fmtNum(g.xep.chua_xep)], ['Tự giao xếp một phần', fmtNum(g.xep.mot_phan)]] : [] }) : ''}
+        ${k.available ? statCard({ label: 'Cước xe nhà', icon: '🚚', tone: 'warning', value: k.an ? '<span class="bc-muted">ẩn</span>' : money(k.tong),
+            rows: k.an ? [['Số chuyến', fmtNum(k.so_chuyen)], ['', `Dưới ${fmtNum(k.k)} lái xe — không hiện tiền`]]
+                : [['% doanh thu đã giao', fmtPct(k.ty_le_doanh_thu)], ['Mỗi chuyến', money(k.moi_chuyen)], ['Chưa trả', money(k.chua_tra)]] }) : ''}
         ${s.available ? statCard({ label: 'Sự cố đang mở', icon: '⚠️', value: fmtNum(s.dang_mo),
             rows: [[`Mở quá ${fmtNum(s.so_ngay)} ngày`, `<span class="${s.mo_qua_n ? 'bc-txt-danger' : ''}">${fmtNum(s.mo_qua_n)}</span>`],
                 ['Phát sinh trong tháng', fmtNum(s.trong_ky)], ['Giá trị ảnh hưởng', money(s.gia_tri_anh_huong)]] }) : ''}
@@ -92,9 +93,9 @@ function chuyenHtml(x) {
         { label: 'Số chuyến', value: fmtNum(x.so_chuyen), sub: `Hoàn thành ${fmtNum(st['Hoàn thành'] || 0)} · đang giao ${fmtNum(st['Đang giao'] || 0)} · nháp ${fmtNum(st['Nháp'] || 0)}` },
         { label: 'Đơn / chuyến', value: num1(x.don_moi_chuyen) },
         { label: 'Chuyến / ngày chạy', value: num1(x.chuyen_moi_ngay) },
-        { label: 'Tải trung bình (m³)', value: fmtPct(x.tai_tb) },
+        { label: 'Tải trung bình (% thể tích)', value: fmtPct(x.tai_tb) },
         { label: 'Chuyến quá tải', value: fmtNum(x.qua_tai), cls: x.qua_tai ? 'bc-txt-danger' : '' },
-        { label: 'Xe chưa khai sức chứa', value: fmtNum(x.thieu_cap), cls: x.thieu_cap ? 'bc-txt-warning' : '' },
+        { label: 'Chuyến chưa có sức chứa xe', value: fmtNum(x.thieu_cap), cls: x.thieu_cap ? 'bc-txt-warning' : '' },
     ], 3)}
         <div class="bc-chart-wrap bc-mt-3" id="vc-chart-wrap" style="height:180px"><canvas id="vc-chart"></canvas></div>`;
 }
@@ -116,19 +117,32 @@ function cuocHtml(k) {
     if (!k.available) return off('chuyến xe');
     const warn = [];
     if (k.tra_bat_thuong) warn.push(`${fmtNum(k.tra_bat_thuong)} chuyến đánh dấu đã trả cước nhưng bút toán chi chưa duyệt hoặc đã huỷ.`);
+    if (k.tra_chuyen_huy) {
+        warn.push(`${fmtNum(k.tra_chuyen_huy)} chuyến đã huỷ nhưng bút toán trả cước${k.an ? '' : ` (${fmtMoney(k.tra_chuyen_huy_tien)})`} vẫn còn hiệu lực.`);
+    }
     if (k.sua_tay) warn.push(`${fmtNum(k.sua_tay)} chuyến cước sửa tay.`);
-    return `${warn.length ? `<div class="bc-alert">${warn.map(escapeHtml).join('<br>')}</div>` : ''}
+    const alert = warn.length ? `<div class="bc-alert">${warn.map(escapeHtml).join('<br>')}</div>` : '';
+    if (k.an) {
+        return `${alert}${kpiGrid([
+            { label: 'Chuyến đã duyệt', value: fmtNum(k.so_chuyen) },
+            { label: 'Lái xe chạy trong tháng', value: fmtNum(k.so_lai_xe) },
+            { label: 'Chuyến chưa trả cước', value: cnt(k.so_chua_tra) },
+        ], 3)}
+        <div class="bc-note">Dưới ${fmtNum(k.k)} lái xe chạy trong tháng: tổng cước gần như là thu nhập từng người nên không hiện tiền.</div>`;
+    }
+    return `${alert}
         ${dataTable({ rows: k.thanh_phan, sortKey: 'tien', pageSize: 10,
             totalRow: { label: '<b>Tổng cước</b>', tien: `<b>${money(k.tong)}</b>` },
             columns: [{ key: 'label', label: 'Khoản', align: 'left', sortable: false },
                 { key: 'tien', label: 'Tiền', sortable: false, render: (r) => money(r.tien) }] })}
         ${kpiGrid([
             { label: 'Đã trả', value: money(k.da_tra) },
-            { label: 'Chưa trả', value: money(k.chua_tra), sub: `${fmtNum(k.so_chua_tra)} chuyến`, cls: k.chua_tra ? 'bc-txt-warning' : '' },
-            { label: 'Mỗi điểm giao', value: k.moi_diem === null ? '—' : money(k.moi_diem) },
+            { label: 'Chưa trả', value: money(k.chua_tra), sub: k.so_chua_tra === null ? '' : `${fmtNum(k.so_chua_tra)} chuyến`,
+                cls: k.chua_tra ? 'bc-txt-warning' : '' },
+            { label: 'Mỗi điểm giao', value: money(k.moi_diem) },
         ], 3)}
-        <div class="bc-note">Chỉ chuyến đã duyệt, theo ngày giao. % doanh thu = cước / doanh thu trước VAT của phần hàng đã giao trên
-            các chuyến đó (${fmtNum(k.don_da_giao)} đơn, ${money(k.dt_da_giao)}; đơn tách nhiều chuyến chia theo số kiện).</div>`;
+        <div class="bc-note">Chỉ chuyến đã duyệt, theo ngày giao. % doanh thu = cước / doanh thu trước VAT của phần hàng đã giao, cả hai
+            chỉ tính trên chuyến đã hoàn thành (${fmtNum(k.don_da_giao)} đơn, ${money(k.dt_da_giao)}; đơn tách nhiều chuyến chia theo số kiện).</div>`;
 }
 
 function suCoHtml(s) {
@@ -141,7 +155,7 @@ function suCoHtml(s) {
             { label: 'Mất đường', value: money(s.mat_duong), sub: 'hàng không về' },
             { label: 'Đã đòi được', value: money(s.boi_thuong_da_thu), cls: 'bc-txt-success', sub: 'bồi thường' },
             { label: 'Còn đòi', value: money(s.boi_thuong_con_doi), cls: s.boi_thuong_con_doi ? 'bc-txt-warning' : '', sub: 'bồi thường' },
-            { label: 'Hàng chưa về', value: fmtNum(s.hang_chua_ve), sub: 'sự cố đang mở' },
+            { label: 'Hàng chưa về', value: cnt(s.hang_chua_ve), sub: 'sự cố có hàng quay về, đang mở' },
             { label: 'Xử lý TB', value: s.ngay_xu_ly_tb === null ? '—' : `${num1(s.ngay_xu_ly_tb)} ngày`, sub: 'sự cố đóng trong tháng' },
         ], 3)}`;
 }
@@ -168,13 +182,17 @@ function thuHoiHtml(h) {
             (${fmtNum(gt.so_lo)} lô), ${money(gt.net)} trước VAT.` : ''}</div>`;
 }
 
+/** Như nhat_ky_xe.nhan_muc của vanchuyen: phần đã quá hạn đứng trước (đọc lướt chỉ kịp thấy chữ đầu). */
 function hanText(w) {
-    const p = [];
-    if (w.con_km !== null && w.con_km !== undefined) p.push(w.con_km <= 0 ? `quá ${fmtNum(-w.con_km)} km` : `còn ${fmtNum(w.con_km)} km`);
-    if (w.con_ngay !== null && w.con_ngay !== undefined) {
-        p.push(w.con_ngay < 0 ? `quá hạn ${fmtNum(-w.con_ngay)} ngày` : w.con_ngay === 0 ? 'đến hạn hôm nay' : `còn ${fmtNum(w.con_ngay)} ngày`);
+    const p = [];  // [quá hạn?, chữ]
+    if (w.con_km !== null && w.con_km !== undefined) {
+        p.push(w.con_km < 0 ? [1, `quá ${fmtNum(-w.con_km)} km`] : w.con_km === 0 ? [1, 'đến mốc km'] : [0, `còn ${fmtNum(w.con_km)} km`]);
     }
-    return p.join(' · ');
+    if (w.con_ngay !== null && w.con_ngay !== undefined) {
+        p.push(w.con_ngay < 0 ? [1, `quá hạn ${fmtNum(-w.con_ngay)} ngày`]
+            : w.con_ngay === 0 ? [0, 'đến hạn hôm nay'] : [0, `còn ${fmtNum(w.con_ngay)} ngày`]);
+    }
+    return p.sort((a, b) => b[0] - a[0]).map((x) => x[1]).join(' · ');
 }
 
 function xeHtml(v) {
@@ -204,12 +222,24 @@ function xeHtml(v) {
         </div>`;
 }
 
-async function load(isCurrent) {
+/** Ô chọn tháng. Dựng lại sau mỗi lượt tải: trả focus về ô nếu người dùng đang ở đó (đi bằng phím mũi tên). */
+function bindPicker(cur, extra, isCurrent) {
+    const refocus = document.activeElement?.id === 'vc-thang';
+    fill('vc-filter', `${monthOptions(cur)}${extra}`);
+    const sel = document.getElementById('vc-thang');
+    sel?.addEventListener('change', (e) => {
+        SECTIONS.forEach((id) => fill(id, skeleton(120)));
+        load(isCurrent, e.target.value, true);
+    });
+    if (refocus) sel?.focus();
+}
+
+async function load(isCurrent, thang = state.thang, chon = false) {
     const my = ++seq;
     const alive = () => my === seq && isCurrent();
     charts.destroy();
     try {
-        const d = await api.vc.overview(state.thang || undefined);
+        const d = await api.vc.overview(thang || undefined);
         if (!alive()) return;
         if (!d.available) {
             fill('vc-kpis', emptyState({ icon: '🚚', title: 'Chưa có số liệu vận chuyển',
@@ -217,13 +247,9 @@ async function load(isCurrent) {
             SECTIONS.slice(1).forEach((id) => fill(id, ''));
             return;
         }
-        state.thang = d.meta.thang;
-        fill('vc-filter', `${monthOptions(d.meta.thang)}<span class="bc-text-sm">Từ ${escapeHtml(fmtDate(d.meta.from))} đến ${escapeHtml(fmtDate(d.meta.to))}</span>`);
-        document.getElementById('vc-thang')?.addEventListener('change', (e) => {
-            state.thang = e.target.value;
-            SECTIONS.forEach((id) => fill(id, skeleton(120)));
-            load(isCurrent);
-        });
+        // Chỉ nhớ tháng người xem tự chọn (để mặc định thì sang tháng mới / Làm mới vẫn theo tháng hiện tại).
+        if (chon) state.thang = d.meta.thang;
+        bindPicker(d.meta.thang, `<span class="bc-text-sm">Từ ${escapeHtml(fmtDate(d.meta.from))} đến ${escapeHtml(fmtDate(d.meta.to))}</span>`, isCurrent);
         fill('vc-kpis', kpisHtml(d));
         fill('vc-giao', giaoHtml(d.giao));
         fill('vc-cho', choHtml(d.giao));
@@ -238,6 +264,8 @@ async function load(isCurrent) {
         }
     } catch (err) {
         if (!alive()) return;
+        // Ô chọn tháng vẫn còn (chọn lại tháng khác / tháng cũ được) — không kẹt ở màn lỗi tới khi F5.
+        bindPicker(state.thang, '', isCurrent);
         fill('vc-kpis', errorState(err));
         SECTIONS.slice(1).forEach((id) => fill(id, ''));
     }

@@ -63,17 +63,23 @@ sx, bỏ chi tiết dòng sổ. Site không cài sx → trang báo "chưa có s�
 định tháng này, cắt ở hôm nay):
 
 - **Giao hàng**: hoá đơn bán đã duyệt trong tháng theo hình thức × trạng thái vận chuyển (bỏ hàng trả,
-  hoá đơn đầu kỳ, đúng nhóm khách `Showroom` như vanchuyen), giá trị trước VAT. Đơn **chờ giao quá 3
-  ngày** là ảnh chụp hôm nay (mọi tháng, bỏ đơn cũ hơn 180 ngày). Đơn xe nhà **chưa xếp chuyến** tính
-  theo dòng chuyến (chuyến nháp vẫn tính — cột trạng thái xếp trên hoá đơn chỉ cập nhật khi duyệt
-  chuyến). **Giao được ngay lần đầu** = dòng chuyến kết thúc đầu tiên của mỗi đơn là "Đã giao".
-- **Chuyến**: tải trung bình có trọng số theo m³, bỏ xe chưa khai sức chứa.
-- **Cước**: chỉ chuyến đã duyệt; % trên doanh thu ĐÃ GIAO (đơn tách nhiều chuyến chia theo số kiện);
-  cảnh báo chuyến đánh dấu đã trả cước mà bút toán chi chưa duyệt / đã huỷ, và phần cước sửa tay.
-- **Sự cố**, **thu hồi hàng** (chặng theo phiếu kiểm của Kế toán khi đã có), **đội xe** (lịch đăng
-  kiểm / thay dầu / bảo dưỡng gọi hàm thuần của vanchuyen, chi phí xe năm nay).
+  hoá đơn đầu kỳ, đúng nhóm khách `Showroom` như vanchuyen), giá trị trước VAT. **Giao được ngay lần
+  đầu** = dòng chuyến kết thúc đầu tiên của mỗi đơn là "Đã giao".
+- **Ảnh chụp hôm nay** (không đổi theo tháng chọn, như pool điều phối của vanchuyen; bỏ đơn cũ hơn 180
+  ngày): đơn **chờ giao quá 3 ngày** và đơn xe nhà **chưa xếp chuyến** — tính theo dòng chuyến (chuyến
+  nháp vẫn tính; cột trạng thái xếp trên hoá đơn chỉ cập nhật khi duyệt chuyến).
+- **Chuyến**: tải trung bình có trọng số theo m³ (% thể tích), bỏ chuyến mà xe chưa khai sức chứa.
+- **Cước**: chỉ chuyến đã duyệt. % cước / doanh thu đã giao tính CẢ HAI vế trên chuyến đã hoàn thành
+  (đơn tách nhiều chuyến chia theo số kiện). Cảnh báo: chuyến đánh dấu đã trả mà bút toán chi chưa duyệt /
+  đã huỷ; chuyến đã huỷ mà bút toán trả cước còn hiệu lực; cước sửa tay. **Tháng dưới 5 lái xe chạy: không
+  hiện tiền cước** (cước là thu nhập lái xe — cùng ngưỡng với lương).
+- **Sự cố** ("hàng chưa về" chỉ tính sự cố có hàng quay về — trường này mặc định "Chưa về" trên mọi sự
+  cố), **thu hồi hàng** (chặng theo phiếu kiểm của Kế toán khi đã có), **đội xe** (lịch đăng kiểm / thay
+  dầu / bảo dưỡng gọi hàm thuần của vanchuyen, chi phí xe năm nay).
 
-Không trả tên / SĐT lái xe, tên khách, người liên hệ, ghi chú tự do; biển số xe được hiện.
+Mỗi khối chạy riêng: site chạy bản vanchuyen cũ (thiếu cột hàng-về / trả cước) chỉ mất đúng chỉ số đó; lỗi
+bất kỳ trong một khối chỉ tắt khối đó (ghi Error Log). Không trả tên / SĐT lái xe, tên khách, người liên hệ,
+ghi chú tự do; biển số xe được hiện.
 
 ## Nhân sự (`#/nhan-su`)
 
@@ -86,9 +92,12 @@ Không trả tên / SĐT lái xe, tên khách, người liên hệ, ghi chú t�
 - **Quỹ lương THỰC NHẬN** 12 tháng theo loại: công nhật (SalaryDay) và khoán (phiếu lương khoán của
   sx); mỗi người mỗi tháng một phiếu như màn Lương của ns. Tháng trước + tháng này là tạm tính (gồm
   nháp); tháng cũ hơn chỉ phiếu đã duyệt. Trước tháng có phiếu đầu tiên hiện "chưa có dữ liệu" (không
-  phải 0). **Không gồm lương Ban lãnh đạo.** Theo bộ phận chỉ cho tháng trước; nhóm < 5 người không hiện
-  tiền (gộp vào nhóm khác), tiền làm tròn 100.000 đ. Cảnh báo khi site chưa bật tính lại phiếu công nhật
-  (`ns_tinh_lai_salaryday`).
+  phải 0); tổng tháng ghi "chưa gồm khoán" khi một loại chưa có phiếu. **Không gồm lương Ban lãnh đạo.**
+  Theo bộ phận chỉ cho **tháng đã chốt gần nhất, phiếu đã duyệt** (tháng tạm tính đổi theo từng phiếu HR
+  nhập — so hai lần xem sẽ ra lương một người). Ngưỡng **5 người có tiền trên phiếu** (phiếu 0 đ không
+  tính): nhóm nhỏ hơn gộp vào nhóm khác, không hiện tiền; tiền làm tròn 100.000 đ; người xem không bỏ qua
+  cache được (chỉ quản trị bấm Làm mới mới tính lại ngay). Cảnh báo khi site chưa bật tính lại phiếu công
+  nhật (`ns_tinh_lai_salaryday`).
 - **Giấy tờ** hết hạn / sắp hết (HĐ, khám SK, ATTP — ATTP khớp cả option lưu sai chữ trên site) và
   **việc tồn** của Phòng nhân sự (gọi hàm thuần `canh_bao.tinh` của ns, đếm theo người).
 
