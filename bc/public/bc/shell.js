@@ -161,6 +161,7 @@ async function renderRoute(route, query) {
     const t0 = performance.now();
     try {
         const mod = await importView(route);
+        if (seq !== renderSeq) return;  // đã chuyển màn khác trong lúc nạp module → không vẽ đè màn mới
         if (typeof mod.render !== 'function') throw new Error(`View ${route} thiếu render()`);
         await mod.render({ container: view, query, isCurrent: () => seq === renderSeq });
         if (seq === renderSeq) setStatus(`Hoàn thành – ${((performance.now() - t0) / 1000).toFixed(2)} s`);
@@ -176,9 +177,23 @@ async function renderRoute(route, query) {
     }
 }
 
-Object.keys(VIEW_MODULES).forEach((r) => router.add(r, ({ query }) => renderRoute(r, query)));
-// Người xem gõ thẳng đường dẫn mảng đang ẩn → về trang đầu (không reload "route lạ" như bản cũ).
-Object.keys(ALL_VIEWS).filter((r) => !VIEW_MODULES[r]).forEach((r) => router.add(r, () => {
+Object.keys(VIEW_MODULES).forEach((r) => {
+    router.add(r, ({ query }) => renderRoute(r, query));
+    try { sessionStorage.removeItem('bc_hidden_reload:' + r); } catch { /* private mode */ }
+});
+// Người xem mở đường dẫn mảng đang ẩn → về trang đầu. Tab mở TỪ TRƯỚC khi quản trị mở lại mảng thì danh sách
+// trong tab đã cũ: hỏi máy chủ, mảng đã mở thì tải lại trang ĐÚNG 1 lần (cờ sessionStorage chống lặp).
+Object.keys(ALL_VIEWS).filter((r) => !VIEW_MODULES[r]).forEach((r) => router.add(r, async () => {
+    const flag = 'bc_hidden_reload:' + r;
+    try {
+        const meta = await api.common.contextMeta();
+        if (!(meta?.hiddenSections || []).includes(sectionOf(r)) && !sessionStorage.getItem(flag)) {
+            sessionStorage.setItem(flag, '1');
+            location.reload();
+            return;
+        }
+        sessionStorage.removeItem(flag);
+    } catch { /* mạng lỗi / sessionStorage bị chặn → coi như vẫn ẩn */ }
     showToast('Mảng báo cáo này đang được quản trị ẩn.', 'info');
     router.navigate(HOME || '/', true);
 }));
@@ -208,7 +223,11 @@ document.getElementById('bc-btn-refresh')?.addEventListener('click', async (e) =
         const meta = await api.common.contextMeta();
         // Quản trị vừa đổi mảng ẩn → tải lại trang để menu / route đúng danh sách mới.
         const same = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
-        if (meta && !same(meta.hiddenSections, [...HIDDEN])) { location.reload(); return; }
+        if (meta && !same(meta.hiddenSections, [...HIDDEN])) {
+            try { sessionStorage.setItem('bc_refresh_once', '1'); } catch { /* private mode */ }  // tải lại vẫn lấy số mới
+            location.reload();
+            return;
+        }
         if (meta) { Object.assign(CTX, meta); paintHeader(); }
         await router.reload();
     } catch (err) {
@@ -239,5 +258,7 @@ document.getElementById('bc-btn-refresh')?.addEventListener('click', async (e) =
 
 paintHeader();
 buildNav();
+// Làm mới vừa tải lại trang (danh sách mảng ẩn đổi) → lượt dựng đầu vẫn gửi refresh=1 như người dùng đã bấm.
+try { if (sessionStorage.getItem('bc_refresh_once')) { sessionStorage.removeItem('bc_refresh_once'); api.setRefresh(true); } } catch { /* */ }
 router.start();
 window.BC = { router, api, showToast, build: BUILD };

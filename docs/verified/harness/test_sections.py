@@ -15,7 +15,7 @@ from paths import BC_ROOT
 
 import frappe  # noqa: E402
 
-VIEWER, ADMIN = "viewer@example.com", "Administrator"
+VIEWER, ADMIN, SM = "viewer@example.com", "Administrator", "sm@example.com"  # SM: quản trị KHÔNG phải Administrator
 # method → mảng (route bỏ "/"). Đổi bảng này phải là quyết định có chủ ý.
 EXPECTED = {
 	"live.get_snapshot": "thoi-gian-thuc",
@@ -85,6 +85,7 @@ def hien_het():
 
 if __name__ == "__main__":
 	c = Check()
+	frappe.ROLES[SM] = ["System Manager"]
 	reset(); bc_settings()
 	from bc.api import _common, common, sections
 
@@ -112,8 +113,10 @@ if __name__ == "__main__":
 			c(f"người xem không gọi được {fn.__name__}", True)
 	c("người xem gọi cũng không đổi gì", _common.hidden_sections() == set())
 
-	frappe.session.user = ADMIN
+	frappe.session.user = SM  # tài khoản có vai System Manager (không phải Administrator) quản lý được
+	n_ver0 = frappe.db.sql("SELECT COUNT(*) FROM `tabVersion` WHERE ref_doctype = 'BC Settings'")[0][0]
 	r1 = sections.set_hidden("cong-no", 1)["hidden"]
+	c("đọc danh sách CÓ KHOÁ trước khi ghi (hai quản trị cùng lúc không đè nhau)", frappe.db.last_for_update is True)
 	r2 = sections.set_hidden('["attp", "nhan-su"]', "1")["hidden"]
 	r3 = sections.set_hidden(["attp"], 1)["hidden"]
 	c("quản trị ẩn một / nhiều mảng, lặp lại không đổi, lưu theo thứ tự menu", (r1, r2, r3) == (
@@ -121,6 +124,11 @@ if __name__ == "__main__":
 	raw = frappe.db.sql("SELECT value FROM `tabSingles` WHERE doctype='BC Settings' AND field='hidden_sections'")[0][0]
 	c("lưu ở BC Settings.hidden_sections, mỗi dòng một mã", raw == "cong-no\nnhan-su\nattp", repr(raw))
 	c("xoá cache doc BC Settings sau khi lưu", ("BC Settings", "BC Settings") in frappe.DOC_CACHE_CLEARED)
+	ver = frappe.db.sql("""SELECT owner, data FROM `tabVersion` WHERE ref_doctype = 'BC Settings' AND docname = 'BC Settings'
+		ORDER BY creation, name""", as_dict=True)
+	c("mỗi lần ĐỔI ghi Version (ai, trước / sau) — lần lặp không đổi thì không ghi", len(ver) - n_ver0 == 2
+		and ver[-1].owner == SM and '"changed": [["hidden_sections", "cong-no", "cong-no\\nnhan-su\\nattp"]]' in ver[-1].data,
+		[(v.owner, v.data) for v in ver])
 	g = sections.get_hidden()
 	c("get_hidden: mọi mảng + đang ẩn", g == {"sections": list(_common.SECTIONS), "hidden": ["cong-no", "nhan-su", "attp"]}, g)
 	for bad in ("khong-co", '["cong-no", "rac"]', "[sai json", "[]", ""):
@@ -131,36 +139,53 @@ if __name__ == "__main__":
 			c(f"mã không hợp lệ bị từ chối ({bad!r})", True)
 	c("mã sai không làm đổi danh sách", _common.hidden_sections() == {"cong-no", "nhan-su", "attp"})
 	c("hiện lại một mảng", sections.set_hidden("nhan-su", 0)["hidden"] == ["cong-no", "attp"])
+	h_t = sections.set_hidden("nhan-su", "true")["hidden"]
+	h_f = sections.set_hidden("nhan-su", "false")["hidden"]
+	h_T = sections.set_hidden("nhan-su", True)["hidden"]
+	h_F = sections.set_hidden("nhan-su", False)["hidden"]
+	c("hidden = 'true' / 'false' / True / False (frappe.call từ Desk, Server Script) hiểu đúng",
+		("nhan-su" in h_t, "nhan-su" in h_f, "nhan-su" in h_T, "nhan-su" in h_F) == (True, False, True, False), (h_t, h_f, h_T, h_F))
+	for bad in ("yes", "2", "", None):
+		try:
+			sections.set_hidden("nhan-su", bad)
+			c(f"hidden không rõ ({bad!r}) bị từ chối, không đoán", False)
+		except frappe.ValidationError:
+			c(f"hidden không rõ ({bad!r}) bị từ chối, không đoán", True)
 	c("ngữ cảnh trang có danh sách ẩn mới", common.build_context_meta()["hiddenSections"] == ["cong-no", "attp"])
 	frappe.session.user = VIEWER
 
 	# ── Động: ẩn từng mảng → đúng method của mảng đó bị chặn với người xem ──
 	hien_het()
 	sai = []
-	for dotted, key in EXPECTED.items():
-		hien_het(); an(key)
-		v = call(dotted, VIEWER)
-		if not (v and v.startswith("PermissionError") and "quản trị ẩn" in v):
-			sai.append((dotted, "người xem không bị chặn", v))
-		a = call(dotted, ADMIN)
-		if a and a.startswith("PermissionError"):
-			sai.append((dotted, "quản trị bị chặn", a))
-		for other, k2 in EXPECTED.items():
-			if k2 != key:
-				o = call(other, VIEWER)
-				if o and o.startswith("PermissionError"):
-					sai.append((other, f"bị chặn khi chỉ ẩn {key}", o))
-				break  # một method mảng khác là đủ mỗi vòng (vòng sau quay sang mảng khác)
-	c(f"ẩn từng mảng: người xem bị chặn đúng method của mảng đó ({len(EXPECTED)} method), quản trị vẫn xem", not sai, sai)
+	for key in _common.SECTIONS:
+		hien_het()
+		h = an(key)
+		if h != [key] or _common.hidden_sections() != {key}:
+			sai.append((key, "ẩn một mảng mà danh sách ẩn thành", h))
+		for dotted, k2 in EXPECTED.items():
+			v = call(dotted, VIEWER)
+			if k2 == key:
+				if not (v and v.startswith("PermissionError") and "quản trị ẩn" in v):
+					sai.append((dotted, "người xem không bị chặn", v))
+				for u in (ADMIN, SM):
+					a = call(dotted, u)
+					if a and a.startswith("PermissionError"):
+						sai.append((dotted, f"quản trị {u} bị chặn", a))
+			elif v and v.startswith("PermissionError"):
+				sai.append((dotted, f"bị chặn khi chỉ ẩn {key}", v))
+	c(f"ẩn từng mảng ({len(_common.SECTIONS)}): người xem bị chặn ĐÚNG các method của mảng đó, mọi method khác vẫn mở; quản trị (Administrator, "
+		"vai System Manager) vẫn xem", not sai, sai)
 	hien_het()
 	bi_chan = [d for d in EXPECTED if (call(d, VIEWER) or "").startswith("PermissionError")]
 	c("không ẩn gì: người xem gọi được mọi method", not bi_chan, bi_chan)
 
 	# ── Cache dùng chung không lách được ──
 	single("BC Settings", cache_ttl=300)
+	single("Global Defaults", default_company="HGC")  # có công ty thì Phải thu mới tính và ghi cache
 	frappe.cache().store.clear()
-	v0 = call("cn.get_receivables", VIEWER)  # refresh=1: tính và ghi cache
-	c("người xem xem Phải thu (đã vào cache)", not (v0 or "").startswith("Perm"), v0)
+	v0 = call("cn.get_receivables", ADMIN)  # refresh=1: tính và ghi cache (cache dùng chung mọi người)
+	c("Phải thu đã vào cache dùng chung", v0 is None and any(k.startswith("bc:cn.get_receivables:") for k in frappe.cache().store),
+		(v0, list(frappe.cache().store)))
 	an("cong-no")
 	from bc.api import cn
 	try:
@@ -181,6 +206,27 @@ if __name__ == "__main__":
 		c("_guard với mảng không tồn tại là lỗi lập trình", False)
 	except ValueError:
 		c("_guard với mảng không tồn tại là lỗi lập trình", True)
+
+	# ── Site chưa migrate field (code mới đã nạp, meta cũ) ──
+	import schema
+	meta = schema.doctype_files()["BC Settings"][1]
+	goc = meta["fields"]
+	meta["fields"] = [x for x in goc if x.get("fieldname") != "hidden_sections"]
+	try:
+		frappe.session.user = VIEWER
+		_common._guard("tong-quan")
+		c("chưa migrate: không ẩn gì, người xem vẫn qua _guard, ngữ cảnh trang dựng được",
+			_common.hidden_sections() == set() and common.build_context_meta()["hiddenSections"] == [])
+		frappe.session.user = ADMIN
+		try:
+			sections.set_hidden("nhan-su", 1)
+			c("chưa migrate: quản trị chưa ẩn được (lần lưu Desk sau sẽ xoá mất)", False)
+		except frappe.ValidationError as e:
+			c("chưa migrate: quản trị chưa ẩn được (lần lưu Desk sau sẽ xoá mất)", "migrate" in str(e), str(e))
+		c("chưa migrate: không ghi gì", _common.hidden_sections() == set())
+	finally:
+		meta["fields"] = goc
+		frappe.session.user = VIEWER
 
 	# ── Sửa trên Desk: controller BC Settings kiểm mã ──
 	from bc.bc.doctype.bc_settings.bc_settings import BCSettings

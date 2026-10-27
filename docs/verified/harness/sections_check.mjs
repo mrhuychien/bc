@@ -29,6 +29,26 @@ async function api(page, base, method, args = {}) {
     return { status: r.status(), msg: j.message, server, raw: JSON.stringify(j) };
 }
 const setHidden = (page, keys, hidden) => api(page, admin, 'bc.api.sections.set_hidden', { sections: JSON.stringify(keys), hidden: hidden ? 1 : 0 });
+const hiddenNow = async (page) => JSON.stringify((await api(page, admin, 'bc.api.sections.get_hidden')).msg?.hidden);
+const fresh = async (page, url) => { await page.goto('about:blank'); await page.goto(url); };  // mở /bc mới hẳn
+const countIs = (page, text) => page.waitForFunction((t) => document.querySelector('#am-count')?.textContent.includes(t), text, { timeout: 15000 });
+
+/** Bấm Làm mới, đếm: tải lại trang (document) và các lời gọi kd.* / cn.* có refresh=1 hay không. */
+async function pressRefresh(page, expectReload) {
+    let docs = 0; const posts = [];
+    const onReq = (r) => {
+        if (r.resourceType() === 'document') docs++;
+        if (r.method() === 'POST' && /\/api\/method\/bc\.api\.(kd|cn)\./.test(r.url())) posts.push(r.postData() || '');
+    };
+    page.on('request', onReq);
+    const click = page.click('#bc-btn-refresh');
+    if (expectReload) await Promise.all([page.waitForNavigation({ timeout: 15000 }), click]); else await click;
+    await page.waitForResponse((r) => /\/api\/method\/bc\.api\.(kd|cn)\./.test(r.url()), { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    page.off('request', onReq);
+    return { docs, posts };
+}
+const allRefresh = (posts) => posts.length > 0 && posts.every((p) => /(^|&)refresh=1(&|$)/.test(p));
 
 const browser = await chromium.launch();
 const eA = [], eV = [];
@@ -47,40 +67,62 @@ try {
     check('menu quản trị có mục Ẩn / hiện mảng', (await A.textContent('#bc-sidebar')).includes('Ẩn / hiện mảng'));
 
     await A.click('.bc-am-row:has([data-section="cong-no"])');
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang ẩn 1'), null, { timeout: 15000 });
-    let g = await api(A, admin, 'bc.api.sections.get_hidden');
-    check('bấm công tắc Phải thu → máy chủ lưu ẩn cong-no', JSON.stringify(g.msg?.hidden) === '["cong-no"]', g.raw);
+    await countIs(A, 'Đang ẩn 1');
+    check('bấm công tắc Phải thu → máy chủ lưu ẩn cong-no', await hiddenNow(A) === '["cong-no"]');
     check('menu quản trị đánh dấu Phải thu "đang ẩn"', await A.$('#bc-sidebar a[data-route="/cong-no"] .bc-side-hidden') !== null
         && await A.$('#bc-sidebar a[data-route="/phai-tra"] .bc-side-hidden') === null);
 
     await A.click('[data-group="Công nợ"]');  // còn Phải trả đang hiện → "Ẩn cả nhóm"
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang ẩn 2'), null, { timeout: 15000 });
-    g = await api(A, admin, 'bc.api.sections.get_hidden');
-    check('Ẩn cả nhóm Công nợ', JSON.stringify(g.msg?.hidden) === '["cong-no","phai-tra"]', g.raw);
+    await countIs(A, 'Đang ẩn 2');
+    check('Ẩn cả nhóm Công nợ', await hiddenNow(A) === '["cong-no","phai-tra"]');
     await A.click('[data-group="Công nợ"]');  // cả nhóm đang ẩn → "Hiện cả nhóm"
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang hiện tất cả'), null, { timeout: 15000 });
-    check('Hiện cả nhóm Công nợ', JSON.stringify((await api(A, admin, 'bc.api.sections.get_hidden')).msg?.hidden) === '[]');
+    await countIs(A, 'Đang hiện tất cả');
+    check('Hiện cả nhóm Công nợ', await hiddenNow(A) === '[]');
+
+    // Mạng chậm: trong lúc chờ máy chủ, công tắc vẽ theo trạng thái ĐÍCH (không nhảy về chỗ cũ), bị khoá.
+    await A.route('**/api/method/bc.api.sections.set_hidden', async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+    await A.click('.bc-am-row:has([data-section="attp"])');
+    await A.waitForTimeout(400);
+    const mid = await A.$eval('[data-section="attp"]', (el) => ({ checked: el.checked, disabled: el.disabled,
+        label: el.closest('.bc-am-row').textContent }));
+    check('đang lưu: công tắc ở trạng thái đích ("Đang ẩn…"), khoá tới khi xong', !mid.checked && mid.disabled && mid.label.includes('Đang ẩn…'),
+        JSON.stringify(mid));
+    await countIs(A, 'Đang ẩn 1');
+    await A.waitForFunction(() => !document.querySelector('[data-section="attp"]').disabled, null, { timeout: 15000 });
+    await A.unroute('**/api/method/bc.api.sections.set_hidden');
+    check('xong: máy chủ đã ẩn attp', await hiddenNow(A) === '["attp"]');
+    await setHidden(A, ['attp'], false);
+    await A.goto(`${admin}/bc#/tong-quan`);
+    await A.goto(`${admin}/bc#/an-mang`);
+    await countIs(A, 'Đang hiện tất cả');
 
     await A.focus('[data-section="nhan-su"]');
     await A.keyboard.press('Space');  // công tắc dùng được bằng bàn phím
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang ẩn 1'), null, { timeout: 15000 });
+    await countIs(A, 'Đang ẩn 1');
+    await A.waitForFunction(() => !document.querySelector('[data-section="nhan-su"]').disabled, null, { timeout: 15000 });
+    check('bàn phím: sau khi lưu, focus vẫn ở công tắc vừa bấm', await A.evaluate(() => document.activeElement?.dataset?.section) === 'nhan-su',
+        await A.evaluate(() => document.activeElement?.outerHTML?.slice(0, 120)));
     await A.click('.bc-am-row:has([data-section="cong-no"])');
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang ẩn 2'), null, { timeout: 15000 });
-    g = await api(A, admin, 'bc.api.sections.get_hidden');
-    check('ẩn Nhân sự (phím cách) + Phải thu', JSON.stringify(g.msg?.hidden) === '["cong-no","nhan-su"]', g.raw);
+    await countIs(A, 'Đang ẩn 2');
+    check('ẩn Nhân sự (phím cách) + Phải thu', await hiddenNow(A) === '["cong-no","nhan-su"]');
 
     await A.goto(`${admin}/bc#/cong-no`);
     await A.waitForSelector('#cn-kpis .bc-stat', { timeout: 20000 });
     check('quản trị vẫn mở được mảng đang ẩn', true);
 
     console.log('— Người xem');
-    await V.goto(`${viewer}/bc#/tong-quan`);
+    await fresh(V, `${viewer}/bc#/tong-quan`);
     await V.waitForSelector('#bc-sidebar .bc-side-link', { timeout: 20000 });
     const side = await V.textContent('#bc-sidebar');
     check('menu người xem: không Phải thu, còn Phải trả', await V.$('a[data-route="/cong-no"]') === null && await V.$('a[data-route="/phai-tra"]') !== null);
     check('nhóm ẩn hết (Nhân sự) mất hẳn; nhóm chưa làm (Kho) vẫn "Sắp có"', !side.includes('Nhân sự') && side.includes('Kho') && side.includes('Sắp có'),
         side.replace(/\s+/g, ' '));
     check('người xem không thấy dấu "đang ẩn" / mục quản trị', await V.$('.bc-side-hidden') === null && !side.includes('Ẩn / hiện mảng'));
+    await V.waitForSelector('.bc-stat', { timeout: 20000 });
+
+    const r0 = await pressRefresh(V, false);
+    check('Làm mới khi danh sách KHÔNG đổi: không tải lại trang, API gửi refresh=1', r0.docs === 0 && allRefresh(r0.posts),
+        `docs=${r0.docs} ${r0.posts.join(' | ')}`);
 
     await V.goto(`${viewer}/bc#/cong-no`);
     await V.waitForFunction(() => location.hash === '#/tong-quan', null, { timeout: 15000 });
@@ -90,9 +132,23 @@ try {
     check('API mảng ẩn trả 403 (đang được quản trị ẩn), mảng còn mở trả 200', r1.status === 403 && r1.server.includes('quản trị ẩn')
         && r2.status === 200, `${r1.status} ${r1.server} ${r2.status}`);
 
-    await setHidden(A, ['tong-quan'], true);
-    await V.goto('about:blank');  // mở /bc mới (tab cũ đang ở Tổng quan sẽ nhận 403 khi tự tải — đúng ý, nhưng không phải ca này)
-    await V.goto(`${viewer}/bc#/`);
+    // Tab mở từ trước: quản trị mở lại Phải thu → người xem bấm link #/cong-no thì tab tự tải lại 1 lần và vào được.
+    await setHidden(A, ['cong-no'], false);
+    await Promise.all([V.waitForNavigation({ timeout: 15000 }), V.evaluate(() => { location.hash = '#/cong-no'; })]);
+    await V.waitForSelector('#cn-kpis .bc-stat', { timeout: 20000 });
+    check('tab cũ: mảng đã mở lại → tự tải lại, vào được Phải thu', (await V.evaluate(() => location.hash)) === '#/cong-no'
+        && await V.$('a[data-route="/cong-no"]') !== null);
+
+    // Danh sách THU HẸP (mở lại) cũng làm Làm mới tải lại trang; lượt đầu sau tải lại vẫn gửi refresh=1.
+    await setHidden(A, ['nhan-su'], false);
+    await V.goto(`${viewer}/bc#/tong-quan`);
+    await V.waitForSelector('.bc-stat', { timeout: 20000 });
+    const r3 = await pressRefresh(V, true);
+    check('Làm mới khi danh sách đổi (mở lại Nhân sự): tải lại trang, menu có lại Nhân sự, lượt đầu vẫn refresh=1',
+        r3.docs >= 1 && await V.$('a[data-route="/nhan-su"]') !== null && allRefresh(r3.posts), `docs=${r3.docs} ${r3.posts.join(' | ')}`);
+
+    await setHidden(A, ['tong-quan', 'cong-no', 'nhan-su'], true);
+    await fresh(V, `${viewer}/bc#/`);
     await V.waitForFunction(() => location.hash === '#/thoi-gian-thuc', null, { timeout: 15000 });
     check('ẩn Tổng quan → trang đầu là màn còn mở đầu tiên (Thời gian thực)', true);
 
@@ -108,7 +164,7 @@ try {
     check('điện thoại: sheet "Thêm" không có Phải thu / Nhân sự', !sheet.includes('Phải thu') && !sheet.includes('Nhân sự & lương'));
     await M.close();  // Thời gian thực tự làm mới 60 s — không để chạy tiếp khi ẩn hết bên dưới
 
-    await V.goto(`${viewer}/bc#/phai-tra`);
+    await fresh(V, `${viewer}/bc#/phai-tra`);
     await V.waitForSelector('#pt-kpis .bc-stat', { timeout: 20000 });
     await setHidden(A, ['phai-tra'], true);
     await Promise.all([V.waitForNavigation({ timeout: 15000 }), V.click('#bc-btn-refresh')]);
@@ -117,18 +173,25 @@ try {
         await V.$('a[data-route="/phai-tra"]') === null && !(await V.textContent('#bc-sidebar')).includes('Công nợ'));
 
     await setHidden(A, ALL, true);
-    await V.goto('about:blank');
-    await V.goto(`${viewer}/bc#/`);
+    await fresh(V, `${viewer}/bc#/`);
     await V.waitForSelector('.bc-empty-title', { timeout: 15000 });
     check('ẩn hết → người xem thấy "chưa có mảng nào được mở"', (await V.textContent('.bc-empty-title')).includes('Chưa có mảng báo cáo nào'));
+    await fresh(V, `${viewer}/bc#/cong-no`);
+    await V.waitForFunction(() => location.hash === '#/' && document.querySelector('.bc-empty-title'), null, { timeout: 15000 });
+    check('ẩn hết + gõ thẳng #/cong-no → về #/ và thấy "chưa có mảng nào được mở"',
+        (await V.textContent('.bc-empty-title')).includes('Chưa có mảng báo cáo nào'));
 
+    // "Hiện tất cả" mở cả mảng bị ẩn ở tab khác SAU khi màn quản trị đã mở.
+    await setHidden(A, ALL, false);
+    await setHidden(A, ['cong-no'], true);
+    await A.goto(`${admin}/bc#/tong-quan`);
     await A.goto(`${admin}/bc#/an-mang`);
-    await A.waitForSelector('[data-show-all]:not([disabled])', { timeout: 20000 });
+    await countIs(A, 'Đang ẩn 1');
+    await setHidden(A, ['van-chuyen'], true);  // tab khác / Desk
     await A.click('[data-show-all]');
-    await A.waitForFunction(() => document.querySelector('#am-count')?.textContent.includes('Đang hiện tất cả'), null, { timeout: 15000 });
-    check('Hiện tất cả', JSON.stringify((await api(A, admin, 'bc.api.sections.get_hidden')).msg?.hidden) === '[]');
-    await V.goto('about:blank');
-    await V.goto(`${viewer}/bc#/tong-quan`);
+    await countIs(A, 'Đang hiện tất cả');
+    check('Hiện tất cả: mở cả mảng ai đó vừa ẩn ở tab khác', await hiddenNow(A) === '[]');
+    await fresh(V, `${viewer}/bc#/tong-quan`);
     await V.waitForSelector('a[data-route="/cong-no"]', { timeout: 20000 });
     check('mở lại → người xem thấy đủ menu', await V.$$eval('#bc-sidebar .bc-side-link', (els) => els.length) === 13);
 } catch (e) {

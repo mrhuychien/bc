@@ -232,6 +232,13 @@ class _DB:
 	def set_single_value(self, doctype, field, value):
 		self.sql("DELETE FROM `tabSingles` WHERE doctype = %s AND field = %s", (doctype, field))
 		self.sql("INSERT INTO `tabSingles` (doctype, field, value) VALUES (%s, %s, %s)", (doctype, field, value))
+		clear_document_cache(doctype, doctype)  # như v16 Database.set_single_value
+
+	def get_singles_dict(self, doctype, debug=False, *, for_update=False, cast=False):
+		self.last_for_update = for_update  # bộ thử kiểm có đọc khoá hay không
+		rows = self.sql("SELECT field, value FROM `tabSingles` WHERE doctype = %s" + (" FOR UPDATE" if for_update else ""),
+			(doctype,))
+		return _dict(rows)
 
 	def set_value(self, doctype, name, field, value=None, update_modified=True):
 		if isinstance(field, dict):
@@ -333,7 +340,26 @@ def get_cached_doc(doctype, name=None):
 	raise NotImplementedError
 
 
-get_doc = get_cached_doc
+class _NewDoc(_dict):
+	"""frappe.get_doc({...}).insert() tối giản: ghi thẳng một dòng vào tab<doctype> (cột có trong bảng)."""
+	seq = 0
+
+	def insert(self, ignore_permissions=False, **k):
+		cols = set(db.get_table_columns(self["doctype"]))
+		_NewDoc.seq += 1  # tên tăng dần: bộ thử sắp theo thứ tự ghi được (giờ giả cố định)
+		row = {"name": self.get("name") or f"NEW-{_NewDoc.seq:08d}", "owner": session.user, "modified_by": session.user,
+			**{f: v for f, v in self.items() if f in cols and f != "doctype"}}
+		row["creation"] = row["modified"] = str(utils.now())
+		db.sql(f"INSERT INTO `tab{self['doctype']}` ({', '.join(f'`{c}`' for c in row)}) VALUES ({', '.join(['%s'] * len(row))})",
+			list(row.values()))
+		self["name"] = row["name"]
+		return self
+
+
+def get_doc(doctype, name=None, **kw):
+	if isinstance(doctype, dict):
+		return _NewDoc(doctype)
+	return get_cached_doc(doctype, name)
 
 
 # ─── Cache ─────────────────────────────────────────────────────────────────

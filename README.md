@@ -156,7 +156,8 @@ Nhân sự & lương, An toàn thực phẩm) có một công tắc, nhóm nhi�
 
 Ẩn theo màn, không theo nguồn số liệu: số dùng chung vẫn có thể hiện ở màn khác (vd doanh số hôm nay ở Thời
 gian thực). Lưu ở `BC Settings.hidden_sections` (permlevel 1, mỗi dòng một mã màn — sửa được cả trên Desk,
-mã sai bị từ chối). Cần `bench migrate` để có field trên Desk; màn quản trị dùng được ngay sau deploy.
+mã sai bị từ chối); mỗi lần đổi ghi vào lịch sử (Version) của BC Settings — biết ai ẩn / mở mảng nào, lúc nào.
+**Phải `bench migrate` trước** khi ẩn (chưa migrate thì màn quản trị báo lỗi, người xem vẫn thấy đủ).
 
 ## Ẩn sản phẩm khỏi báo cáo (chỉ quản trị)
 
