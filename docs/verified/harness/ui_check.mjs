@@ -128,7 +128,7 @@ const SCEN = {
         const bp = await page.textContent('#ns-luong-bp');
         const bpt = await page.textContent('#ns-luong-bp-title');
         check('Nhân sự: lương theo bộ phận là tháng đã chốt T8/2026, gộp nhóm nhỏ, không có Showroom riêng',
-            bpt.includes('T8/2026') && bpt.includes('đã chốt') && bp.includes('nhóm nhỏ') && !/Showroom/.test(bp), `${bpt} | ${bp.replace(/\s+/g, ' ').slice(0, 300)}`);
+            bpt.includes('T8/2026') && bpt.includes('đã chốt') && /nhóm nhỏ/i.test(bp) && !/Showroom/.test(bp), `${bpt} | ${bp.replace(/\s+/g, ' ').slice(0, 300)}`);
         const bh = await page.textContent('#ns-bhxh');
         check('Nhân sự: lý do BHXH không lộ lương hưu', !bh.includes('lương hưu') && bh.includes('Chưa ghi lý do'), bh.replace(/\s+/g, ' ').slice(0, 200));
         const v = await page.textContent('#ns-viec');

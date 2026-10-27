@@ -92,9 +92,10 @@ def seed():
 	# T7: đã có dữ liệu nhưng không phiếu nào → 0.
 	# T8 = tháng đã chốt gần nhất → bảng theo bộ phận. Bộ phận theo snapshot trên phiếu; trống (NULL / '') →
 	# bộ phận hiện tại của nhân viên (E06 công nhật, E10 văn phòng — khác nhau, không được gom chung).
-	for e, snap in [(1, CN), (2, CN), (3, CN), (5, CN), (6, None), (7, VP), (8, VP), (9, VP), (11, VP), (10, None),
+	for e, snap in [(1, CN), (2, CN), (3, CN), (5, CN), (7, VP), (8, VP), (9, VP), (11, VP), (10, None),
 			(13, VP), (12, SR), (14, "")]:                               # E13 nay ở Showroom, phiếu T8 ghi Văn phòng
 		sd(e, 2026, 8, 1, 7_000_000, 6_543_210, snap)
+	sd(6, 2026, 8, 1, 0, 0, None)  # E06: phiếu 0 đ → Công nhật 5 phiếu nhưng 4 người có tiền → vẫn là nhóm nhỏ
 	sd(4, 2026, 8, 0, 7_000_000, 6_543_210, CN)                            # nháp tháng đã chốt: không vào bảng
 	sd(24, 2026, 8, 1, 0, 0, VP)                                           # phiếu 0 đ: đếm người, không đếm vào ngưỡng K
 	for e, ds, dept in [(1, 1, CN), (2, 1, CN), (3, 1, CN), (4, 0, CN), (5, 0, CN), (7, 1, VP), (8, 1, VP), (9, 1, VP),
@@ -217,7 +218,7 @@ if __name__ == "__main__":
 	c("T7: đã có dữ liệu mà không phiếu → 0", S["2026-07"]["nhat"]["so_nguoi"] == 0 and S["2026-07"]["nhat"]["thuc_nhan"] == 0)
 	n8 = S["2026-08"]["nhat"]
 	c("T8 đã chốt: chỉ phiếu duyệt (phiếu 0 đ vẫn đếm người)", (S["2026-08"]["tam_tinh"], n8["so_nguoi"], n8["so_nhap"], n8["thuc_nhan"],
-		n8["tong_tien"], n8["an"]) == (False, 14, 1, 85_100_000, 91_000_000, False), n8)
+		n8["tong_tien"], n8["an"]) == (False, 14, 1, 78_500_000, 84_000_000, False), n8)
 	n9 = S["2026-09"]["nhat"]
 	c("T9 tạm tính gồm nháp, làm tròn 100.000", (S["2026-09"]["tam_tinh"], n9["so_nguoi"], n9["so_nhap"], n9["thuc_nhan"], n9["tong_tien"])
 		== (True, 13, 4, 85_100_000, 91_000_000), n9)
@@ -230,8 +231,8 @@ if __name__ == "__main__":
 		(k9, k10))
 	c("bảng bộ phận lấy tháng đã chốt gần nhất", L["ky_bo_phan"] == "2026-08", L["ky_bo_phan"])
 	bp = [(x["nhom"], x["loai"], x["so_nguoi"], x["thuc_nhan"], x["tong_tien"]) for x in L["bo_phan"]]
-	c("T8 theo bộ phận: snapshot trên phiếu, trống → bộ phận hiện tại (không gom chung), ngưỡng theo người có tiền, nhóm nhỏ nhập nhóm lớn nhỏ nhất, khoán một nhóm",
-		sorted(bp) == sorted([("Công nhật + nhóm nhỏ", "Công nhật", 7, 45_800_000, 49_000_000), ("Văn phòng", "Công nhật", 7, 39_300_000, 42_000_000),
+	c("T8 theo bộ phận: snapshot trên phiếu, trống → bộ phận hiện tại (không gom chung), ngưỡng theo NGƯỜI CÓ TIỀN (Công nhật 5 phiếu / 4 người có tiền → gộp), khoán một nhóm",
+		sorted(bp) == sorted([("Nhóm nhỏ (gộp)", "Công nhật", 7, 39_300_000, 42_000_000), ("Văn phòng", "Công nhật", 7, 39_300_000, 42_000_000),
 			("Công khoán", "Khoán", 5, 35_000_000, 40_000_000)]), bp)
 	c("T8 theo bộ phận cộng lại = tổng tháng (không mất ai)", sum(x["so_nguoi"] for x in L["bo_phan"] if x["loai"] == "Công nhật") == n8["so_nguoi"])
 
