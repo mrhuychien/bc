@@ -52,7 +52,7 @@ def is_admin(user: str | None = None) -> bool:
 # Mọi method báo cáo gọi _guard("<mảng>") ở dòng đầu: mảng đang ẩn thì người xem bị chặn ngay ở máy chủ
 # (gõ thẳng URL / gọi API cũng không lấy được số), quản trị vẫn xem để kiểm tra.
 SECTIONS = ("thoi-gian-thuc", "tong-quan", "ngay", "thang", "tet", "tinh-thanh", "san-pham", "sx-tet",
-	"van-chuyen", "cong-no", "phai-tra", "nhan-su", "attp")
+	"ton-kho", "han-dung", "kiem-ke", "nhap-tp", "van-chuyen", "cong-no", "phai-tra", "nhan-su", "attp")
 HIDDEN_SECTIONS_FIELD = "hidden_sections"  # BC Settings, Small Text, mỗi dòng một mảng
 
 

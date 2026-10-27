@@ -27,6 +27,8 @@ EXPECTED = {
 	"cn.get_receivables": "cong-no", "cn.get_payables": "phai-tra",
 	"attp.get_overview": "attp", "attp.get_report": "attp",
 	"vc.get_overview": "van-chuyen", "ns.get_overview": "nhan-su",
+	"kho_ton.get_overview": "ton-kho", "kho_ton.get_trend": "ton-kho", "kho_han.get_overview": "han-dung",
+	"kho_kk.get_overview": "kiem-ke", "kho_nhap.get_overview": "nhap-tp",
 }
 KHONG_MANG = {"common.get_context_meta", "sections.get_hidden", "sections.set_hidden", "hidden.list_hidden",
 	"hidden.search_items", "hidden.hide_item", "hidden.unhide_item", "share.list_leaders", "share.create_leader",

@@ -113,6 +113,7 @@ class H(BaseHTTPRequestHandler):
 		args = {k: v[0] for k, v in urllib.parse.parse_qs(raw, keep_blank_values=True).items()}
 		CALLS.append((dotted, args))
 		mod, fn = dotted.rsplit(".", 1)
+		frappe.local.__dict__.pop("sx_nho", None)  # nhớ-theo-request của sx: mỗi request một bộ mới như site thật
 		try:
 			if not dotted.startswith("bc.api."):
 				raise frappe.PermissionError("Not allowed")

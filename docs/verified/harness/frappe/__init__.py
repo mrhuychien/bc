@@ -262,6 +262,9 @@ db = _DB()
 def get_all(doctype, filters=None, fields=None, pluck=None, order_by=None, limit=None, limit_page_length=None,
 		or_filters=None, group_by=None, **kw):
 	where, vals = db._where(filters or {})
+	if or_filters:  # như v16: các điều kiện or_filters nối OR, cả cụm AND với filters
+		ow, ov = db._where(or_filters)
+		where, vals = f"({where}) AND ({ow.replace(' AND ', ' OR ')})", vals + ov
 	if pluck:
 		fields = [pluck]
 	fields = fields or ["name"]

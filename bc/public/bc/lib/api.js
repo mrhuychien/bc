@@ -86,6 +86,14 @@ export const ns = {
     overview: () => call('bc.api.ns.get_overview'),
 };
 
+export const kho = {
+    ton:    ()      => call('bc.api.kho_ton.get_overview'),
+    trend:  ()      => call('bc.api.kho_ton.get_trend'),
+    han:    ()      => call('bc.api.kho_han.get_overview'),
+    kiemKe: (thang) => call('bc.api.kho_kk.get_overview', { thang }),
+    nhapTp: (thang) => call('bc.api.kho_nhap.get_overview', { thang }),
+};
+
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };

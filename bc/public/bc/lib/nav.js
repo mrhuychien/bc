@@ -17,7 +17,12 @@ export const NAV_GROUPS = [
     { title: 'Sản xuất', items: [
         { route: '/sx-tet', label: 'SX Hàng Tết', icon: 'fa-industry' },
     ] },
-    { title: 'Kho', items: [] },
+    { title: 'Kho', items: [
+        { route: '/ton-kho', label: 'Tồn kho', icon: 'fa-boxes-stacked' },
+        { route: '/han-dung', label: 'Hạn dùng & tồn âm', icon: 'fa-hourglass-half' },
+        { route: '/kiem-ke', label: 'Kiểm kê & điều chỉnh', icon: 'fa-clipboard-check' },
+        { route: '/nhap-tp', label: 'Nhập TP & giá vốn', icon: 'fa-dolly' },
+    ] },
     { title: 'Vận chuyển', items: [
         { route: '/van-chuyen', label: 'Giao hàng & xe', icon: 'fa-truck-fast' },
     ] },

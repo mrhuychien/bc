@@ -24,6 +24,12 @@
   "sx_default_from",
   "column_break_sx",
   "sx_default_to",
+  "kho_section",
+  "kho_doi_days",
+  "kho_slow_days",
+  "column_break_kho",
+  "kho_dead_days",
+  "kho_can_date_ngay",
   "hidden_section",
   "hidden_items",
   "hidden_sections",
@@ -147,6 +153,40 @@
    "description": "Trống = hết tháng kết thúc mùa SX (30/04)."
   },
   {
+   "fieldname": "kho_section",
+   "fieldtype": "Section Break",
+   "label": "Kho"
+  },
+  {
+   "fieldname": "kho_doi_days",
+   "fieldtype": "Int",
+   "label": "Số ngày tính giá vốn cho số ngày tồn kho",
+   "default": "90",
+   "description": "Mặc định 90: số ngày tồn = giá trị tồn ÷ (giá vốn hàng xuất bán N ngày gần nhất ÷ N)."
+  },
+  {
+   "fieldname": "kho_slow_days",
+   "fieldtype": "Int",
+   "label": "Chậm luân chuyển sau (ngày không xuất)",
+   "default": "90"
+  },
+  {
+   "fieldname": "column_break_kho",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kho_dead_days",
+   "fieldtype": "Int",
+   "label": "Tồn chết sau (ngày không xuất)",
+   "default": "180"
+  },
+  {
+   "fieldname": "kho_can_date_ngay",
+   "fieldtype": "Int",
+   "label": "Cận date: còn hạn dùng ≤ (ngày)",
+   "default": "60"
+  },
+  {
    "fieldname": "hidden_section",
    "fieldtype": "Section Break",
    "label": "Ẩn khỏi báo cáo",
@@ -185,7 +225,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-27 12:00:00.000000",
+ "modified": "2026-10-27 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "BC",
  "name": "BC Settings",
