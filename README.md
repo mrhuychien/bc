@@ -105,8 +105,8 @@ ghi chú tự do; biển số xe được hiện.
 
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
 bench): sản xuất 41, kênh 9, công nợ 30 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
-/ `so_lieu` của sx thật), ngày Tết 6 + 5, vận chuyển 59 (lịch xe gọi code vanchuyen thật), nhân sự 52
-(so vi sai với cảnh báo của ns thật), giao diện Playwright 104 (desktop + điện thoại), tab mở trước
+/ `so_lieu` của sx thật), ngày Tết 6 + 5, vận chuyển 65 (lịch xe gọi code vanchuyen thật), nhân sự 58
+(so vi sai với cảnh báo của ns thật), giao diện Playwright 110 (desktop + điện thoại), tab mở trước
 deploy 6. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
