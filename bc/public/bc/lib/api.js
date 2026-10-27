@@ -82,6 +82,10 @@ export const vc = {
     overview: (thang) => call('bc.api.vc.get_overview', { thang }),
 };
 
+export const ns = {
+    overview: () => call('bc.api.ns.get_overview'),
+};
+
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };

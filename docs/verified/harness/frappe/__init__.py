@@ -62,6 +62,10 @@ def whitelist(*a, **k):
 	return lambda fn: fn
 
 
+def format(value, df=None, doc=None, *a, **k):  # noqa: A001  (frappe.format: chỉ dùng cho chuỗi hiển thị)
+	return "" if value is None else str(value)
+
+
 def log_error(*a, **k):
 	LOGGED.append((a, k))
 

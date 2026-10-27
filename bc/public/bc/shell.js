@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { showModal, closeModal } from './components/modal.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p5-r3';
+const BUILD = 'bc-p5-r4';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -26,6 +26,7 @@ const VIEW_MODULES = {
     '/phai-tra': () => import(withV('./views/phai-tra.js')),
     '/attp': () => import(withV('./views/attp.js')),
     '/van-chuyen': () => import(withV('./views/van-chuyen.js')),
+    '/nhan-su': () => import(withV('./views/nhan-su.js')),
 };
 // Màn quản trị chỉ đăng ký cho System Manager (server vẫn guard mọi method).
 if (CTX.isSysManager) {
@@ -33,7 +34,7 @@ if (CTX.isSysManager) {
     VIEW_MODULES['/an-sp'] = () => import(withV('./views/an-sp.js'));
 }
 
-// Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho, Nhân sự).
+// Nhóm điều hướng — mở sẵn chỗ cho module sau (Kho).
 const NAV_GROUPS = [
     { title: 'Điều hành', items: [
         { route: '/thoi-gian-thuc', label: 'Thời gian thực', icon: 'fa-tower-broadcast' },
@@ -57,7 +58,9 @@ const NAV_GROUPS = [
         { route: '/cong-no', label: 'Phải thu', icon: 'fa-hand-holding-dollar' },
         { route: '/phai-tra', label: 'Phải trả & quỹ', icon: 'fa-building-columns' },
     ] },
-    { title: 'Nhân sự', items: [] },
+    { title: 'Nhân sự', items: [
+        { route: '/nhan-su', label: 'Nhân sự & lương', icon: 'fa-users' },
+    ] },
     { title: 'ATTP', items: [
         { route: '/attp', label: 'An toàn thực phẩm', icon: 'fa-shield-halved' },
     ] },

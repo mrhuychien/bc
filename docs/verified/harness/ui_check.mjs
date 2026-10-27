@@ -108,6 +108,29 @@ const SCEN = {
         const nav = await page.textContent('.bc-sidebar, nav, body');
         check('Menu: có nhóm Vận chuyển', nav.includes('Giao hàng & xe'));
     },
+    '/nhan-su': async (page) => {
+        await page.waitForSelector('#ns-kpis .bc-stat', { timeout: 20000 });
+        const k = await page.textContent('#ns-kpis');
+        check('Nhân sự: KPI đang làm 21, BHXH 38,1%, quỹ T9/2026 tạm tính',
+            /Đang làm\s*21/.test(k) && k.includes('38,1%') && k.includes('T9/2026'), k.replace(/\s+/g, ' ').slice(0, 400));
+        const dept = await page.textContent('#ns-dept');
+        check('Nhân sự: bảng bộ phận bỏ đuôi công ty', dept.includes('Công khoán') && !dept.includes('- HGC') && dept.includes('Chưa có bộ phận'),
+            dept.replace(/\s+/g, ' ').slice(0, 300));
+        const l = await page.textContent('#ns-luong');
+        check('Nhân sự: lương có "chưa có dữ liệu", "tạm tính", "ẩn", cảnh báo hook, phiếu lỗi kỳ',
+            ['chưa có dữ liệu', 'tạm tính', 'ẩn', 'chưa bật tính lại', 'tháng / năm hợp lệ'].every((x) => l.includes(x)), l.replace(/\s+/g, ' ').slice(0, 400));
+        const bp = await page.textContent('#ns-luong-bp');
+        check('Nhân sự: lương T9 theo bộ phận gộp nhóm nhỏ, không có Showroom riêng',
+            bp.includes('nhóm nhỏ') && !/Showroom/.test(bp), bp.replace(/\s+/g, ' ').slice(0, 300));
+        const bh = await page.textContent('#ns-bhxh');
+        check('Nhân sự: lý do BHXH không lộ lương hưu', !bh.includes('lương hưu') && bh.includes('Chưa ghi lý do'), bh.replace(/\s+/g, ' ').slice(0, 200));
+        const v = await page.textContent('#ns-viec');
+        check('Nhân sự: việc tồn có BHXH rủi ro + ghi chú khoán', v.includes('Không đóng BHXH quá 30 ngày') && v.includes('công khoán'), v.replace(/\s+/g, ' ').slice(0, 300));
+        const all = await page.textContent('main');
+        check('Nhân sự: không lộ tên / mã nhân viên', !all.includes('Nguyễn Thị Bí Mật') && !all.includes('HR-EMP'));
+        const nav = await page.textContent('.bc-sidebar, nav, body');
+        check('Menu: có Nhân sự & lương', nav.includes('Nhân sự & lương'));
+    },
 };
 
 const routes = process.argv.slice(3).length ? process.argv.slice(3) : Object.keys(SCEN);

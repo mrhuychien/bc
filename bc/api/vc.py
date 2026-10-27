@@ -20,12 +20,11 @@ from __future__ import annotations
 import calendar
 import datetime
 import re
-import unicodedata
 
 import frappe
 from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
 
-from bc.api._common import OPENING_FILTER, SI_AMOUNT, _guard, iso, pct, run_cached
+from bc.api._common import OPENING_FILTER, SI_AMOUNT, _guard, iso, pct, real_column, run_cached
 
 CHO_QUA_NGAY = 3        # đơn chưa giao quá N ngày từ ngày hoá đơn → "chờ giao quá hạn"
 CHO_TU_NGAY = 180       # không xét đơn cũ hơn (trạng thái hãng ngoài nhập tay, hay bị bỏ quên)
@@ -43,16 +42,7 @@ CHANG = ("Tạo yêu cầu", "Đã lấy hàng", "Đã nhận hàng", "Hủy t�
 _THANG = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
-def _nfc(s: str) -> str:
-	return unicodedata.normalize("NFC", s)
-
-
-def col(doctype: str, name: str) -> str | None:
-	"""Tên cột thật (NFC trước, NFD sau — cột có dấu tạo từ Customize Form) hoặc None."""
-	for c in (_nfc(name), unicodedata.normalize("NFD", name)):
-		if frappe.db.has_column(doctype, c):
-			return c
-	return None
+col = real_column  # tên cột thật (NFC trước, NFD sau) hoặc None
 
 
 def _has(*doctypes) -> bool:

@@ -17,7 +17,7 @@ from bc.api._common import has_access
 no_cache = 1
 
 # PHẢI khớp BUILD trong public/bc/shell.js (phát hiện shell cũ do cache CDN).
-SHELL_BUILD = "bc-p5-r3"
+SHELL_BUILD = "bc-p5-r4"
 
 
 def get_context(context):

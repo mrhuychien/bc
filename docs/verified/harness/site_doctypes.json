@@ -1,0 +1,152 @@
+[
+ {
+  "doctype": "DocType",
+  "name": "SalaryDay",
+  "module": "Projects",
+  "is_submittable": 1,
+  "custom": 1,
+  "_nguon": "DocType tạo trên Desk của site (không nằm trong repo nào). Field theo ns/api/phieu.py:11-24, ns/salaryday.py:98-211, ketoan payroll.js:148-155 (đặc tả spec_ns §8). Bảng con chamcong / bangghiloiphat bỏ qua — bc không đọc.",
+  "fields": [
+   {
+    "fieldname": "employee",
+    "fieldtype": "Link",
+    "options": "Employee"
+   },
+   {
+    "fieldname": "employee_name",
+    "fieldtype": "Data"
+   },
+   {
+    "fieldname": "chutaikhoan",
+    "fieldtype": "Data"
+   },
+   {
+    "fieldname": "taikhoan",
+    "fieldtype": "Data"
+   },
+   {
+    "fieldname": "nganhang",
+    "fieldtype": "Data"
+   },
+   {
+    "fieldname": "month",
+    "fieldtype": "Int"
+   },
+   {
+    "fieldname": "year",
+    "fieldtype": "Int"
+   },
+   {
+    "fieldname": "ngay",
+    "fieldtype": "Date"
+   },
+   {
+    "fieldname": "department",
+    "fieldtype": "Link",
+    "options": "Department"
+   },
+   {
+    "fieldname": "ngaysanxuat",
+    "fieldtype": "Float"
+   },
+   {
+    "fieldname": "congngay",
+    "fieldtype": "Float"
+   },
+   {
+    "fieldname": "lamthem",
+    "fieldtype": "Float"
+   },
+   {
+    "fieldname": "luongcoban",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "hotro",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "thuongkhac",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "baohiem",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "luongck",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "luongngaycong",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "luonglamthem",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "anca",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "chuyencan",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "hotrongaycong",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "thuongthamnien",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "tongtien",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "tienphat",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "tongkhautru",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "luongthucnhan",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "thamnienthangnay",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "thamnienthangtruoc",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "thamnienthangtruocnua",
+    "fieldtype": "Currency"
+   },
+   {
+    "fieldname": "ancatoi",
+    "fieldtype": "Check"
+   },
+   {
+    "fieldname": "tinhthuongthamnien",
+    "fieldtype": "Check"
+   },
+   {
+    "fieldname": "status",
+    "fieldtype": "Select",
+    "options": ""
+   },
+   {
+    "fieldname": "amended_from",
+    "fieldtype": "Link",
+    "options": "SalaryDay"
+   }
+  ]
+ }
+]

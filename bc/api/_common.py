@@ -374,6 +374,16 @@ def to_cartons(boxes, factor) -> float:
 	return round(flt(boxes) / factor, 2) if factor else 0.0
 
 
+# ─── Cột có dấu (Customize Form) ─────────────────────────────────────────────
+def real_column(doctype: str, name: str) -> str | None:
+	"""Tên cột thật của field có dấu: thử NFC rồi NFD (field tạo từ Customize Form có thể lưu NFD;
+	so sánh tên cột phân biệt hai dạng) — None nếu không có. Kết quả chỉ dùng nội suy SQL trong backtick."""
+	for c in (unicodedata.normalize("NFC", name), unicodedata.normalize("NFD", name)):
+		if frappe.db.has_column(doctype, c):
+			return c
+	return None
+
+
 # ─── Kế hoạch (plan) theo Item — cột tuỳ biến, đọc mềm ────────────────────────
 # Cột thật trên site: custom_kế_hoạch (fieldname CÓ DẤU — shipping-gotchas #3; dò cả NFC lẫn
 # NFD phòng lệch chuẩn Unicode khi tạo field). Các tên ASCII sau là dự phòng. Report "Tet Ma Hang"/"Quản lý sản xuất Hàng

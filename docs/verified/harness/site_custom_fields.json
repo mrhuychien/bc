@@ -1,8 +1,132 @@
 [
-  {"dt": "Sales Invoice", "fieldname": "custom_hình_thức_vận_chuyển", "fieldtype": "Select", "options": "Chưa phân công\nNhất Tín\nViettel Post\nTự vận chuyển\nXe vào bốc", "_nguon": "Customize Form trên site (docs/legacy/Fields.csv của vanchuyen); nextnpp loại khỏi fixtures"},
-  {"dt": "Sales Invoice", "fieldname": "custom_trạng_thái_vận_chuyển", "fieldtype": "Select", "options": "Chờ xử lý\nĐang xử lý\nĐang giao hàng\nĐã giao hàng, chụp chứng từ\nĐã nộp chứng từ", "default": "Chờ xử lý", "_nguon": "như trên"},
-  {"dt": "Sales Invoice", "fieldname": "custom_tổng_kiện", "fieldtype": "Float", "_nguon": "Client Script phía ketoan tính"},
-  {"dt": "Sales Invoice", "fieldname": "custom_hộp_lẻ", "fieldtype": "Float", "_nguon": "như trên"},
-  {"dt": "Sales Invoice", "fieldname": "custom_thể_tích_lô", "fieldtype": "Float", "_nguon": "cm³ — như trên"},
-  {"dt": "Sales Invoice", "fieldname": "custom_tỉnh", "fieldtype": "Link", "options": "Territory", "_nguon": "fetch shipping_address_name.custom_tinh"}
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_hình_thức_vận_chuyển",
+  "fieldtype": "Select",
+  "options": "Chưa phân công\nNhất Tín\nViettel Post\nTự vận chuyển\nXe vào bốc",
+  "_nguon": "Customize Form trên site (docs/legacy/Fields.csv của vanchuyen); nextnpp loại khỏi fixtures"
+ },
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_trạng_thái_vận_chuyển",
+  "fieldtype": "Select",
+  "options": "Chờ xử lý\nĐang xử lý\nĐang giao hàng\nĐã giao hàng, chụp chứng từ\nĐã nộp chứng từ",
+  "default": "Chờ xử lý",
+  "_nguon": "như trên"
+ },
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_tổng_kiện",
+  "fieldtype": "Float",
+  "_nguon": "Client Script phía ketoan tính"
+ },
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_hộp_lẻ",
+  "fieldtype": "Float",
+  "_nguon": "như trên"
+ },
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_thể_tích_lô",
+  "fieldtype": "Float",
+  "_nguon": "cm³ — như trên"
+ },
+ {
+  "dt": "Sales Invoice",
+  "fieldname": "custom_tỉnh",
+  "fieldtype": "Link",
+  "options": "Territory",
+  "_nguon": "fetch shipping_address_name.custom_tinh"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_cccd",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_zalo",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_năm_gia_nhập",
+  "fieldtype": "Int",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_lương_cơ_bản",
+  "fieldtype": "Currency",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_hỗ_trợ",
+  "fieldtype": "Currency",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_bảo_hiểm",
+  "fieldtype": "Currency",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_lương_tài_khoản",
+  "fieldtype": "Currency",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_ăn_ca_tối_tại_công_ty",
+  "fieldtype": "Check",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "custom_bankowner",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "vn_contract_type",
+  "fieldtype": "Select",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "vn_tax_code",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "vn_number_of_dependents",
+  "fieldtype": "Int",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "vn_insurance_salary",
+  "fieldtype": "Currency",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "vn_province",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ },
+ {
+  "dt": "Employee",
+  "fieldname": "health_insurance_no",
+  "fieldtype": "Data",
+  "_nguon": "Customize Form trên site / erpnextvn / HRMS (ns/api/common.py:20-25, kiểu theo ho_so.js:12-35)"
+ }
 ]

@@ -57,11 +57,47 @@ của sx (19 mảng, hộp nhắc, luật đèn), chỉ làm lại 2 chỗ phụ
 `dashboard` có guard) và mục biên bản (sx tính "chờ BẠN ký" theo người mở màn). Không trả route SPA của
 sx, bỏ chi tiết dòng sổ. Site không cài sx → trang báo "chưa có số liệu".
 
+## Vận chuyển (`#/van-chuyen`)
+
+`bc.api.vc` đọc mềm app **vanchuyen** (+ phiếu kiểm thu hồi của **ketoan**), một tháng chọn được (mặc
+định tháng này, cắt ở hôm nay):
+
+- **Giao hàng**: hoá đơn bán đã duyệt trong tháng theo hình thức × trạng thái vận chuyển (bỏ hàng trả,
+  hoá đơn đầu kỳ, đúng nhóm khách `Showroom` như vanchuyen), giá trị trước VAT. Đơn **chờ giao quá 3
+  ngày** là ảnh chụp hôm nay (mọi tháng, bỏ đơn cũ hơn 180 ngày). Đơn xe nhà **chưa xếp chuyến** tính
+  theo dòng chuyến (chuyến nháp vẫn tính — cột trạng thái xếp trên hoá đơn chỉ cập nhật khi duyệt
+  chuyến). **Giao được ngay lần đầu** = dòng chuyến kết thúc đầu tiên của mỗi đơn là "Đã giao".
+- **Chuyến**: tải trung bình có trọng số theo m³, bỏ xe chưa khai sức chứa.
+- **Cước**: chỉ chuyến đã duyệt; % trên doanh thu ĐÃ GIAO (đơn tách nhiều chuyến chia theo số kiện);
+  cảnh báo chuyến đánh dấu đã trả cước mà bút toán chi chưa duyệt / đã huỷ, và phần cước sửa tay.
+- **Sự cố**, **thu hồi hàng** (chặng theo phiếu kiểm của Kế toán khi đã có), **đội xe** (lịch đăng
+  kiểm / thay dầu / bảo dưỡng gọi hàm thuần của vanchuyen, chi phí xe năm nay).
+
+Không trả tên / SĐT lái xe, tên khách, người liên hệ, ghi chú tự do; biển số xe được hiện.
+
+## Nhân sự (`#/nhan-su`)
+
+`bc.api.ns` — chỉ số tổng hợp, không tên / mã nhân viên:
+
+- **Quân số** theo trạng thái × bộ phận (khoán = bộ phận "Công khoán - HGC" như app ns); **vào / nghỉ
+  12 tháng** theo ngày vào làm / ngày nghỉ trên hồ sơ (không dùng ngày sửa hồ sơ).
+- **BHXH**: tỷ lệ đóng trong số đang làm, số người quá 30 ngày chưa đóng mà chưa ghi lý do (= cảnh báo
+  của ns). Lý do không đóng chỉ hiện gộp, nhóm < 5 người bị gộp.
+- **Quỹ lương THỰC NHẬN** 12 tháng theo loại: công nhật (SalaryDay) và khoán (phiếu lương khoán của
+  sx); mỗi người mỗi tháng một phiếu như màn Lương của ns. Tháng trước + tháng này là tạm tính (gồm
+  nháp); tháng cũ hơn chỉ phiếu đã duyệt. Trước tháng có phiếu đầu tiên hiện "chưa có dữ liệu" (không
+  phải 0). **Không gồm lương Ban lãnh đạo.** Theo bộ phận chỉ cho tháng trước; nhóm < 5 người không hiện
+  tiền (gộp vào nhóm khác), tiền làm tròn 100.000 đ. Cảnh báo khi site chưa bật tính lại phiếu công nhật
+  (`ns_tinh_lai_salaryday`).
+- **Giấy tờ** hết hạn / sắp hết (HĐ, khám SK, ATTP — ATTP khớp cả option lưu sai chữ trên site) và
+  **việc tồn** của Phòng nhân sự (gọi hàm thuần `canh_bao.tinh` của ns, đếm theo người).
+
 ## Kiểm thử
 
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
 bench): sản xuất 41, kênh 9, công nợ 30 (code ketoan thật cho MT), ATTP 15 (so vi sai với `tong_quan`
-/ `so_lieu` của sx thật), ngày Tết 6 + 5, giao diện Playwright 64 (desktop + điện thoại), tab mở trước
+/ `so_lieu` của sx thật), ngày Tết 6 + 5, vận chuyển 59 (lịch xe gọi code vanchuyen thật), nhân sự 52
+(so vi sai với cảnh báo của ns thật), giao diện Playwright 104 (desktop + điện thoại), tab mở trước
 deploy 6. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 

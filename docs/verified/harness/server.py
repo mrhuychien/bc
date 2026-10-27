@@ -22,6 +22,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(1, app("sx"))      # bc.api.attp gọi helper sx thật
 sys.path.insert(1, app("ketoan"))  # bc.api.cn gọi mt_debt của ketoan thật
 sys.path.insert(1, app("vanchuyen"))  # bc.api.vc gọi lịch xe (nhat_ky_xe) của vanchuyen thật
+sys.path.insert(1, app("ns"))  # bc.api.ns gọi cảnh báo (canh_bao.tinh) của ns thật
 PUBLIC = os.path.join(ROOT, "bc", "public", "bc")
 
 import frappe  # noqa: E402  (fake)
