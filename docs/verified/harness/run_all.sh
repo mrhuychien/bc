@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 python3 -B extract_cf.py >/dev/null
 fail=0
 for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py test_ns.py test_sections.py \
-		test_kho_ton.py test_kho_han.py test_kho_kk.py test_kho_nhap.py; do
+		test_kho_ton.py test_kho_han.py test_kho_kk.py test_kho_nhap.py test_kho_nen.py; do
 	echo "═══ $t"; python3 -B "$t" | tail -1 || fail=1
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done
@@ -26,6 +26,15 @@ if node -e "require('playwright')" 2>/dev/null; then
 		&& (env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_kho_ui python3 -B server.py 8127 > /tmp/bc-ui-server-kho.log 2>&1 &) && sleep 1
 	for u in ui_kho_ton.mjs ui_kho_han.mjs ui_kho_kk.mjs ui_kho_nhap.mjs; do
 		echo "═══ $u"; out=$(node "$u" http://127.0.0.1:8127 2>&1); rc=$?
+		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	done
+	# Thời gian thực trên seed có sổ kho: số mã có tồn từng kho (danh sách kho rỗng thì trượt)
+	echo "═══ ui_check.mjs /thoi-gian-thuc (seed Kho)"; out=$(BC_UI_KHO=1 node ui_check.mjs http://127.0.0.1:8127 /thoi-gian-thuc 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	# Hạn dùng — lượt phụ (seed lại cùng DB, sau mọi kiểm trên seed gộp): bật cache, sổ chỉ còn lô thu hồi + phần âm, sổ rỗng
+	for pass in cache thu-hoi empty; do
+		BC_TEST_DB=bc_test_kho_ui python3 -B test_kho_han.py seed-$pass >/dev/null || fail=1
+		echo "═══ ui_kho_han.mjs $pass"; out=$(node ui_kho_han.mjs http://127.0.0.1:8127 $pass 2>&1); rc=$?
 		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	done
 	pkill -f '^python3 -B server.py 8127' || true

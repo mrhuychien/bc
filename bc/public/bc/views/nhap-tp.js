@@ -24,15 +24,26 @@ function qn(v) { return v === null || v === undefined ? '—' : Q.format(v); }
 function ct(v) { return v === null || v === undefined ? '—' : C1.format(v); }
 /** Số lượng kèm đơn vị; lẫn đơn vị (server trả null) → "—". */
 function qu(v, uom) { return v === null || v === undefined ? '<span class="bc-muted">—</span>' : `${qn(v)} ${escapeHtml(uom || '')}`.trim(); }
-function off(what, x) {
-    return x && x.error ? `<div class="bc-muted bc-text-sm">Không tính được ${escapeHtml(what)} lúc này.</div>`
+/** Khối không có số: lỗi tính → "không tính được"; site chưa cài sx (meta.sx false) → nói rõ chưa cài, không ngụ ý "chưa có phiếu". */
+function off(what, x, sx = true) {
+    if (x && x.error) return `<div class="bc-muted bc-text-sm">Không tính được ${escapeHtml(what)} lúc này.</div>`;
+    return sx === false ? `<div class="bc-muted bc-text-sm">Hệ thống sản xuất (app sx) chưa cài nên chưa có ${escapeHtml(what)}.</div>`
         : `<div class="bc-muted bc-text-sm">Hệ thống sản xuất chưa có ${escapeHtml(what)}.</div>`;
 }
-/** Phần chưa quy được thùng — chuỗi HTML đã escape. */
-function noCarton(x) {
+/** Phần chưa quy được thùng — chữ thường (tooltip biểu đồ vẽ trên canvas, không phải HTML). */
+function noCartonText(x) {
     if (!x || !x.items_without_carton_factor) return '';
     const n = x.boxes_without_carton_factor;
-    return `${n === null || n === undefined ? `${fmtNum(x.items_without_carton_factor)} mã` : `${qn(n)} ${escapeHtml(x.uom_without || '')}`} chưa khai quy cách thùng`;
+    return `${n === null || n === undefined ? `${fmtNum(x.items_without_carton_factor)} mã` : `${qn(n)} ${x.uom_without || ''}`.trim()} chưa khai quy cách thùng`;
+}
+/** Như trên — chuỗi HTML đã escape. */
+function noCarton(x) { return escapeHtml(noCartonText(x)); }
+/** Ô "Thùng" của một tổng (ngày / tháng): số thùng + dòng "+ N hộp" của mã chưa khai quy cách thùng (thùng không gồm phần đó). */
+function ctCell(x) {
+    if (!x.items_without_carton_factor) return ct(x.cartons);
+    const n = x.boxes_without_carton_factor;
+    const plus = n === null || n === undefined ? `${fmtNum(x.items_without_carton_factor)} mã` : `${qn(n)} ${escapeHtml(x.uom_without || '')}`.trim();
+    return `${ct(x.cartons)}<div class="bc-muted bc-text-sm nt-nocarton" title="${noCarton(x)} — không quy ra thùng">+ ${plus}</div>`;
 }
 function monthLabel(m) { return `T${Number(m.slice(5))}/${m.slice(2, 4)}`; }
 const BOX = 'Hộp';  // đơn vị thường gặp — ô bảng chỉ ghi đơn vị khi KHÁC hộp
@@ -62,8 +73,10 @@ function monthOptions(cur) {
 }
 
 // ─── Thẻ tổng ────────────────────────────────────────────────────────────────
+// Hai hàng tách bạch: số CỦA THÁNG CHỌN (nhập kho, nhập giá vốn 0) và TÌNH HÌNH HÔM NAY (phiếu chờ duyệt, đã vào hộp chưa nhập,
+// nợ BOM đang mở, thành phẩm đang tồn giá vốn 0 — không đổi theo tháng chọn). Không thẻ nào trộn số hôm nay với số của tháng.
 function kpisHtml(d) {
-    const n = d.nhap, q = d.cho_duyet, b = d.no_bom, g = d.gia_von_0;
+    const m = d.meta, n = d.nhap, q = d.cho_duyet, v = d.vao_hop, b = d.no_bom, g = d.gia_von_0;
     const na = (label, icon, why) => statCard({ label, icon, value: '—', rows: [['', escapeHtml(why)]] });
     const noSx = 'Chưa cài sx';  // ngắn: thẻ hẹp ở 390px; dải cảnh báo phía trên giải thích đủ
     let c1;
@@ -75,27 +88,46 @@ function kpisHtml(d) {
         c1 = statCard({ label: 'Thành phẩm nhập kho trong tháng', icon: '📦',
             value: t.qty === null ? `${ct(t.cartons)} thùng` : qu(t.qty, t.uom || 'hộp'), rows });
     } else c1 = na('Thành phẩm nhập kho trong tháng', '📦', n.error ? 'Không tính được' : noSx);
+    const nk = g.available ? g.nhap_ky : null;
+    const c5 = nk ? statCard({ label: 'Nhập giá vốn 0 trong tháng', icon: '🪙', tone: nk.entries ? 'warning' : '',
+        value: nk.qty === null ? `${fmtNum(nk.entries)} phiếu kho` : qu(nk.qty, nk.uom || 'hộp'),
+        rows: [['Phiếu kho', fmtNum(nk.entries)], ['Số mã', fmtNum(nk.items)]] })
+        : na('Nhập giá vốn 0 trong tháng', '🪙', 'Không tính được');
     const c2 = q.available ? statCard({ label: 'Phiếu nhập chờ thủ kho duyệt', icon: '⏳', tone: q.count ? 'warning' : '',
         value: fmtNum(q.count), rows: [['Số lượng', qu(q.qty, q.uom)],
             ['Phiếu cũ nhất', q.oldest_age_days === null ? '—' : `<span class="${q.oldest_age_days > 2 ? 'bc-txt-danger' : ''}">${fmtNum(q.oldest_age_days)} ngày</span>`],
             ['Sẽ thành nợ BOM', qu(q.no_bom_qty, q.uom)], ['Phiếu hàng Tết', fmtNum(q.count_tet)]] })
         : na('Phiếu nhập chờ thủ kho duyệt', '⏳', q.error ? 'Không tính được' : noSx);
+    let cv;
+    if (v.available) {
+        const rows = [['Thùng', ct(v.cartons)], ['Số mã', fmtNum(v.items)], ['Vào hộp từ', escapeHtml(fmtDate(v.from))]];
+        if (v.items_without_carton_factor) rows.splice(1, 0, ['Chưa khai thùng', noCarton(v).replace(' chưa khai quy cách thùng', '')]);
+        cv = statCard({ label: 'Đã vào hộp, chưa nhập kho', icon: '📥', value: qu(v.qty, v.uom), rows });
+    } else cv = na('Đã vào hộp, chưa nhập kho', '📥', v.error ? 'Không tính được' : noSx);
     const c3 = b.available ? statCard({ label: 'Nợ BOM đang mở', icon: '🧾', tone: b.rows ? 'warning' : '',
         value: b.qty === null ? `${fmtNum(b.rows)} dòng` : qu(b.qty, b.uom || 'hộp'),
-        rows: [['Giá tạm lúc nhập', money(b.value_tam)], ['Nhập giá 0', qu(b.qty_gia_0, b.uom)],
+        rows: [['Giá tạm lúc nhập', money(b.value_tam)], ['Giá tạm 0', qu(b.qty_gia_0, b.uom)],
             ['Nợ cũ nhất', b.age_days === null ? '—' : `<span class="${b.age_days > b.ngay_no_lau ? 'bc-txt-danger' : ''}">${fmtNum(b.age_days)} ngày</span>`],
             ['Xử lý được ngay', `${fmtNum(b.xu_ly_ngay.items)} mã`]] })
         : na('Nợ BOM đang mở', '🧾', b.error ? 'Không tính được' : noSx);
-    const c4 = g.available ? statCard({ label: 'Thành phẩm chưa có giá vốn', icon: '⚠️', tone: g.ton.rows ? 'danger' : '',
-        value: g.ton.qty === null ? `${fmtNum(g.ton.rows)} dòng` : qu(g.ton.qty, g.ton.uom || 'hộp'),
-        rows: [['Số mã', fmtNum(g.ton.items)], ['Thùng', ct(g.ton.cartons)], ['Nhập giá 0 trong tháng', qu(g.nhap_ky.qty, g.nhap_ky.uom)]] })
-        : na('Thành phẩm chưa có giá vốn', '⚠️', 'Không tính được');
-    return `<div class="bc-grid bc-grid-4">${c1}${c2}${c3}${c4}</div>`;
+    let c4;
+    if (g.available) {
+        const t = g.ton;
+        const rows = [['Số mã', fmtNum(t.items)], ['Thùng', ct(t.cartons)]];
+        if (t.items_without_carton_factor) rows.push(['Chưa khai thùng', noCarton(t).replace(' chưa khai quy cách thùng', '')]);
+        c4 = statCard({ label: 'Thành phẩm đang tồn giá vốn 0', icon: '⚠️', tone: t.rows ? 'danger' : '',
+            value: t.qty === null ? `${fmtNum(t.rows)} dòng` : qu(t.qty, t.uom || 'hộp'), rows });
+    } else c4 = na('Thành phẩm đang tồn giá vốn 0', '⚠️', 'Không tính được');
+    const ym = `${m.thang.slice(5)}/${m.thang.slice(0, 4)}`;
+    return `<div class="bc-section-title" id="nt-kpi-thang-title">Trong tháng ${escapeHtml(ym)}</div>
+        <div class="bc-grid bc-grid-2" id="nt-kpi-thang">${c1}${c5}</div>
+        <div class="bc-section-title" id="nt-kpi-nay-title">Tình hình hôm nay ${escapeHtml(fmtDate(m.as_of))} · không theo tháng chọn</div>
+        <div class="bc-grid bc-grid-4" id="nt-kpi-nay">${c2}${cv}${c3}${c4}</div>`;
 }
 
 // ─── Nhập kho trong tháng ────────────────────────────────────────────────────
 function nhapHtml(n, meta) {
-    if (!n.available) return off('phiếu nhập thành phẩm', n);
+    if (!n.available) return off('phiếu nhập thành phẩm', n, meta.sx);
     const t = n.total, k = t.by_kind, dc = n.doi_chieu, np = n.ngoai_phieu;
     const box = t.uom || 'hộp';
     const khop = !dc.slips_lech;
@@ -122,15 +154,18 @@ function nhapHtml(n, meta) {
                 { key: 'cartons', label: 'Thùng', render: (r) => (r.cartons ? ct(r.cartons) : '<span class="bc-muted">—</span>') },
                 { key: 'value', label: 'Giá trị', render: (r) => money(r.value) },
             ] })}</div>
-        ${noCarton(t) ? `<div class="bc-note">${noCarton(t)} (không quy ra thùng).</div>` : ''}`;
+        ${noCarton(t) ? `<div class="bc-note">${noCarton(t)} (không quy ra thùng${chartUnit(n.by_day, t.uom || BOX)
+            ? '' : '; biểu đồ theo ngày vẽ theo thùng vì tháng có mã khác đơn vị nên không gồm phần này'}).</div>` : ''}`;
 }
 
-function monthHtml(n) {
-    if (!n.available) return off('phiếu nhập thành phẩm', n);
+function monthHtml(n, meta) {
+    if (!n.available) return off('phiếu nhập thành phẩm', n, meta.sx);
     const rows = n.by_month.slice().reverse().map((r) => ({ ...r, label: monthLabel(r.month) }));
     // Có nhập ngoài phiếu = có phiếu kho ngoài phiếu (đếm), KHÔNG suy từ số lượng: tháng lẫn đơn vị có số lượng null.
     const anyNgoai = n.by_month.some((r) => r.ngoai_entries > 0);
     const mixed = n.by_month.some((r) => r.qty === null || r.so_kho_qty === null || r.ngoai_phieu === null);
+    const anyNoCarton = n.by_month.some((r) => r.items_without_carton_factor);
+    const byCarton = !chartUnit(n.by_month, n.total.uom || BOX);  // biểu đồ 12 tháng vẽ theo thùng
     const ngoaiCell = (r) => {
         if (!r.ngoai_entries) return '0';
         const v = r.ngoai_phieu === null ? `${fmtNum(r.ngoai_entries)} phiếu kho` : qm(r.ngoai_phieu, r.ngoai_uom);
@@ -141,14 +176,16 @@ function monthHtml(n) {
             columns: [
                 { key: 'label', label: 'Tháng', align: 'left', sortable: false },
                 { key: 'qty', label: 'Theo phiếu', sortable: false, render: (r) => qm(r.qty, r.uom) },
-                { key: 'cartons', label: 'Thùng', sortable: false, render: (r) => ct(r.cartons) },
+                { key: 'cartons', label: 'Thùng', sortable: false, render: ctCell },
                 { key: 'value', label: 'Giá trị', sortable: false, render: (r) => money(r.value) },
                 { key: 'so_kho_qty', label: 'Theo sổ kho', sortable: false, render: (r) => qm(r.so_kho_qty, r.so_kho_uom) },
                 { key: 'ngoai_phieu', label: 'Ngoài phiếu', sortable: false, render: ngoaiCell },
             ] })}</div>
         <div class="bc-note">"Theo sổ kho" = mọi phiếu nhập Kho thành phẩm từ sản xuất (gồm nhập tay, chuyển từ xưởng, tồn đầu kỳ; bỏ kiểm kê,
             dọn tồn). ${anyNgoai ? '"Ngoài phiếu" là phần không đi qua phiếu nhập của sản xuất — nên bằng 0.' : 'Mọi tháng đều không có nhập ngoài phiếu.'}
-            ${mixed ? '"—" = tháng có mã khác đơn vị (hộp, kg…), không cộng chung; "Ngoài phiếu" khi đó ghi số phiếu kho.' : ''}</div>`;
+            ${mixed ? '"—" = tháng có mã khác đơn vị (hộp, kg…), không cộng chung; "Ngoài phiếu" khi đó ghi số phiếu kho.' : ''}
+            ${anyNoCarton ? `"+ …" dưới cột Thùng = hàng của mã chưa khai quy cách thùng, không quy ra thùng được (số thùng chưa gồm phần này${byCarton
+                ? '; biểu đồ vẽ theo thùng nên cũng không gồm' : ''}).` : ''}</div>`;
 }
 
 async function charts2(n, alive) {
@@ -172,7 +209,9 @@ async function charts2(n, alive) {
             data: { labels, datasets: [{ label: `Nhập kho (${unit})`, data: rows.map(val), backgroundColor: color, borderWidth: 0,
                 borderRadius: 4, maxBarThickness: 26 }] },
             options: { maintainAspectRatio: false, plugins: { legend: { display: false },
-                tooltip: { callbacks: { label: (c) => `${qn(c.raw)} ${unit} · ${fmtMoney(rows[c.dataIndex].value)}` } } },
+                tooltip: { callbacks: { label: (c) => `${qn(c.raw)} ${unit} · ${fmtMoney(rows[c.dataIndex].value)}`,
+                    // Vẽ theo thùng: thùng không gồm mã chưa khai quy cách — nói rõ phần thiếu của đúng cột đó.
+                    afterLabel: (c) => (!u && rows[c.dataIndex].items_without_carton_factor ? `chưa gồm ${noCartonText(rows[c.dataIndex])}` : '') } } },
             scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { autoSkip: true, maxRotation: 0 } } } },
         }));
     };
@@ -181,8 +220,8 @@ async function charts2(n, alive) {
 }
 
 // ─── Hàng đợi ────────────────────────────────────────────────────────────────
-function choHtml(q) {
-    if (!q.available) return off('phiếu nhập thành phẩm', q);
+function choHtml(q, sx) {
+    if (!q.available) return off('phiếu nhập thành phẩm', q, sx);
     if (!q.count) return emptyState({ icon: '✅', title: 'Không có phiếu nào chờ duyệt' });
     return `${dataTable({ rows: q.rows, sortKey: 'age_days', pageSize: 8,
         columns: [
@@ -195,8 +234,8 @@ function choHtml(q) {
             "Sẽ nợ BOM" = mã chưa có định mức đang dùng — duyệt sẽ nhập kho mà chưa trừ nguyên liệu.</div>`;
 }
 
-function vaoHopHtml(v) {
-    if (!v.available) return off('bảng vào hộp', v);
+function vaoHopHtml(v, sx) {
+    if (!v.available) return off('bảng vào hộp', v, sx);
     const other = v.rows.filter((r) => r.khac_dvt);
     return `${kpiGrid([
         { label: 'Hộp chưa nhập kho', value: qn(v.qty), sub: `${fmtNum(v.items)} mã` },
@@ -216,14 +255,15 @@ function vaoHopHtml(v) {
 }
 
 // ─── Giá vốn chưa thật ───────────────────────────────────────────────────────
-function noBomHtml(b) {
-    if (!b.available) return off('sổ nợ BOM', b);
+function noBomHtml(b, sx) {
+    if (!b.available) return off('sổ nợ BOM', b, sx);
     if (!b.rows) return emptyState({ icon: '✅', title: 'Không còn nợ BOM nào đang mở' });
     const size = (x) => (b.qty === null ? x.rows : x.qty);  // độ dài thanh theo số lượng (lẫn đơn vị → theo số dòng)
     const maxQ = Math.max(1e-9, ...b.buckets.map(size));
     const cls = { '0-7': 'bc-ok', '8-30': 'bc-alt', '>30': '' };
     return `${kpiGrid([
-        { label: 'Đang nợ', value: qu(b.qty, b.uom), sub: `${fmtNum(b.items)} mã · ${fmtNum(b.rows)} dòng${b.cartons ? ` · ${ct(b.cartons)} thùng` : ''}` },
+        { label: 'Đang nợ', value: qu(b.qty, b.uom), sub: `${fmtNum(b.items)} mã · ${fmtNum(b.rows)} dòng${b.cartons ? ` · ${ct(b.cartons)} thùng` : ''}${
+            b.items_without_carton_factor ? ` + ${noCarton(b)}` : ''}` },
         { label: 'Giá tạm lúc nhập', value: money(b.value_tam), sub: 'giá vốn đang ghi sổ cho số hàng này' },
         { label: 'Nhập với giá 0', value: qu(b.qty_gia_0, b.uom), cls: b.qty_gia_0 ? 'bc-txt-danger' : '', sub: `${fmtNum(b.rows_gia_0)} dòng` },
         { label: 'Xử lý được ngay', value: `${fmtNum(b.xu_ly_ngay.items)} mã`, cls: b.xu_ly_ngay.items ? 'bc-txt-success' : '',
@@ -248,41 +288,44 @@ function noBomHtml(b) {
             trừ vào ngày bù; giá vốn lô thành phẩm giữ nguyên giá tạm lúc nhập (giá 0 thì bán ra giá vốn 0).</div>`;
 }
 
-function nvlHtml(r) {
-    if (!r.available) return off('sổ nợ BOM', r);
+function nvlHtml(r, sx) {
+    if (!r.available) return off('sổ nợ BOM', r, sx);
     const cu = r.chua_uoc_tinh;
     return `${kpiGrid([
         { label: 'Nguyên liệu còn treo (ước tính)', value: money(r.value), sub: `${fmtNum(r.n_rm)} nguyên liệu` },
         { label: 'Chưa ước tính được', value: `${fmtNum(cu.items)} mã`, sub: cu.items ? `${qu(cu.qty, cu.uom)} nợ chưa có định mức` : '',
             cls: cu.items ? 'bc-txt-warning' : '' },
     ], 2)}
-        <div class="bc-mt-3">${dataTable({ rows: r.list, pageSize: 8, emptyMessage: 'Không có nợ nào bung được theo định mức',
+        <div class="bc-mt-3" id="nt-nvl-list">${dataTable({ rows: r.list, pageSize: 8, emptyMessage: 'Không có nợ nào bung được theo định mức',
+            // Danh sách xếp theo giá trị: cột Giá trị + Số lượng ngay sau tên (điện thoại thấy ngay), kho xuống dòng phụ dưới tên.
             columns: [
-                { key: 'short_name', label: 'Nguyên liệu', align: 'left', render: (x) => escapeHtml(x.short_name) },
-                { key: 'warehouse_label', label: 'Kho', align: 'left', render: (x) => escapeHtml(x.warehouse_label || '—') },
+                { key: 'short_name', label: 'Nguyên liệu', align: 'left', render: (x) => `${escapeHtml(x.short_name)}<div class="bc-muted bc-text-sm">${escapeHtml(x.warehouse_label || '—')}</div>` },
+                { key: 'value', label: 'Giá trị', render: (x) => (x.rate_source ? money(x.value)
+                    : '<span class="bc-muted bc-text-sm nt-no-rate">chưa có <br>giá vốn</span>') },
                 { key: 'qty', label: 'Số lượng', render: (x) => qu(x.qty, x.uom) },
-                { key: 'value', label: 'Giá trị', render: (x) => (x.rate_source ? money(x.value) : '<span class="bc-badge bc-badge-muted">chưa có giá vốn</span>') },
             ] })}</div>
         <div class="bc-note">Nguyên liệu đáng lẽ đã trừ cho phần nợ BOM nhưng vẫn nằm trên sổ (kiểm kê sẽ thấy thiếu đúng phần này). Bung định mức
             hiện tại một cấp × giá vốn đang ghi sổ; chưa có giá vốn thì để trống, không lấy giá mua.</div>`;
 }
 
-function gv0Html(g) {
-    if (!g.available) return off('số liệu giá vốn', g);
-    const t = g.ton, n = g.nhap_ky;
+function gv0Html(g, meta) {
+    if (!g.available) return off('số liệu giá vốn', g, meta.sx);
+    const t = g.ton;
+    // Khối nằm dưới tiêu đề "… tình hình hôm nay" → chỉ số HÔM NAY. Số nhập giá 0 của THÁNG CHỌN chỉ ở thẻ "Nhập giá vốn 0
+    // trong tháng" của hàng tháng phía trên (không lặp ở đây, để không trộn hai mốc dưới một tiêu đề).
     return `${kpiGrid([
-        { label: 'Đang tồn giá vốn 0', value: qu(t.qty, t.uom), sub: `${fmtNum(t.items)} mã · ${fmtNum(t.rows)} dòng kho`, cls: t.rows ? 'bc-txt-danger' : '' },
-        { label: 'Nhập giá 0 trong tháng', value: qu(n.qty, n.uom), sub: `${fmtNum(n.entries)} phiếu kho · ${fmtNum(n.items)} mã` },
+        { label: 'Đang tồn giá vốn 0 (hôm nay)', value: qu(t.qty, t.uom), sub: `${fmtNum(t.items)} mã · ${fmtNum(t.rows)} dòng kho`, cls: t.rows ? 'bc-txt-danger' : '' },
+        { label: 'Quy ra thùng', value: ct(t.cartons), sub: noCarton(t) },
     ], 2)}
-        <div class="bc-mt-3">${dataTable({ rows: t.list, sortKey: 'qty', pageSize: 8, emptyMessage: 'Không có thành phẩm nào tồn với giá vốn 0',
+        <div class="bc-mt-3" id="nt-gv0-list">${dataTable({ rows: t.list, sortKey: 'qty', pageSize: 8, emptyMessage: 'Không có thành phẩm nào tồn với giá vốn 0',
+            // Kho xuống dòng phụ dưới tên: cột Tồn (khoá sắp xếp) thấy ngay ở 390px; cùng mã ở hai kho không trông như dòng lặp.
             columns: [
-                { key: 'short_name', label: 'Thành phẩm', align: 'left', render: (x) => escapeHtml(x.short_name) },
-                { key: 'warehouse_label', label: 'Kho', align: 'left', render: (x) => escapeHtml(x.warehouse_label || '') },
+                { key: 'short_name', label: 'Thành phẩm', align: 'left', render: (x) => `${escapeHtml(x.short_name)}<div class="bc-muted bc-text-sm">${escapeHtml(x.warehouse_label || '')}</div>` },
                 { key: 'qty', label: 'Tồn', render: (x) => qu(x.qty, x.uom) },
                 { key: 'cartons', label: 'Thùng', render: (x) => (x.cartons ? ct(x.cartons) : '<span class="bc-muted">—</span>') },
             ] })}</div>
         <div class="bc-note">Thành phẩm ở kho bán được có tồn mà giá vốn bằng 0 — bán ra sẽ ghi giá vốn 0, lãi bị thổi lên. Mã vừa có lô giá 0
-            vừa có lô có giá thì giá vốn bị kéo thấp chứ không về 0, nên xem thêm dòng "Nhập giá 0".</div>`;
+            vừa có lô có giá thì giá vốn bị kéo thấp chứ không về 0, nên xem thêm thẻ "Nhập giá vốn 0 trong tháng" ở đầu trang.</div>`;
 }
 
 /** Ô chọn tháng. Dựng lại sau mỗi lượt tải: trả focus về ô nếu người dùng đang ở đó. */
@@ -313,12 +356,12 @@ async function load(isCurrent, thang = state.thang, chon = false) {
         bindPicker(d.meta.thang, `<span class="bc-text-sm" id="nt-range">Từ ${escapeHtml(fmtDate(d.meta.from))} đến ${escapeHtml(fmtDate(d.meta.to))}</span>`, isCurrent);
         fill('nt-kpis', `${d.meta.sx ? '' : '<div class="bc-alert">Hệ thống sản xuất (app sx) chưa cài: chỉ có phần thành phẩm chưa có giá vốn.</div>'}${kpisHtml(d)}`);
         fill('nt-nhap', nhapHtml(d.nhap, d.meta));
-        fill('nt-month', monthHtml(d.nhap));
-        fill('nt-cho', choHtml(d.cho_duyet));
-        fill('nt-vaohop', vaoHopHtml(d.vao_hop));
-        fill('nt-nobom', noBomHtml(d.no_bom));
-        fill('nt-nvl', nvlHtml(d.nvl_treo));
-        fill('nt-gv0', gv0Html(d.gia_von_0));
+        fill('nt-month', monthHtml(d.nhap, d.meta));
+        fill('nt-cho', choHtml(d.cho_duyet, d.meta.sx));
+        fill('nt-vaohop', vaoHopHtml(d.vao_hop, d.meta.sx));
+        fill('nt-nobom', noBomHtml(d.no_bom, d.meta.sx));
+        fill('nt-nvl', nvlHtml(d.nvl_treo, d.meta.sx));
+        fill('nt-gv0', gv0Html(d.gia_von_0, d.meta));
         // Biểu đồ lỗi (CDN chặn / mạng yếu) chỉ thay khung biểu đồ, không xoá số đã hiện.
         try { await charts2(d.nhap, alive); } catch (e) {
             if (alive()) {
@@ -347,11 +390,12 @@ export async function render({ container, isCurrent }) {
         <div class="bc-card"><div id="nt-nhap">${skeleton(220)}</div></div>
         <div class="bc-section-title">12 tháng gần nhất</div>
         <div class="bc-card"><div id="nt-month">${skeleton(200)}</div></div>
-        <div class="bc-grid bc-grid-even bc-mt-3">
+        <div class="bc-section-title">Hàng đợi — tình hình hôm nay</div>
+        <div class="bc-grid bc-grid-even">
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Phiếu nhập chờ thủ kho duyệt</div></div><div id="nt-cho">${skeleton(160)}</div></div>
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Đã vào hộp, chưa nhập kho</div></div><div id="nt-vaohop">${skeleton(160)}</div></div>
         </div>
-        <div class="bc-section-title">Giá vốn chưa thật</div>
+        <div class="bc-section-title">Giá vốn chưa thật — tình hình hôm nay</div>
         <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Nợ BOM đang mở (giá vốn tạm)</div></div><div id="nt-nobom">${skeleton(200)}</div></div>
         <div class="bc-grid bc-grid-even bc-mt-3">
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Nguyên liệu còn treo trên sổ</div></div><div id="nt-nvl">${skeleton(160)}</div></div>

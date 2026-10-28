@@ -18,27 +18,41 @@ K9 — kiểm kê gần nhất theo kho (ảnh chụp hôm nay; kỳ chỉ dùng
   (từ dòng đếm cuối), số dòng / số mã đã đếm. Đang đếm lâu = kho vẫn bán / xuất trong lúc đếm.
 - huy_chot (KK M6b): phiếu docstatus 2 có ngày hiệu lực (thoi_diem → chot_luc → modified) trong kỳ; "mở lại" = huỷ chốt
   của sx (ghi_chu có "[Huỷ chốt" — chỉ dò ở máy chủ, KHÔNG gửi ghi_chu).
-- ira (KK M4): độ chính xác tồn của lần kiểm sx mới nhất mỗi (kho, loai) theo biên bản SX Kiem Ke Lo: mã khớp
-  (|Σ chenh| ≤ 1e-6) / mã có sổ hoặc đếm ≠ 0, cộng THEO MÃ (chenh từng lô gồm cả chuyển lô) và BỎ dòng lô đang thu hồi.
+- ira (KK M4): độ chính xác tồn của lần kiểm sx mới nhất mỗi (kho, loai) CÓ NGÀY HIỆU LỰC ≤ cuối tháng chọn (t — tháng
+  này thì hôm nay; xếp như K9: chot_luc, creation, name giảm dần) theo biên bản SX Kiem Ke Lo: mã khớp (|Σ chenh| ≤ 1e-6)
+  / mã có sổ hoặc đếm ≠ 0, cộng THEO MÃ (chenh từng lô gồm cả chuyển lô) và BỎ dòng lô đang thu hồi. den_ngay = t,
+  ngay_moi_nhat = ngày lần kiểm mới nhất trong các dòng; ty_le_hien_tai = {phiếu: tỷ lệ} của lần kiểm gần nhất HÔM NAY
+  (cột độ chính xác của bảng kho K9 — bảng đó luôn là hôm nay).
 
 K10 — chênh lệch kiểm kê và điều chỉnh trong kỳ (giá trị có dấu = Σ SLE.stock_value_difference, is_cancelled = 0):
 1. kk_sx (KK M3): phiếu kho có custom_kiem_ke = lần kiểm (gồm phiếu bù chứng từ ghi lùi D216, remarks bắt đầu
-   NHAN_BU), CHỈ dòng sổ ở kk.kho (chuyển lô / đổi cờ lô ở kho khác không tính), chỉ lần kiểm docstatus 1. Kỳ theo
-   NGÀY HIỆU LỰC của lần kiểm (C7) — không theo posting_date của phiếu (phiếu bù D216 ghi lùi về giờ chứng từ gốc,
-   phiếu chốt sổ lùi ghi ở thoi_diem). Thừa / thiếu xét THEO MÃ sau khi cộng mọi phiếu của lần kiểm (Repack chuyển
-   lô ra 0); mã khớp số lượng mà còn giá trị = chênh giá. gt_bu = phần do phiếu bù D216.
+   NHAN_BU), chỉ lần kiểm docstatus 1, dòng sổ ở MỌI kho cộng theo (lần kiểm, mã, kho). Kỳ theo NGÀY HIỆU LỰC của lần
+   kiểm (C7) — không theo posting_date của phiếu (phiếu bù D216 ghi lùi về giờ chứng từ gốc, phiếu chốt sổ lùi ghi ở
+   thoi_diem).
+   · Tại kk.kho: thừa / thiếu xét THEO MÃ sau khi cộng mọi phiếu của lần kiểm (Repack chuyển lô ra 0); mã khớp số lượng
+     mà còn giá trị = chênh giá. gt_bu = phần do phiếu bù D216.
+   · Kho khác (gt_kho_khac, kho_khac theo kho): khi lần kiểm bật quản lý lô cho mã (sx D189 / D191) sx ghi cả ở kho khác
+     cùng công ty — kho dương: xuất tồn không lô + nhập lại nguyên số vào lô tồn cũ (≈ 0 ở mỗi kho); kho ÂM: MỘT phiếu
+     nhập "bù tồn KHÔNG LÔ đang âm về 0" không có phiếu xuất đối ứng → tăng giá trị kho THẬT (sx: "báo kế toán").
+     Không xếp vào thừa / thiếu (không phải số đếm ở kho kiểm), nhưng CÓ trong gt_rong và tổng điều chỉnh.
+   gt_rong = thừa + thiếu + chênh giá + kho khác. Nhờ vậy dòng này khớp dòng "Kiểm kê sản xuất" của nhập–xuất–tồn
+   (kho_ton K3: mọi phiếu mang custom_kiem_ke ở mọi kho theo posting_date) — chỉ lệch phần phiếu ghi sổ khác tháng với
+   ngày hiệu lực của lần kiểm (phiếu bù ghi lùi, chốt sổ lùi).
 2. kk_ch (K10.2): Stock Reconciliation purpose 'Stock Reconciliation', docstatus 1, posting_date trong kỳ, mọi kho của
-   công ty. Số lượng chênh = Σ (qty − current_qty) trên dòng phiếu (dòng sổ không lô có actual_qty = 0;
-   quantity_difference là varchar); dòng chỉ đổi giá (qty = current_qty) → "đổi giá"; phần còn lại xét thừa / thiếu theo
-   (mã, kho) sau khi cộng.
+   công ty — nhãn "Phiếu kiểm kho (cửa hàng & kho khác)" (không chỉ cửa hàng: cả kho thành phẩm, trả về…), tách
+   cua_hang (kho vai trò cửa hàng) / kho_khac (còn lại). Số lượng chênh = Σ (qty − current_qty) trên dòng phiếu (dòng sổ
+   không lô có actual_qty = 0; quantity_difference là varchar); dòng chỉ đổi giá (qty = current_qty) → "đổi giá"; phần
+   còn lại xét thừa / thiếu theo (mã, kho) sau khi cộng.
 3. don_sx (KK M7): ba loại dọn tồn của sx theo tiền tố remarks (bc.api.sx.ADJUSTMENT_REMARKS), posting_date trong kỳ,
    không mang custom_kiem_ke (cùng phân loại 'don_sx' của nhập–xuất–tồn K3). "Dọn âm lịch sử lô" ≈ 0 → chỉ hiện khi
    đáng kể.
 4. xuat_khac (K10.4): −Σ svd của Material Issue không phải kiểm kê / dọn tồn sx / xuất NVL bù nợ BOM (tiêu hao thật) /
    phiếu đầu kỳ, theo stock_entry_type và kho — giữ "Xuất huỷ", "Xuất mẫu" tay.
-tong = 1 + 2 + 3 − 4 (chỉ cộng dòng có số; day_du = False khi thiếu dòng). top_lech (KK M5): 10 dòng (mã, kho) chênh
-lớn nhất theo |giá trị| trong kỳ, cả kiểm kê sx lẫn cửa hàng (chỉ dòng lệch số lượng). ve_0 (KK M6a): mã TP bị đưa
-về 0 vì không đếm (có dòng biên bản, không dòng đếm) trong các lần kiểm sx của kỳ.
+tong = 1 + 2 + 3 − 4 (chỉ cộng dòng có số). Dòng không có số mang reason: 'khong_sx' (site không có app Sản xuất →
+KHÔNG ÁP DỤNG, liệt ở khong_ap_dung) hoặc lỗi / thiếu cột / thiếu bảng (THIẾU THẬT, liệt ở thieu); day_du = không thiếu
+thật. top_lech (KK M5): 10 dòng (mã, kho) chênh lớn nhất theo |giá trị| trong kỳ, cả kiểm kê sx (tại kk.kho — phần kho
+khác khi bật lô không phải số đếm) lẫn phiếu kiểm kho (chỉ dòng lệch số lượng). ve_0 (KK M6a): mã TP bị đưa về 0 vì
+không đếm (có dòng biên bản, không dòng đếm) trong các lần kiểm sx của kỳ.
 
 Không có sx (chưa cài / thiếu bảng SX Kiem Ke…): K9 chỉ theo Stock Reconciliation, khối sx = {available: False,
 reason: 'khong_sx'}; thiếu cột Stock Entry.custom_kiem_ke → kk_sx tắt, xuat_khac bỏ điều kiện đó. Cột thêm ở sx sau
@@ -48,8 +62,6 @@ import gì của app sx (chỉ đọc bảng); mốc ngày truyền từ Python;
 """
 
 from __future__ import annotations
-
-import datetime
 
 import frappe
 from frappe.utils import flt, getdate
@@ -74,8 +86,11 @@ DON_SX = {
 	"Dọn tồn âm thành phẩm": ("don_am_tp", "Dọn tồn âm thành phẩm"),
 	"Dọn âm lịch sử lô (D207)": ("don_am_lo", "Dọn âm lịch sử lô"),
 }
-LINES = (("kk_sx", "Kiểm kê kho sản xuất"), ("kk_ch", "Kiểm kê cửa hàng"), ("don_sx", "Dọn tồn của sản xuất"),
-	("xuat_khac", "Xuất huỷ, xuất mẫu, xuất khác"))
+# Nhãn khớp nhập–xuất–tồn (kho_ton.LOAI): "Kiểm kê sản xuất" gồm phần ở kho khác khi bật lô; phiếu kiểm kho ở MỌI kho
+# không gọi là "cửa hàng".
+LINES = (("kk_sx", "Kiểm kê sản xuất"), ("kk_ch", "Phiếu kiểm kho (cửa hàng & kho khác)"),
+	("don_sx", "Dọn tồn của sản xuất"), ("xuat_khac", "Xuất huỷ, xuất mẫu, xuất khác"))
+KHONG_AP_DUNG = ("khong_sx",)   # lý do khối tắt mà KHÔNG làm tổng thiếu (site không có app Sản xuất)
 
 
 @frappe.whitelist()
@@ -97,10 +112,6 @@ def _money(v):
 
 def _qty(v):
 	return round(flt(v), 3)
-
-
-def _month(d) -> str:
-	return f"{d.year:04d}-{d.month:02d}"
 
 
 # ─── Khung ───────────────────────────────────────────────────────────────────
@@ -147,11 +158,13 @@ class _Ctx:
 		return self.memo("cols", f)
 
 	# ── sx: lần kiểm ──
-	def sx_last(self) -> list:
-		"""Lần kiểm docstatus 1 mới nhất mỗi (kho, loai) của kho công ty + số lần có hiệu lực trong kỳ."""
+	def sx_last(self, until: bool = False) -> list:
+		"""Lần kiểm docstatus 1 mới nhất mỗi (kho, loai) của kho công ty + số lần có hiệu lực trong kỳ.
+		until=True: chỉ lần kiểm có ngày hiệu lực ≤ cuối kỳ t (độ chính xác của tháng chọn); False: mọi lần (hôm nay, K9)."""
 		def f():
 			c = self.cols()
 			eff = f"DATE(COALESCE({c['td']}, kk.chot_luc))"
+			cut = f"AND {eff} <= %(t)s" if until else ""
 			rows = frappe.db.sql(
 				f"""SELECT t.name, t.kho, t.loai, t.cach_dem, t.ngay, t.so_lan FROM (
 					SELECT kk.name, kk.kho, {c['loai']} AS loai, {c['cach']} AS cach_dem, {eff} AS ngay,
@@ -160,12 +173,12 @@ class _Ctx:
 							ORDER BY kk.chot_luc DESC, kk.creation DESC, kk.name DESC) AS rn
 					FROM `tabSX Kiem Ke` kk
 					JOIN `tabWarehouse` w ON w.name = kk.kho AND w.company = %(co)s
-					WHERE kk.docstatus = 1) t
+					WHERE kk.docstatus = 1 {cut}) t
 				WHERE t.rn = 1""", self.p(), as_dict=True)
 			for r in rows:
 				r.so_lan = int(flt(r.so_lan))
 			return rows
-		return self.memo("sx_last", f)
+		return self.memo(("sx_last", bool(until)), f)
 
 	def sx_period(self) -> list:
 		"""Lần kiểm docstatus 1 có NGÀY HIỆU LỰC trong kỳ (C7)."""
@@ -180,31 +193,45 @@ class _Ctx:
 				ORDER BY ngay, kk.chot_luc, kk.name""", self.p(), as_dict=True)
 		return self.memo("sx_period", f)
 
-	def sx_items(self) -> dict:
-		"""{(lần kiểm, mã): {q, v, v_bu}} — sổ kho tại kk.kho của mọi phiếu kho mang custom_kiem_ke của các lần kiểm trong
-		kỳ (gồm phiếu bù D216), dòng sổ sống, phiếu kho docstatus 1."""
+	def _sx_ledger(self) -> tuple:
+		"""Sổ kho (dòng sống, phiếu kho docstatus 1) của mọi phiếu mang custom_kiem_ke của các lần kiểm trong kỳ (gồm phiếu
+		bù D216), ở MỌI kho, cộng theo (lần kiểm, mã, kho) → (tại kk.kho, kho khác) — xem sx_items / sx_khac."""
 		def f():
 			kks = kho.in_tuple(r.name for r in self.sx_period())
-			out: dict = {}
+			tai: dict = {}
+			khac: dict = {}
 			if kks == ("\x00",):
-				return out
+				return tai, khac
 			for r in frappe.db.sql(
-					"""SELECT se.custom_kiem_ke AS kk, sle.item_code,
+					"""SELECT se.custom_kiem_ke AS kk, sle.item_code, sle.warehouse, sle.warehouse = kk.kho AS tai_kho,
 						LOCATE(%(nhan)s, IFNULL(se.remarks, '')) = 1 AS la_bu,
 						SUM(sle.actual_qty) AS qty, SUM(sle.stock_value_difference) AS val
 					FROM `tabStock Entry` se
 					JOIN `tabSX Kiem Ke` kk ON kk.name = se.custom_kiem_ke AND kk.docstatus = 1
 					JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Stock Entry' AND sle.voucher_no = se.name
-						AND sle.is_cancelled = 0 AND sle.warehouse = kk.kho
+						AND sle.is_cancelled = 0
 					WHERE se.docstatus = 1 AND se.custom_kiem_ke IN %(kks)s
-					GROUP BY se.custom_kiem_ke, sle.item_code, la_bu""", {"nhan": NHAN_BU, "kks": kks}, as_dict=True):
-				x = out.setdefault((r.kk, r.item_code), {"q": 0.0, "v": 0.0, "v_bu": 0.0})
+					GROUP BY se.custom_kiem_ke, sle.item_code, sle.warehouse, tai_kho, la_bu""",
+					{"nhan": NHAN_BU, "kks": kks}, as_dict=True):
+				if int(flt(r.tai_kho)):
+					x = tai.setdefault((r.kk, r.item_code), {"q": 0.0, "v": 0.0, "v_bu": 0.0})
+					if int(flt(r.la_bu)):
+						x["v_bu"] += flt(r.val)
+				else:
+					x = khac.setdefault((r.kk, r.item_code, r.warehouse), {"q": 0.0, "v": 0.0})
 				x["q"] += flt(r.qty)
 				x["v"] += flt(r.val)
-				if int(flt(r.la_bu)):
-					x["v_bu"] += flt(r.val)
-			return out
-		return self.memo("sx_items", f)
+			return tai, khac
+		return self.memo("sx_ledger", f)
+
+	def sx_items(self) -> dict:
+		"""{(lần kiểm, mã): {q, v, v_bu}} — phần TẠI kk.kho (số đếm: thừa / thiếu / chênh giá theo mã)."""
+		return self._sx_ledger()[0]
+
+	def sx_khac(self) -> dict:
+		"""{(lần kiểm, mã, kho): {q, v}} — phần ở kho KHÁC kk.kho (bật lô D189 / D191: cặp xuất + nhập lại ở kho dương
+		≈ 0, nhập bù kho âm về 0 = tăng giá trị thật)."""
+		return self._sx_ledger()[1]
 
 	# ── cửa hàng: Stock Reconciliation trong kỳ ──
 	def sr_items(self) -> dict:
@@ -366,10 +393,13 @@ def _huy_chot(c: _Ctx) -> dict:
 
 
 def _ira(c: _Ctx) -> dict:
+	"""Độ chính xác của lần kiểm mới nhất mỗi (kho, loai) tính đến cuối tháng chọn (không phải hôm nay — chọn tháng 9
+	thì không lấy lần kiểm tháng 10) + tỷ lệ của lần kiểm gần nhất hôm nay cho bảng kho K9."""
 	if not c.sx:
 		return _off("khong_sx")
-	last = c.sx_last()
-	kks = kho.in_tuple(r.name for r in last)
+	last = c.sx_last(until=True)
+	now = c.sx_last()
+	kks = kho.in_tuple({r.name for r in last} | {r.name for r in now})
 	per: dict = {}
 	if kks != ("\x00",):
 		for r in frappe.db.sql(
@@ -392,7 +422,9 @@ def _ira(c: _Ctx) -> dict:
 			"so_ma": n, "so_ma_khop": khop, "ty_le": pct(khop, n)})
 	n = sum(x["so_ma"] for x in rows)
 	khop = sum(x["so_ma_khop"] for x in rows)
-	return {"available": True, "rows": rows, "so_ma": n, "so_ma_khop": khop, "ty_le": pct(khop, n)}
+	hien_tai = {r.name: pct(per.get(r.name, (0, 0))[1], per.get(r.name, (0, 0))[0]) for r in now}
+	return {"available": True, "rows": rows, "so_ma": n, "so_ma_khop": khop, "ty_le": pct(khop, n), "den_ngay": iso(c.t),
+		"ngay_moi_nhat": max((x["ngay"] for x in rows if x["ngay"]), default=None), "ty_le_hien_tai": hien_tai}
 
 
 # ─── K10. Chênh lệch kiểm kê và điều chỉnh trong kỳ ─────────────────────────
@@ -415,14 +447,29 @@ def _kk_sx(c: _Ctx) -> dict:
 		return _off("thieu_cot")
 	counts = c.sx_period()
 	items = c.sx_items()
+	khac = c.sx_khac()
 	codes = {i for _, i in items}
 	info = kho.item_info(codes)
 	factors = carton_factors(codes)
 	rows = []
+	keys = ("gt_thua", "gt_thieu", "gt_chenh_gia", "gt_kho_khac", "gt_rong", "gt_bu")
 	for k in counts:
 		r = {"phieu": k.name, "kho": k.kho, "label": c.label(k.kho), "loai": k.loai, "ngay": iso(k.ngay),
-			"gt_thua": 0.0, "gt_thieu": 0.0, "gt_chenh_gia": 0.0, "gt_rong": 0.0, "gt_bu": 0.0,
+			"gt_thua": 0.0, "gt_thieu": 0.0, "gt_chenh_gia": 0.0, "gt_kho_khac": 0.0, "gt_rong": 0.0, "gt_bu": 0.0,
 			"so_ma_thua": 0, "so_ma_thieu": 0, "so_ma_gia_0": 0}
+		# Kho khác (bật lô D189 / D191): cộng theo (mã, kho) — cặp xuất + nhập lại ở kho dương ra ≈ 0, nhập bù kho âm về 0
+		# còn nguyên. Danh sách theo kho bỏ kho ra 0 (|giá trị| < 0,5 đ và không mã nào đổi số lượng).
+		by_wh: dict = {}
+		for (kk, item, w), x in khac.items():
+			if kk != k.name:
+				continue
+			r["gt_kho_khac"] += x["v"]
+			y = by_wh.setdefault(w, {"kho": w, "label": c.label(w), "gia_tri": 0.0, "so_ma_lech": 0})
+			y["gia_tri"] += x["v"]
+			y["so_ma_lech"] += 1 if abs(x["q"]) > EPS else 0
+		r["kho_khac"] = sorted(({**y, "gia_tri": _money(y["gia_tri"])} for y in by_wh.values()
+			if abs(y["gia_tri"]) >= kho.VALUE_EPS or y["so_ma_lech"]), key=lambda y: (-abs(y["gia_tri"]), y["label"]))
+		r["gt_rong"] += r["gt_kho_khac"]
 		thua, thieu = {}, {}
 		for (kk, item), x in items.items():
 			if kk != k.name:
@@ -443,9 +490,9 @@ def _kk_sx(c: _Ctx) -> dict:
 				r["so_ma_gia_0"] += 1                   # nhập / xuất giá 0 (allow_zero_valuation_rate): lệch số, không tiền
 		r["thua"], r["thieu"] = _qty_sum(thua, info, factors), _qty_sum(thieu, info, factors)
 		rows.append(r)
-	tong = {k: _money(sum(r[k] for r in rows)) for k in ("gt_thua", "gt_thieu", "gt_chenh_gia", "gt_rong", "gt_bu")}
+	tong = {k: _money(sum(r[k] for r in rows)) for k in keys}
 	for r in rows:
-		for k in ("gt_thua", "gt_thieu", "gt_chenh_gia", "gt_rong", "gt_bu"):
+		for k in keys:
 			r[k] = _money(r[k])
 	huy = frappe.db.sql(
 		"""SELECT COUNT(*) AS n, COUNT(DISTINCT se.custom_kiem_ke) AS kk
@@ -466,8 +513,10 @@ def _kk_ch(c: _Ctx) -> dict:
 	by: dict = {}
 
 	def wrow(w):
-		return by.setdefault(w, {"kho": w, "label": c.label(w), "role_label": c.role_label(w), "phieu": set(),
-			"gt_thua": 0.0, "gt_thieu": 0.0, "gt_doi_gia": 0.0, "so_ma_thua": 0, "so_ma_thieu": 0})
+		x = c.wh.get(w)
+		return by.setdefault(w, {"kho": w, "label": c.label(w), "role": x.role if x else "khac",
+			"role_label": c.role_label(w), "phieu": set(), "gt_thua": 0.0, "gt_thieu": 0.0, "gt_doi_gia": 0.0,
+			"so_ma_thua": 0, "so_ma_thieu": 0})
 
 	for (item, w), x in d["agg"].items():
 		r = wrow(w)
@@ -484,6 +533,15 @@ def _kk_ch(c: _Ctx) -> dict:
 		r = wrow(x["kho"])
 		r["phieu"].add(x["phieu"])
 		r["gt_doi_gia"] += x["v"]
+
+	def part(rs):
+		"""Cộng một nhóm kho (cửa hàng / kho khác) — số phiếu đếm phiếu khác nhau (một phiếu có thể nhiều kho)."""
+		t = {k: _money(sum(flt(r[k]) for r in rs)) for k in ("gt_thua", "gt_thieu", "gt_doi_gia")}
+		return {**t, "gt_rong": _money(sum(t.values())), "so_kho": len(rs),
+			"so_phieu": len(set().union(*(r["phieu"] for r in rs)) if rs else set())}
+
+	parts = {"cua_hang": part([r for r in by.values() if r["role"] == "cua_hang"]),
+		"kho_khac": part([r for r in by.values() if r["role"] != "cua_hang"])}
 	rows = []
 	for r in by.values():
 		r["so_phieu"] = len(r.pop("phieu"))
@@ -495,7 +553,7 @@ def _kk_ch(c: _Ctx) -> dict:
 	tong = {k: _money(sum(r[k] for r in rows)) for k in ("gt_thua", "gt_thieu", "gt_doi_gia")}
 	return {"available": True, **tong, "gt_rong": _money(sum(tong.values())), "so_phieu": len(d["phieu"]),
 		"so_kho": len(rows), "so_ma_thua": sum(r["so_ma_thua"] for r in rows),
-		"so_ma_thieu": sum(r["so_ma_thieu"] for r in rows), "so_dong_doi_gia": len(d["doi_gia"]), "rows": rows}
+		"so_ma_thieu": sum(r["so_ma_thieu"] for r in rows), "so_dong_doi_gia": len(d["doi_gia"]), **parts, "rows": rows}
 
 
 def _don_sx(c: _Ctx) -> dict:
@@ -573,18 +631,23 @@ def _xuat_khac(c: _Ctx) -> dict:
 
 
 def _tong(parts: dict) -> dict:
-	"""Tổng điều chỉnh = kiểm kê sx + kiểm kê cửa hàng + dọn tồn sx − xuất khác (dòng nào không có số thì bỏ)."""
+	"""Tổng điều chỉnh = kiểm kê sx + phiếu kiểm kho + dọn tồn sx − xuất khác (dòng nào không có số thì bỏ).
+	Dòng không có số: reason 'khong_sx' = không áp dụng (site không có app Sản xuất — không có gì để thiếu); lý do khác
+	(lỗi khối 'loi', thiếu cột / bảng…) = THIẾU THẬT → thieu, day_du = False."""
 	out = []
 	for key, label in LINES:
 		b = parts.get(key) or {}
 		if not b.get("available"):
-			out.append({"key": key, "label": label, "available": False, "gia_tri": None})
+			out.append({"key": key, "label": label, "available": False, "gia_tri": None,
+				"reason": "loi" if b.get("error") else (b.get("reason") or "khong_so")})
 			continue
 		v = b["gt_rong"] if key in ("kk_sx", "kk_ch") else b["gia_tri"]
 		out.append({"key": key, "label": label, "available": True, "gia_tri": _money(-v if key == "xuat_khac" else v)})
 	have = [x for x in out if x["available"]]
+	thieu = [x["key"] for x in out if not x["available"] and x["reason"] not in KHONG_AP_DUNG]
 	return {"available": bool(have), "gia_tri": _money(sum(x["gia_tri"] for x in have)) if have else None,
-		"day_du": len(have) == len(out), "parts": out}
+		"day_du": not thieu, "thieu": thieu,
+		"khong_ap_dung": [x["key"] for x in out if not x["available"] and x["reason"] in KHONG_AP_DUNG], "parts": out}
 
 
 def _top_lech(c: _Ctx, kk_sx: dict, kk_ch: dict) -> dict:
@@ -650,9 +713,15 @@ def _ve_0(c: _Ctx, kk_sx: dict) -> dict:
 
 
 # ─── Dựng payload ────────────────────────────────────────────────────────────
+def _prev_month(f) -> str | None:
+	"""'YYYY-MM' của tháng trước tháng chứa `f` — số học nguyên, không trừ ngày (tháng 01/0001 → None thay vì
+	OverflowError → HTTP 500; kho.month_period đã kẹp tháng chọn, đây là chốt thứ hai)."""
+	i = f.year * 12 + f.month - 2
+	return f"{i // 12:04d}-{i % 12 + 1:02d}" if i >= 12 else None
+
+
 def _build(f, t, label, today):
-	prev = f - datetime.timedelta(days=1)
-	meta = {"thang": label, "from": iso(f), "to": iso(t), "as_of": iso(today), "prev": _month(prev),
+	meta = {"thang": label, "from": iso(f), "to": iso(t), "as_of": iso(today), "prev": _prev_month(f),
 		"nguong": {"canh_bao": NGUONG_CANH_BAO, "nguy": NGUONG_NGUY}}
 	try:
 		c = _Ctx(f, t, today)

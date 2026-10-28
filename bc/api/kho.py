@@ -55,6 +55,8 @@ P_BU_BOM = "Hạch toán bù nợ BOM"         # sx api/khotp.py → mfg.py: xu�
 
 DEFAULTS = {"kho_doi_days": 90, "kho_slow_days": 90, "kho_dead_days": 180, "kho_can_date_ngay": 60}
 _THANG = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+MIN_MONTH = datetime.date(2000, 1, 1)   # tháng chọn sớm nhất (month_period); trước đó → tháng này
+MAX_YEARS_BACK = 10                     # và không quá 10 năm trước tháng này
 
 
 # ─── Mốc, cài đặt ────────────────────────────────────────────────────────────
@@ -78,15 +80,18 @@ def company() -> str:
 
 
 def month_period(thang=None) -> tuple:
-	"""(từ, đến, 'YYYY-MM'): tháng chọn (mặc định tháng này; tháng tương lai → tháng này), cắt ở hôm nay."""
+	"""(từ, đến, 'YYYY-MM'): tháng chọn, cắt ở hôm nay. Sai dạng / tháng tương lai / trước MIN_MONTH / quá MAX_YEARS_BACK năm
+	về trước → tháng này (không bao giờ ném lỗi: tháng gần năm 1 làm `f - 1 ngày`, add_months(f, -11) của người gọi tràn
+	ngày → HTTP 500). Ngày dựng thẳng từ số đã kiểm (không qua getdate — getdate v16 trả None cho '0001-01-01')."""
 	t0 = today()
+	cur = datetime.date(t0.year, t0.month, 1)
+	floor = max(MIN_MONTH, datetime.date(t0.year - MAX_YEARS_BACK, t0.month, 1))
 	t = str(thang or "")[:7]
-	if not _THANG.match(t) or getdate(f"{t}-01") > t0:
-		t = f"{t0.year:04d}-{t0.month:02d}"
-	y, m = int(t[:4]), int(t[5:])
-	f = datetime.date(y, m, 1)
-	e = datetime.date(y, m, calendar.monthrange(y, m)[1])
-	return f, min(e, t0), t
+	f = datetime.date(int(t[:4]), int(t[5:]), 1) if _THANG.match(t) and int(t[:4]) >= MIN_MONTH.year else None
+	if f is None or f > cur or f < floor:
+		f = cur
+	e = datetime.date(f.year, f.month, calendar.monthrange(f.year, f.month)[1])
+	return f, min(e, t0), f"{f.year:04d}-{f.month:02d}"
 
 
 # ─── App sx (đọc mềm) ────────────────────────────────────────────────────────
@@ -364,7 +369,15 @@ def item_info(codes) -> dict:
 
 def carton_total(qty_by_item: dict, factors: dict | None = None) -> dict:
 	"""Tổng thùng của {mã: số lượng (đơn vị kho)} + phần chưa quy được thùng:
-	{cartons, boxes_without_carton_factor, items_without_carton_factor}. Chỉ dùng cho mã cùng đơn vị (hộp)."""
+	{cartons, boxes_without_carton_factor, items_without_carton_factor}. Chỉ dùng cho mã cùng đơn vị (hộp).
+
+	Ngữ nghĩa RÒNG, giữ dấu (mã tồn âm trừ đi, không lấy trị tuyệt đối, không bỏ):
+	- cartons = Σ q / f trên các mã CÓ hệ số thùng f;
+	- boxes_without_carton_factor = Σ q trên các mã KHÔNG có hệ số (có thể âm);
+	- items_without_carton_factor = số mã không hệ số có |q| > EPS (âm cũng đếm).
+	Bất biến từng mã: q = (q / f) × f nếu có hệ số, q = phần "chưa khai" nếu không → Σ q = Σ cartonsᵢ × fᵢ + boxes_without.
+	Ví dụ: A +100 (f 10), B −8 (f 4), C −4 (không hệ số) → cartons 10 − 2 = 8,0; boxes_without −4; 1 mã;
+	100 − 8 − 4 = 88 = 10 × 10 + (−2) × 4 + (−4)."""
 	factors = carton_factors(qty_by_item) if factors is None else factors
 	cartons = without = 0.0
 	n = 0

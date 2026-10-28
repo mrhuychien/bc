@@ -14,12 +14,18 @@ Xuất huỷ tay; mã ẩn; site không sx, thiếu cột / bảng, khối lỗi
 Thêm sau review: kho sx có phiếu kiểm kho (Stock Reconciliation) mới hơn / cùng ngày / cũ hơn lần kiểm sx (K9 lấy lần đếm
 mới nhất, khớp K10.2); cửa hàng bán hết (Bin 0) không thuộc bảng kho; mã về 0 vì không đếm còn lô thu hồi (bỏ dòng thu hồi);
 phiếu nháp mở đúng 2 ngày (biên "mở lâu"); huỷ chốt của công ty khác.
+Thêm sau review chéo: đổi cờ lô D191 ở kho khác — cặp xuất / nhập lại ở kho DƯƠNG ra đúng 0, phiếu bù kho ÂM về 0 (Kho
+Xưởng +400.000) là tăng giá trị thật → vào "Kiểm kê sản xuất" và tổng điều chỉnh; đối chiếu với nhập–xuất–tồn (kho_ton K3)
+từng tháng: chỉ lệch đúng phần phiếu bù ghi lùi khác tháng (XC-1 / XR-REAL-1); phiếu kiểm kho tách cửa hàng / kho khác
+(UX-1); tổng thiếu khoản nào nói đúng khoản đó, site không sx không "thiếu" (UX-2); độ chính xác theo tháng chọn (UX-5);
+tháng năm 1 không 500 (SEC-1).
 
 Chạy: BC_TEST_DB=bc_test_kho_kk python3 -B test_kho_kk.py
 seed(k) chỉ THÊM dữ liệu tên KKE-… lên base(k) (để gộp seed cho kiểm giao diện): reset(); bc_settings(); k = K(); base(k);
 seed(k); k.finalize().
 """
 import ast
+import datetime
 import json
 import os
 import re
@@ -186,6 +192,21 @@ def seed(k: K):
 	# Phiếu "dọn tồn" mang custom_kiem_ke (ở CH1): thuộc kiểm kê, KHÔNG phải dọn tồn (+50.000 nếu lọt sang dọn tồn).
 	k.se("Material Receipt", "2026-10-15", [dict(item_code="KKE-TP1", t_warehouse=CH1, qty=1, rate=50_000)],
 		kiem_ke="KKE-KK-05", time=t5, remarks="Dọn tồn không lô sau bật lô (trong lần kiểm)", name="KKE-SE-KK05-DL")
+	# → CH1 cộng theo (lần kiểm, mã, kho): −350.000 + 343.000 + 50.000 = +43.000, số lượng −7 + 7 + 1 = +1.
+	# Đổi cờ lô (D191) ở kho DƯƠNG đúng như sx (xuat_kl + nhap_cu vào lô tồn cũ, cùng đơn giá đang chạy): CH Tuệ Tĩnh TP1
+	# −10 × 50.000 rồi +10 × 50.000 → kho đó ra ĐÚNG 0 (số lượng 0, giá trị 0).
+	k.se("Material Issue", "2026-10-15", [dict(item_code="KKE-TP1", s_warehouse=CH2, qty=10, rate=50_000)],
+		kiem_ke="KKE-KK-05", time=t5, remarks="Kiểm kê KKE-KK-05: xuất hết tồn KHÔNG LÔ", name="KKE-SE-KK05-D4")
+	k.se("Material Receipt", "2026-10-15", [dict(item_code="KKE-TP1", t_warehouse=CH2, qty=10, rate=50_000)],
+		kiem_ke="KKE-KK-05", time=t5, remarks="Kiểm kê KKE-KK-05: nhập lại vào lô tồn cũ", name="KKE-SE-KK05-D5")
+	# Đổi cờ lô (D191) ở kho ÂM: Kho Xưởng âm 8 hộp TP1 vì phiếu chuyển Xưởng → TP ngày 05/09 khi xưởng chưa có hàng
+	# (D192). Lần kiểm KK-05 ghi MỘT phiếu nhập "bù tồn KHÔNG LÔ đang âm về 0" ở xưởng (sx nhap_kl — không có phiếu xuất
+	# đối ứng): +8 × 50.000 = +400.000, tăng giá trị kho THẬT (sx: "báo kế toán"); Bin xưởng TP1 về 0.
+	k.se("Material Transfer", "2026-09-05", [dict(item_code="KKE-TP1", s_warehouse=XUONG, t_warehouse=TP, qty=8,
+		rate=50_000)], name="KKE-SE-XU0")
+	k.se("Material Receipt", "2026-10-15", [dict(item_code="KKE-TP1", t_warehouse=XUONG, qty=8, rate=50_000)],
+		kiem_ke="KKE-KK-05", time=t5, name="KKE-SE-KK05-BA",
+		remarks="Kiểm kê KKE-KK-05: bù tồn KHÔNG LÔ đang âm về 0 trước khi chuyển mã sang quản lý lô.")
 	# KK-07: TP, chốt 20/10 rồi HUỶ CHỐT (D196) → docstatus 2, phiếu kho huỷ theo. KK-08 = phiếu nháp mở lại.
 	_kk("KKE-KK-07", TP, 2, chot="2026-10-20 10:00:00", creation="2026-10-18 07:00:00", modified="2026-10-20 11:00:00",
 		bat_dau="2026-10-18 08:00:00",
@@ -425,22 +446,34 @@ if __name__ == "__main__":
 	c("độ chính xác: BTP 1/2 = 50%, TP 2/9 = 22,2%, chung 3/11 = 27,3%",
 		[(r["phieu"], r["so_ma"], r["so_ma_khop"], r["ty_le"]) for r in ira["rows"]] == [("KKE-KK-03", 2, 1, 50.0),
 		("KKE-KK-05", 9, 2, 22.2)] and (ira["so_ma"], ira["so_ma_khop"], ira["ty_le"]) == (11, 3, 27.3), ira)
+	# Tháng này: tính đến hôm nay 27/10; lần kiểm mới nhất trong các dòng = KK-05 15/10. Bảng kho (hôm nay) dùng cùng hai lần.
+	c("độ chính xác tháng 10: tính đến 27/10, lần kiểm mới nhất 15/10; tỷ lệ hiện tại cho bảng kho KK-05 22,2 / KK-03 50",
+		(ira.get("den_ngay"), ira.get("ngay_moi_nhat"), ira.get("ty_le_hien_tai")) == ("2026-10-27", "2026-10-15",
+		{"KKE-KK-05": 22.2, "KKE-KK-03": 50.0}), (ira.get("den_ngay"), ira.get("ngay_moi_nhat"), ira.get("ty_le_hien_tai")))
 
 	# ═══ K10.1 Kiểm kê sx trong tháng (theo ngày hiệu lực) ═══
 	ks = d["kk_sx"]
 	# KK-05 tại kho TP (chốt + bù, dòng sổ sống, phiếu còn hiệu lực):
-	#   TP1 −10 + 4 = −6 → thiếu −500.000 + 200.000 = −300.000 (D191 ở CH1 −7.000 không tính)
+	#   TP1 −10 + 4 = −6 → thiếu −500.000 + 200.000 = −300.000
 	#   TP2 +6 → thừa +180.000 (dòng sổ huỷ −50, phiếu huỷ lẻ +100, phiếu bù đã huỷ không tính)
 	#   TP3 0 → chênh giá −1.000 · TP4 −8 + 3 = −5 → thiếu −100.000 · TP5 −12 → −300.000 · TP8 −3 → −30.000
 	#   TP9 +5 giá 0 → thừa 0 · TP10 −6 → −90.000
 	# thừa 180.000 · thiếu −300.000 − 100.000 − 300.000 − 30.000 − 90.000 = −820.000 · chênh giá −1.000
-	# · ròng 180.000 − 820.000 − 1.000 = −641.000 · trong đó bù D216 +200.000.
+	# · phần tại kho TP 180.000 − 820.000 − 1.000 = −641.000 · trong đó bù D216 +200.000.
+	# KK-05 ở kho KHÁC (đổi cờ lô D191, cộng theo (mã, kho)): Kho Xưởng +8 × 50.000 = +400.000 (bù âm về 0);
+	#   CH1 −350.000 + 343.000 + 50.000 = +43.000 (số lượng +1); CH2 −500.000 + 500.000 = 0 (cặp kho dương, không liệt kê)
+	#   → kho khác +443.000 · ròng −641.000 + 443.000 = −198.000.
 	c("K10.1 chỉ KK-05 (KK-02 chốt 03/10 nhưng hiệu lực 30/09; KK-13 công ty khác)",
 		[(r["phieu"], r["kho"], r["ngay"]) for r in ks["rows"]] == [("KKE-KK-05", TP, "2026-10-15")] and ks["so_lan"] == 1,
 		ks["rows"])
-	c("K10.1 thừa 180.000 / thiếu −820.000 / chênh giá −1.000 / ròng −641.000 / bù D216 200.000",
-		(ks["gt_thua"], ks["gt_thieu"], ks["gt_chenh_gia"], ks["gt_rong"], ks["gt_bu"]) == (180_000, -820_000, -1_000, -641_000,
-		200_000), ks)
+	c("K10.1 thừa 180.000 / thiếu −820.000 / chênh giá −1.000 (tại kho TP) / kho khác +443.000 / ròng −198.000 / bù D216 "
+		"200.000", (ks["gt_thua"], ks["gt_thieu"], ks["gt_chenh_gia"], ks.get("gt_kho_khac"), ks["gt_rong"], ks["gt_bu"])
+		== (180_000, -820_000, -1_000, 443_000, -198_000, 200_000), ks)
+	c("K10.1 kho khác theo kho: Kho Xưởng +400.000 (bù tồn âm về 0, 1 mã đổi số lượng), CH Bạch Đằng +43.000 (1 mã); CH Tuệ "
+		"Tĩnh xuất 10 + nhập lại 10 cùng giá ra đúng 0 → không liệt kê",
+		[(w["kho"], w["gia_tri"], w["so_ma_lech"]) for w in ks["rows"][0].get("kho_khac", [])] == [(XUONG, 400_000, 1),
+		(CH1, 43_000, 1)] and ks["rows"][0].get("gt_kho_khac") == 443_000 and ks["rows"][0]["gt_rong"] == -198_000,
+		ks["rows"][0].get("kho_khac"))
 	c("K10.1 2 mã thừa (TP2, TP9), 5 mã thiếu (TP1, TP4, TP5, TP8, TP10), 1 mã lệch số mà không có tiền (TP9 giá 0)",
 		(ks["so_ma_thua"], ks["so_ma_thieu"], ks["so_ma_gia_0"]) == (2, 5, 1), ks)
 	r5 = ks["rows"][0]
@@ -461,8 +494,18 @@ if __name__ == "__main__":
 	c("K10.2 3 phiếu, 2 kho, 2 cặp mã–kho thừa, 2 thiếu, 2 dòng chỉ đổi giá", (kc["so_phieu"], kc["so_kho"], kc["so_ma_thua"],
 		kc["so_ma_thieu"], kc["so_dong_doi_gia"]) == (3, 2, 2, 2, 2), kc)
 	c("K10.2 theo kho: trả về −90.000 (1 phiếu), CH3 thừa 110.000 / thiếu −60.000 / đổi giá 12.800 = 62.800 (2 phiếu)",
-		[(r["kho"], r["gt_thua"], r["gt_thieu"], r["gt_doi_gia"], r["gt_rong"], r["so_phieu"]) for r in kc["rows"]]
-		== [(TRA_VE, 0, -90_000, 0, -90_000, 1), (CH3, 110_000, -60_000, 12_800, 62_800, 2)], kc["rows"])
+		[(r["kho"], r.get("role"), r["gt_thua"], r["gt_thieu"], r["gt_doi_gia"], r["gt_rong"], r["so_phieu"]) for r in kc["rows"]]
+		== [(TRA_VE, "tra_ve", 0, -90_000, 0, -90_000, 1), (CH3, "cua_hang", 110_000, -60_000, 12_800, 62_800, 2)], kc["rows"])
+	# UX-1: phiếu kiểm kho ở MỌI kho — tách cửa hàng (vai trò cửa hàng: CH3 +62.800, 2 phiếu) và kho khác (trả về −90.000,
+	# 1 phiếu); cộng lại −27.200. Nhãn dòng tổng không gọi phiếu ở kho trả về là "cửa hàng".
+	c("K10.2 tách cửa hàng +62.800 (1 kho, 2 phiếu) / kho khác −90.000 (1 kho, 1 phiếu)",
+		(kc.get("cua_hang"), kc.get("kho_khac")) == ({"gt_thua": 110_000, "gt_thieu": -60_000, "gt_doi_gia": 12_800, "gt_rong": 62_800,
+		"so_kho": 1, "so_phieu": 2}, {"gt_thua": 0, "gt_thieu": -90_000, "gt_doi_gia": 0, "gt_rong": -90_000, "so_kho": 1,
+		"so_phieu": 1}), (kc.get("cua_hang"), kc.get("kho_khac")))
+	c("nhãn tổng điều chỉnh: 'Kiểm kê sản xuất' (như nhập–xuất–tồn), 'Phiếu kiểm kho (cửa hàng & kho khác)' — không dòng nào "
+		"gọi riêng là cửa hàng", [x["label"] for x in d["tong"]["parts"]] == ["Kiểm kê sản xuất",
+		"Phiếu kiểm kho (cửa hàng & kho khác)", "Dọn tồn của sản xuất", "Xuất huỷ, xuất mẫu, xuất khác"],
+		[x["label"] for x in d["tong"]["parts"]])
 
 	# ═══ K10.3 Dọn tồn sx ═══
 	ds = d["don_sx"]
@@ -481,9 +524,9 @@ if __name__ == "__main__":
 
 	# ═══ Tổng điều chỉnh = 1 + 2 + 3 − 4 ═══
 	tg = d["tong"]
-	c("tổng điều chỉnh = −641.000 − 27.200 + 70.000 − 360.000 = −958.200, đủ 4 dòng",
-		(tg["gia_tri"], tg["day_du"], [x["gia_tri"] for x in tg["parts"]]) == (-958_200, True, [-641_000, -27_200, 70_000,
-		-360_000]), tg)
+	c("tổng điều chỉnh = −198.000 − 27.200 + 70.000 − 360.000 = −515.200 (gồm +443.000 ở kho khác khi bật lô), đủ 4 dòng",
+		(tg["gia_tri"], tg["day_du"], tg.get("thieu"), tg.get("khong_ap_dung"), [x["gia_tri"] for x in tg["parts"]])
+		== (-515_200, True, [], [], [-198_000, -27_200, 70_000, -360_000]), tg)
 
 	# ═══ Top chênh lệch / về 0 không đếm ═══
 	tl = d["top_lech"]["rows"]
@@ -547,11 +590,39 @@ if __name__ == "__main__":
 	c("tháng 9 về 0 không đếm: không có; top chỉ KK-02 + cửa hàng tháng 9", d9["ve_0"]["so_ma"] == 0
 		and [(r["item_code"], r["kho"], r["value"]) for r in d9["top_lech"]["rows"]] == [("KKE-TP2", TP, 120_000),
 		("KKE-TP1", TP, -100_000), ("KKE-TP2", CH1, -60_000), ("KKE-TP6", CH2, 40_000)], d9["top_lech"])
-	c("tháng 9: bảng kho / độ chính xác là ảnh chụp hôm nay (như tháng 10), chỉ số lần trong kỳ đổi",
-		kho_rows(d9) == exp and d9["ira"]["ty_le"] == 27.3 and [(r["kho"], r["so_lan_trong_ky"]) for r in d9["kho"]["rows"]
+	c("tháng 9: bảng kho là ảnh chụp hôm nay (như tháng 10), chỉ số lần trong kỳ đổi",
+		kho_rows(d9) == exp and [(r["kho"], r["so_lan_trong_ky"]) for r in d9["kho"]["rows"]
 		if r["so_lan_trong_ky"]] == [(CH2, 1), (CH1, 1), (TP, 1)], [(r["kho"], r["so_lan_trong_ky"]) for r in d9["kho"]["rows"]])
+	# UX-5: độ chính xác của tháng 9 chỉ dùng lần kiểm có hiệu lực ≤ 30/09 — TP: KK-02 (hiệu lực 30/09; KK-05 15/10 là sau
+	# tháng): TP1 10 → 8 lệch, TP2 5 → 6 lệch → 0/2 = 0%; BTP: KK-03 1/2 → chung 1/4 = 25%. Bảng kho (hôm nay) vẫn KK-05 / KK-03.
+	i9 = d9["ira"]
+	c("tháng 9 độ chính xác theo lần kiểm đến 30/09: KK-03 1/2, KK-02 0/2 → 25%; ghi ngày kiểm 30/09; tỷ lệ hiện tại cho bảng "
+		"kho không đổi", ([(r["phieu"], r["ngay"], r["so_ma"], r["so_ma_khop"], r["ty_le"]) for r in i9["rows"]], i9["so_ma"],
+		i9["so_ma_khop"], i9["ty_le"], i9.get("den_ngay"), i9.get("ngay_moi_nhat"), i9.get("ty_le_hien_tai")) == (
+		[("KKE-KK-03", "2026-07-29", 2, 1, 50.0), ("KKE-KK-02", "2026-09-30", 2, 0, 0.0)], 4, 1, 25.0, "2026-09-30",
+		"2026-09-30", {"KKE-KK-05": 22.2, "KKE-KK-03": 50.0}), i9)
+	# Tháng 8: TP = KK-01 (15/08, loai NULL → TP; TP1 100 → 100 khớp) 1/1; BTP = KK-03 (29/07) 1/2 → 2/3 = 66,7%.
+	# Tháng 6: chưa có lần kiểm nào hiệu lực → không có tỷ lệ.
+	i8, i6 = ov("2026-08")["ira"], ov("2026-06")["ira"]
+	c("tháng 8 độ chính xác 2/3 = 66,7% (KK-03, KK-01); tháng 6 chưa có lần kiểm → không tỷ lệ",
+		([(r["phieu"], r["ty_le"]) for r in i8["rows"]], i8["ty_le"], i8.get("ngay_moi_nhat"), i6["rows"], i6["ty_le"],
+		i6.get("ngay_moi_nhat")) == ([("KKE-KK-03", 50.0), ("KKE-KK-01", 100.0)], 66.7, "2026-08-15", [], None, None), (i8, i6))
 	c("tháng tương lai / sai dạng → tháng này", ov("2026-11")["meta"]["thang"] == "2026-10" and ov("abc")["meta"]["thang"]
 		== "2026-10")
+	# SEC-1: tháng năm 1 / năm 1900 → tháng này (kho.month_period kẹp); chốt thứ hai — dựng thẳng kỳ 01/0001 (tháng trước
+	# không tồn tại) không ném OverflowError mà prev = None.
+	from bc.api import kho_kk as _kk_mod
+	try:
+		far = [ov(x)["meta"]["thang"] for x in ("0001-01", "1900-01")]
+		b1 = _kk_mod._build(datetime.date(1, 1, 1), datetime.date(1, 1, 31), "0001-01", datetime.date(2026, 10, 27))
+		ok1 = (far, b1["available"], b1["meta"]["prev"], b1["meta"]["from"]) == (["2026-10", "2026-10"], True, None,
+			"0001-01-01")
+		err = None
+	except Exception as e:   # noqa: BLE001 — trước khi sửa: OverflowError 'date value out of range'
+		ok1, err = False, repr(e)
+	c("tháng 01/0001 không 500: tháng chọn quá xa → tháng này; kỳ 01/0001 dựng được, tháng trước = None", ok1, err)
+	c("tháng trước theo số học tháng: 01/2026 → 12/2025 (tháng 10 → 09 đã kiểm ở trên)",
+		ov("2026-01")["meta"]["prev"] == "2025-12")
 
 	# ═══ Thiếu cột của sx bản sau (thoi_diem, cach_dem, bat_dau_luc, ghi_chu) ═══
 	for col in ("thoi_diem", "cach_dem", "bat_dau_luc", "ghi_chu"):
@@ -559,10 +630,10 @@ if __name__ == "__main__":
 	d2 = ov()
 	k2 = d2["kk_sx"]
 	# Không thoi_diem: KK-02 hiệu lực = chot 03/10 → vào tháng 10: thêm thừa 120.000 / thiếu −100.000 / bù 90.000
-	# → thừa 300.000, thiếu −920.000, ròng −641.000 + 20.000 = −621.000, bù 290.000.
+	# → thừa 300.000, thiếu −920.000, ròng −198.000 + 20.000 = −178.000 (kho khác +443.000 của KK-05 giữ nguyên), bù 290.000.
 	c("thiếu thoi_diem: KK-02 tính theo chot_luc (03/10) → tháng 10 có 2 lần kiểm", ([r["phieu"] for r in k2["rows"]],
-		k2["gt_thua"], k2["gt_thieu"], k2["gt_rong"], k2["gt_bu"]) == (["KKE-KK-02", "KKE-KK-05"], 300_000, -920_000, -621_000,
-		290_000), k2)
+		k2["gt_thua"], k2["gt_thieu"], k2.get("gt_kho_khac"), k2["gt_rong"], k2["gt_bu"]) == (["KKE-KK-02", "KKE-KK-05"], 300_000,
+		-920_000, 443_000, -178_000, 290_000), k2)
 	t2 = by(d2["kho"]["rows"], "kho", TP)
 	b2 = by(d2["kho"]["rows"], "kho", BTP)
 	c("thiếu cột: TP vẫn KK-05, cách đếm mặc định 'Kèm hạn sử dụng'; BTP KK-03 (KK-04 hết thoi_diem cũng 29/07)",
@@ -610,22 +681,64 @@ if __name__ == "__main__":
 	d4 = ov()
 	c("một khối lỗi không làm hỏng trang: ira, ve_0 = {available: False, error: True}; còn lại vẫn đúng",
 		d4["ira"] == {"available": False, "error": True} and d4["ve_0"] == {"available": False, "error": True}
-		and d4["kk_sx"]["gt_rong"] == -641_000 and d4["tong"]["gia_tri"] == -958_200 and len(frappe.LOGGED) == 2,
+		and d4["kk_sx"]["gt_rong"] == -198_000 and d4["tong"]["gia_tri"] == -515_200 and len(frappe.LOGGED) == 2,
 		(d4["ira"], d4["ve_0"], len(frappe.LOGGED)))
+
+	# ═══ UX-2: khối xuất khác lỗi (thiếu cột stock_entry_type) → tổng nói ĐÚNG khoản còn thiếu ═══
+	main_seed()
+	drop_column("Stock Entry", "stock_entry_type")
+	frappe.LOGGED.clear()
+	de = ov()
+	te = de["tong"]
+	# Còn số: kiểm kê sx −198.000 + phiếu kiểm kho −27.200 + dọn tồn +70.000 = −155.200 — CHƯA gồm xuất khác (không phải
+	# "thiếu kiểm kê sản xuất": dòng đó vẫn có số).
+	c("xuất khác lỗi: tổng −155.200 chưa đủ, thiếu đúng 'xuat_khac' (lý do lỗi), kiểm kê sản xuất vẫn có số",
+		(de["xuat_khac"], te["gia_tri"], te["day_du"], te.get("thieu"), te.get("khong_ap_dung"),
+		[(x["key"], x["available"], x.get("reason")) for x in te["parts"]], de["kk_sx"]["gt_rong"], len(frappe.LOGGED))
+		== ({"available": False, "error": True}, -155_200, False, ["xuat_khac"], [],
+		[("kk_sx", True, None), ("kk_ch", True, None), ("don_sx", True, None), ("xuat_khac", False, "loi")], -198_000, 1), te)
+
+	# ═══ XC-1 / XR-REAL-1: "Kiểm kê sản xuất" của trang này khớp dòng "Kiểm kê sản xuất" của nhập–xuất–tồn (kho_ton K3) ═══
+	# K3 = mọi phiếu mang custom_kiem_ke ở MỌI kho theo NGÀY GHI SỔ; K10.1 = cùng các phiếu theo NGÀY HIỆU LỰC lần kiểm.
+	# Hai số chỉ được lệch đúng phần ghi sổ khác tháng với ngày hiệu lực — trước khi sửa K10.1 bỏ mọi dòng sổ ngoài kk.kho
+	# nên lệch vĩnh viễn (+443.000 tháng 10, trong đó +400.000 bù tồn âm xưởng về 0).
+	main_seed()
+	# Sổ thật ghi công ty CỦA KHO (seed ghi công ty mặc định cho mọi dòng) — dòng ở kho công ty RV (KK-13) ra khỏi HGC.
+	frappe.db.sql("""UPDATE `tabStock Ledger Entry` sle JOIN `tabWarehouse` w ON w.name = sle.warehouse
+		SET sle.company = w.company""")
+	from bc.api import kho_ton
+	tr = kho_ton.get_trend(refresh=1)
+	months = [m["month"] for m in (tr.get("nxt") or {}).get("months") or []]
+	k3 = {m["month"]: m["groups"]["all"]["flows"]["kiem_ke_sx"] for m in (tr.get("nxt") or {}).get("months") or []}
+	k10 = {m: ov(m)["kk_sx"]["gt_rong"] for m in months}
+	lech = {m: round(k3[m] - k10[m], 2) for m in months}
+	# Tính tay:
+	# K3 (ngày ghi sổ, mọi kho): 07 KK-03 −1,75 × 60.000 = −105.000; 08 0 (KK-01 không phiếu); 09 KK-02 −100.000 + 30.000
+	#   = −70.000; 10 bù D216 của KK-02 ghi 02/10 +90.000 + KK-05 (tại TP −641.000 + kho khác +443.000 = −198.000) = −108.000.
+	# K10.1 (ngày hiệu lực): 07 −105.000; 08 0; 09 KK-02 −100.000 + 30.000 + 90.000 = +20.000; 10 KK-05 −198.000.
+	# Lệch K3 − K10 = phần ghi lùi KKE-SE-KK02-BU (+90.000, ghi 02/10, lần kiểm hiệu lực 30/09): 09 −90.000, 10 +90.000,
+	# các tháng khác 0; cộng cả 13 tháng = 0 (chỉ dời tháng, không mất số).
+	c("đối chiếu nhập–xuất–tồn: K3 kiểm kê sản xuất 07 −105.000 / 09 −70.000 / 10 −108.000 (gồm +400.000 bù tồn âm xưởng)",
+		len(months) == 13 and (k3["2026-07"], k3["2026-08"], k3["2026-09"], k3["2026-10"]) == (-105_000, 0, -70_000, -108_000),
+		(months[:1] + months[-1:], {m: k3.get(m) for m in ("2026-07", "2026-08", "2026-09", "2026-10")}))
+	c("đối chiếu: K10.1 lệch K3 đúng phần phiếu bù ghi lùi khác tháng — 09 −90.000, 10 +90.000, 11 tháng còn lại 0, cộng 0",
+		lech == {m: (-90_000 if m == "2026-09" else 90_000 if m == "2026-10" else 0) for m in months}
+		and round(sum(lech.values()), 2) == 0, {m: v for m, v in lech.items() if v} or lech)
 
 	# ═══ Thiếu cột Stock Entry.custom_kiem_ke (sx vẫn cài) ═══
 	main_seed()
 	drop_column("Stock Entry", "custom_kiem_ke")
 	d5 = ov()
 	# Không nhận ra phiếu kiểm kê: MI của KK-05 ở TP (500.000 + 160.000 + 300.000 + 30.000 + 90.000 = 1.080.000) + đổi cờ lô
-	# ở CH1 (350.000) thành xuất kho không ghi loại → xuất khác 360.000 + 1.430.000 = 1.790.000.
+	# ở CH1 (350.000) và CH2 (500.000) thành xuất kho không ghi loại → 1.930.000; xuất khác 360.000 + 1.930.000 = 2.290.000.
 	c("thiếu custom_kiem_ke: K10.1 tắt (thiếu cột), về 0 vẫn đếm mã nhưng không có tiền, top chỉ cửa hàng",
 		d5["kk_sx"] == {"available": False, "reason": "thieu_cot"} and (d5["ve_0"]["so_ma"], d5["ve_0"]["gia_tri"]) == (2, None)
 		and {r["nguon"] for r in d5["top_lech"]["rows"]} == {"cua_hang"} and d5["meta"]["kiem_ke_col"] is False, d5["ve_0"])
-	c("thiếu custom_kiem_ke: xuất khác 1.790.000 (thêm 'Xuất kho (không ghi loại)' 1.430.000), tổng không đủ dòng",
-		(d5["xuat_khac"]["gia_tri"], by(d5["xuat_khac"]["rows"], "loai", "Material Issue")["label"],
-		by(d5["xuat_khac"]["rows"], "loai", "Material Issue")["gia_tri"], d5["tong"]["day_du"], d5["tong"]["gia_tri"])
-		== (1_790_000, "Xuất kho (không ghi loại)", 1_430_000, False, -27_200 + 120_000 - 1_790_000), d5["xuat_khac"])
+	c("thiếu custom_kiem_ke: xuất khác 2.290.000 (thêm 'Xuất kho (không ghi loại)' 1.930.000), tổng thiếu đúng dòng kiểm kê "
+		"sản xuất", (d5["xuat_khac"]["gia_tri"], by(d5["xuat_khac"]["rows"], "loai", "Material Issue")["label"],
+		by(d5["xuat_khac"]["rows"], "loai", "Material Issue")["gia_tri"], d5["tong"]["day_du"], d5["tong"].get("thieu"),
+		d5["tong"]["gia_tri"]) == (2_290_000, "Xuất kho (không ghi loại)", 1_930_000, False, ["kk_sx"],
+		-27_200 + 120_000 - 2_290_000), (d5["xuat_khac"], d5["tong"]))
 	# Phiếu "Dọn tồn không lô…" của lần kiểm KK-05 (+50.000) không còn nhận ra là kiểm kê → sang dọn tồn: −50.000 + 50.000 = 0.
 	c("thiếu custom_kiem_ke: dọn tồn không lô 0 (phiếu dọn trong lần kiểm sang dọn tồn), tổng dọn tồn 120.000",
 		[(r["key"], r["gia_tri"]) for r in d5["don_sx"]["rows"]] == [("don_khong_lo", 0), ("don_am_lo", 0), ("don_am_tp", 120_000)],
@@ -647,10 +760,12 @@ if __name__ == "__main__":
 			(KHO_CU, None, "sr", None, None, "chua"), (CH4, None, "sr", "2026-07-28", 91, "nguy"),
 			(CH2, None, "sr", "2026-09-26", 31, "canh_bao"), (CH1, None, "sr", "2026-09-27", 30, "ok"),
 			(TRA_VE, None, "sr", "2026-10-15", 12, "ok"), (CH3, None, "sr", "2026-10-20", 7, "ok")], kho_rows(d6))
-		c("không sx: kiểm kê cửa hàng, xuất khác như cũ; tổng −27.200 − 360.000 = −387.200 (không đủ dòng)",
-			(d6["kk_ch"]["gt_rong"], d6["xuat_khac"]["gia_tri"], d6["tong"]["gia_tri"], d6["tong"]["day_du"])
-			== (-27_200, 360_000, -387_200, False) and [x["available"] for x in d6["tong"]["parts"]] == [False, True, False, True],
-			d6["tong"])
+		# UX-2: không có app Sản xuất thì hai dòng sx KHÔNG ÁP DỤNG (không phải thiếu số) → tổng đủ, không "thiếu".
+		c("không sx: phiếu kiểm kho, xuất khác như cũ; tổng −27.200 − 360.000 = −387.200; dòng sx không áp dụng (không thiếu)",
+			(d6["kk_ch"]["gt_rong"], d6["xuat_khac"]["gia_tri"], d6["tong"]["gia_tri"], d6["tong"]["day_du"],
+			d6["tong"].get("thieu"), d6["tong"].get("khong_ap_dung"), [(x["available"], x.get("reason")) for x in d6["tong"]["parts"]])
+			== (-27_200, 360_000, -387_200, True, [], ["kk_sx", "don_sx"],
+			[(False, "khong_sx"), (True, None), (False, "khong_sx"), (True, None)]), d6["tong"])
 		c("không sx: top chênh lệch chỉ cửa hàng", [(r["item_code"], r["kho"]) for r in d6["top_lech"]["rows"]] == [
 			("KKE-TP2", TRA_VE), ("KKE-TP4", CH3), ("KKE-TP2", CH3), ("KKE-TP1", CH3)], d6["top_lech"])
 	finally:
@@ -668,7 +783,8 @@ if __name__ == "__main__":
 	d8 = ov()
 	c("thiếu bảng Stock Reconciliation Item: K10.2 tắt, cửa hàng 'chưa kiểm kê', sx vẫn đủ",
 		d8["kk_ch"] == {"available": False, "reason": "thieu_bang"} and by(d8["kho"]["rows"], "kho", CH3)["muc"] == "chua"
-		and d8["kk_sx"]["gt_rong"] == -641_000 and d8["tong"]["gia_tri"] == -641_000 + 70_000 - 360_000, d8["kk_ch"])
+		and d8["kk_sx"]["gt_rong"] == -198_000 and d8["tong"]["gia_tri"] == -198_000 + 70_000 - 360_000
+		and (d8["tong"]["day_du"], d8["tong"].get("thieu")) == (False, ["kk_ch"]), (d8["kk_ch"], d8["tong"]))
 
 	# ═══ Site trống / chưa có công ty ═══
 	reset()

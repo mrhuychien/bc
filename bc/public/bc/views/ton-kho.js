@@ -1,6 +1,7 @@
 // #/ton-kho — Tồn kho: giá trị tồn bây giờ (theo khu vực kho, nhóm hàng, mã lớn nhất), xu hướng 12 tháng + nhập–xuất–tồn,
 // số ngày tồn kho, hàng chậm luân chuyển / tồn chết, tồn hàng Tết, sức khoẻ số liệu (thu gọn).
-// Hai lượt gọi: bc.api.kho_ton.get_overview (nhẹ, vẽ trước) rồi get_trend (quét cả sổ kho, nặng hơn — vẽ sau).
+// Hai lượt gọi song song: bc.api.kho_ton.get_overview (Bin + ba lượt quét cả sổ cache theo ngày) và get_trend (quét cả sổ
+// kho, cache 6 giờ). Lần đầu trong ngày (hoặc Làm mới) cả hai đều quét sổ; các lần sau overview chỉ đọc Bin.
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
@@ -24,13 +25,24 @@ const GROUP_COLORS = { tet: '#ec4899', traditional: '#7c3aed', other: '#f59e0b' 
 
 function money(v) { return v === null || v === undefined ? '<span class="bc-muted">—</span>' : `<span title="${fmtMoneyFull(v)}">${fmtMoney(v)}</span>`; }
 function num1(v) { return v === null || v === undefined ? '—' : NUM1.format(v); }
-function off(what) { return `<div class="bc-muted bc-text-sm">Chưa tính được ${escapeHtml(what)} (thiếu dữ liệu trên hệ thống).</div>`; }
+// Khối tắt: lỗi máy chủ (safe_block → error: true, đã ghi Error Log) nói rõ là lỗi để người xem báo lại — khác thiếu dữ liệu.
+function off(b, what) {
+    return b && b.error
+        ? `<div class="bc-muted bc-text-sm">Không tải được ${escapeHtml(what)} lúc này (lỗi hệ thống — đã ghi nhật ký, hãy báo quản trị).</div>`
+        : `<div class="bc-muted bc-text-sm">Chưa tính được ${escapeHtml(what)} (thiếu dữ liệu trên hệ thống).</div>`;
+}
 function monthLabel(m) { return m ? `T${Number(m.slice(5))}/${m.slice(0, 4)}` : ''; }
 function qtyText(q, uom) { return q === null || q === undefined ? '—' : `${fmtNum(q)} ${escapeHtml((uom || '').toLowerCase())}`; }
+function qtyLabel(uom) { return !uom || uom.toLowerCase() === 'hộp' ? 'Số hộp' : 'Số lượng'; }
+// "Chưa khai quy cách thùng": MỘT cơ sở trên cả màn = mã không hệ số thùng có tồn ròng > 0 (boxes_without_carton_in_stock,
+// cùng số với dải sức khoẻ), kèm ĐƠN VỊ của khối (không mặc định "hộp").
+function noFactor(o) { const n = o?.boxes_without_carton_in_stock ?? o?.boxes_without_carton_factor; return n > 0 ? n : 0; }
 function cartonText(o) {
     if (!o || o.cartons === null || o.cartons === undefined) return '';
-    const miss = o.boxes_without_carton_factor ? ` + ${fmtNum(o.boxes_without_carton_factor)} hộp chưa khai quy cách thùng` : '';
-    return `${num1(o.cartons)} thùng${miss}`;
+    const n = noFactor(o);
+    const miss = n ? `${fmtNum(n)} ${escapeHtml((o.uom || '').toLowerCase())} chưa khai quy cách thùng` : '';
+    if (!o.cartons) return miss;
+    return `${num1(o.cartons)} thùng${miss ? ` + ${miss}` : ''}`;
 }
 function groupLabel(key) {
     const g = state.ov?.meta?.groups || {};
@@ -40,32 +52,40 @@ function groupLabel(key) {
 // ─── Thẻ KPI ───────────────────────────────────────────────────────────────
 function kpisHtml(d) {
     const v = d.value;
-    if (!v.available) return off('giá trị tồn kho');
+    if (!v.available) return off(v, 'giá trị tồn kho');
     const t = v.totals, role = Object.fromEntries(v.by_role.map((r) => [r.key, r]));
     const kb = role.khong_ban || { roles: [] };
     const tp = v.tp;
-    // Tiêu đề: thùng nếu quy được (> 0), không thì số hộp (chưa khai quy cách thùng); lẫn đơn vị → chỉ tiền.
+    // Tiêu đề: thùng nếu quy được (> 0), không thì số lượng (chưa khai quy cách thùng); lẫn đơn vị → chỉ tiền.
     const tpVal = tp.qty === null ? money(tp.value) : tp.cartons ? `${num1(tp.cartons)} thùng` : qtyText(tp.qty, tp.uom);
     const tpRows = tp.qty === null ? (tp.items ? [['Nhiều đơn vị', 'chỉ cộng tiền']] : [['Số mã còn hàng', '0']])
-        : tp.cartons ? [['Số hộp', qtyText(tp.qty, tp.uom)], ['Giá trị', money(tp.value)]] : [['Giá trị', money(tp.value)]];
+        : tp.cartons ? [[qtyLabel(tp.uom), qtyText(tp.qty, tp.uom)], ['Giá trị', money(tp.value)]] : [['Giá trị', money(tp.value)]];
+    const tpMiss = tp.qty === null ? 0 : noFactor(tp);
+    // Chia theo KHO (không theo hàng bán được hay không): kho trả về / cách ly của cài đặt sản xuất (hoặc kho hàng lỗi).
+    const known = kb.configured !== false;
+    const kbVal = known ? `<span class="${t.value_unsellable ? 'bc-txt-danger' : ''}">${money(t.value_unsellable)}</span>`
+        : '<span class="bc-muted">—</span>';
+    const kbRows = known ? kb.roles.map((r) => [r.label, r.configured === false ? '<span class="bc-muted">chưa khai kho</span>' : money(r.value)])
+        : [['Chưa xác định kho', 'trả về / cách ly']];
     return `<div class="bc-grid bc-grid-4">
         ${statCard({ label: 'Tổng giá trị tồn', icon: '📦', value: money(t.value), rows: [
             ['Kho thành phẩm', money(role.tp?.value)], ['Cửa hàng', money(role.cua_hang?.value)],
             ['Kho sản xuất', money(role.san_xuat?.value)]] })}
-        ${statCard({ label: 'Bán được', icon: '✅', tone: 'success', value: money(t.value_sellable), rows: [
+        ${statCard({ label: 'Ngoài kho trả về & cách ly', icon: '🏬', value: money(t.value_sellable), rows: [
             ['Tỷ lệ trên tổng', fmtPct(t.value ? t.value_sellable / t.value * 100 : null)], ['Đang đi đường', money(t.value_transit)],
             ['Số mã còn hàng', fmtNum(t.items_in_stock)]] })}
-        ${statCard({ label: 'Không bán được', icon: '⛔', tone: 'danger',
-            value: `<span class="${t.value_unsellable ? 'bc-txt-danger' : ''}">${money(t.value_unsellable)}</span>`,
-            rows: kb.roles.map((r) => [r.label, money(r.value)]) })}
-        ${statCard({ label: 'Thành phẩm ở kho bán được', icon: '🧁', tone: 'warning', value: tpVal, rows: [...tpRows,
-            ...(tp.boxes_without_carton_factor ? [['Chưa quy được ra thùng', `${fmtNum(tp.boxes_without_carton_factor)} hộp`]] : [])] })}
-    </div>`;
+        ${statCard({ label: 'Kho trả về & cách ly', icon: '⛔', tone: known ? 'danger' : '', value: kbVal, rows: kbRows })}
+        ${statCard({ label: 'Thành phẩm ngoài kho trả về & cách ly', icon: '🧁', tone: 'warning', value: tpVal, rows: [...tpRows,
+            ...(tpMiss ? [['Chưa khai quy cách thùng', `${fmtNum(tpMiss)} ${escapeHtml((tp.uom || '').toLowerCase())} · ${fmtNum(tp.items_without_carton_in_stock ?? tp.items_without_carton_factor)} mã`]] : [])] })}
+    </div>
+    <div class="bc-note" id="tk-kpi-note">Hai thẻ giữa chia theo kho, không theo hàng còn bán được: hàng hết hạn, lô đang thu hồi chưa chuyển
+        sang kho trả về / cách ly vẫn tính ở "Ngoài kho trả về & cách ly" (gồm cả nguyên liệu, bán thành phẩm). Hàng không bán được
+        (hết hạn, thu hồi, trả về) xem ở trang Hạn dùng & tồn âm.${known ? '' : ' Chưa xác định được kho trả về / cách ly (chưa khai trong cài đặt sản xuất) nên chưa tách được phần này.'}</div>`;
 }
 
 // ─── Khu vực kho / nhóm hàng / mã lớn ──────────────────────────────────────
 function roleHtml(v) {
-    if (!v.available) return off('giá trị theo kho');
+    if (!v.available) return off(v, 'giá trị theo kho');
     const rows = v.by_role.filter((r) => r.value || r.warehouses.length);
     if (!rows.length) return emptyState({ icon: '📭', title: 'Chưa có hàng tồn' });
     const max = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
@@ -83,11 +103,12 @@ function roleHtml(v) {
         </div>`).join('')}</div>
         ${k && !k.same ? `<div class="bc-note" id="tk-role-khotp">Màn Thời gian thực chỉ tính kho "${escapeHtml(k.label)}": ${money(k.value)}.
             Khu vực "Kho thành phẩm" ở đây theo cả cài đặt sản xuất nên khác số đó.</div>` : ''}
-        <div class="bc-note">"Không bán được" = kho hàng trả về và kho cách ly. Cửa hàng: phiếu bán lẻ chỉ trừ kho lúc chốt ca.</div>`;
+        <div class="bc-note">"Kho trả về & cách ly" = kho hàng trả về và kho cách ly (hàng hết hạn / thu hồi còn ở kho khác: xem trang
+            Hạn dùng & tồn âm). Cửa hàng: phiếu bán lẻ chỉ trừ kho lúc chốt ca.</div>`;
 }
 
 function groupHtml(v) {
-    if (!v.available) return off('giá trị theo nhóm hàng');
+    if (!v.available) return off(v, 'giá trị theo nhóm hàng');
     const other = v.other_split.filter((x) => x.value);
     const max = Math.max(...v.by_group.map((r) => Math.abs(r.value)), 1);
     return `<div class="bc-rank-list">${v.by_group.map((r, i) => `
@@ -97,19 +118,20 @@ function groupHtml(v) {
                 <div class="bc-rank-name">${escapeHtml(r.label)}</div>
                 <div class="bc-progress"><span style="width:${Math.max(0, r.value) / max * 100}%"></span></div>
                 <div class="bc-rank-bars">
-                    <div class="bc-rank-bar"><span>Ở kho bán được</span><b>${money(r.value_sellable)}</b></div>
-                    <div class="bc-rank-bar"><span>${!r.items ? 'Chưa có hàng' : r.qty === null ? 'Nhiều đơn vị — chỉ cộng tiền' : `${qtyText(r.qty, r.uom)}${r.cartons !== null
-                        ? ` · ${cartonText(r)}` : ''}`}</span><b></b></div>
+                    <div class="bc-rank-bar tk-grp-all"><span>Mọi kho: ${!r.items ? 'chưa có hàng' : r.qty === null ? 'nhiều đơn vị — chỉ cộng tiền'
+                        : `${qtyText(r.qty, r.uom)}${cartonText(r) ? ` · ${cartonText(r)}` : ''}`}</span><b></b></div>
+                    <div class="bc-rank-bar"><span>Ngoài kho trả về & cách ly</span><b>${money(r.value_sellable)}</b></div>
                     ${r.key === 'other' && v.sx_nhom ? other.map((x) => `<div class="bc-rank-bar"><span>· ${escapeHtml(x.label)}</span><b>${money(x.value)}</b></div>`).join('') : ''}
                 </div>
             </div>
             <b>${money(r.value)}</b>
         </div>`).join('')}</div>
-        <div class="bc-note">Nhóm tính cả nhóm con (vd hộp quà Tết thuộc Hàng Tết). Số lượng gồm mọi kho của công ty.</div>`;
+        <div class="bc-note">Nhóm tính cả nhóm con (vd hộp quà Tết thuộc Hàng Tết). Số lượng ("Mọi kho") và giá trị bên phải gồm mọi
+            kho của công ty, kể cả kho trả về / cách ly.</div>`;
 }
 
 function topHtml(v) {
-    if (!v.available) return off('mã hàng');
+    if (!v.available) return off(v, 'mã hàng');
     const g = state.ov.meta.groups || {};
     return dataTable({ rows: v.top, sortKey: 'value', emptyMessage: 'Chưa có hàng tồn',
         columns: [
@@ -124,7 +146,7 @@ function topHtml(v) {
 const PHASE_TEXT = { ban: 'đang mùa bán Tết', chuan_bi: 'đang chuẩn bị mùa Tết', sau_mua: 'đã qua mùa Tết' };
 
 function doiHtml(o) {
-    if (!o.available) return off('số ngày tồn kho');
+    if (!o.available) return off(o, 'số ngày tồn kho');
     const tr = o.traditional, te = o.tet;
     const g = state.ov.meta.groups || {};
     const days = (x) => (x.days === null ? '<span class="bc-muted">—</span>' : `${fmtNum(x.days)} ngày`);
@@ -140,7 +162,7 @@ function doiHtml(o) {
                 : { label: g.tet || 'Hàng Tết', value: '<span class="bc-muted">—</span>',
                     sub: 'Chưa khai ngày Tết trong cài đặt nên chưa biết đang mùa nào' },
     ], 2)}
-        <div class="bc-note">Số ngày tồn = giá trị tồn ở kho bán được ÷ giá vốn hàng xuất bán bình quân một ngày trong
+        <div class="bc-note">Số ngày tồn = giá trị tồn ngoài kho trả về & cách ly ÷ giá vốn hàng xuất bán bình quân một ngày trong
             ${fmtNum(o.window_days)} ngày gần nhất (${escapeHtml(fmtDate(o.from))} – ${escapeHtml(fmtDate(o.to))}). Hàng Tết chỉ tính trong mùa bán.</div>`;
 }
 
@@ -155,9 +177,9 @@ function slowBody(s, key) {
     const max = Math.max(x.value, 1);
     return `${kpiGrid([
         { label: `Chậm (quá ${fmtNum(s.slow_days)} ngày)`, value: money(x.slow_value), cls: x.slow_value ? 'bc-txt-warning' : '',
-            sub: `${fmtNum(x.slow_items)} mã · ${fmtPct(x.slow_pct)} hàng bán được · gồm tồn chết` },
+            sub: `${fmtNum(x.slow_items)} mã · ${fmtPct(x.slow_pct)} giá trị tồn · gồm tồn chết` },
         { label: `Tồn chết (quá ${fmtNum(s.dead_days)} ngày)`, value: money(x.dead_value), cls: x.dead_value ? 'bc-txt-danger' : '',
-            sub: `${fmtNum(x.dead_items)} mã · ${fmtPct(x.dead_pct)} hàng bán được` },
+            sub: `${fmtNum(x.dead_items)} mã · ${fmtPct(x.dead_pct)} giá trị tồn` },
         { label: 'Chưa từng xuất', value: money(x.never_value), sub: `${fmtNum(x.never_items)} mã` },
     ], 3)}
         <div class="bc-section-title">Giá trị theo số ngày chưa xuất (${fmtNum(x.items)} mã, ${money(x.value)})</div>
@@ -167,19 +189,22 @@ function slowBody(s, key) {
         <div class="bc-section-title">Mã chậm / tồn chết lớn nhất</div>
         ${dataTable({ rows: x.top, sortKey: 'value', emptyMessage: 'Không có mã chậm luân chuyển',
             columns: [
-                { key: 'short_name', label: 'Mã hàng', align: 'left', render: (r) => `<span title="${escapeHtml(r.item_code)}">${escapeHtml(r.short_name)}</span>` },
+                // Điện thoại chỉ thấy cột đầu + Giá trị: số ngày chưa xuất và tình trạng nằm ngay dưới tên mã.
+                { key: 'short_name', label: 'Mã hàng', align: 'left', render: (r) => `<span title="${escapeHtml(r.item_code)}">${escapeHtml(r.short_name)}</span>
+                    <div class="bc-muted bc-text-sm tk-slow-sub">${fmtNum(r.idle_days)} ngày · ${r.status === 'dead' ? '<span class="bc-txt-danger">Tồn chết</span>'
+                        : r.status === 'slow' ? '<span class="bc-txt-warning">Chậm</span>' : 'Bình thường'}</div>` },
                 { key: 'value', label: 'Giá trị', render: (r) => money(r.value) },
                 { key: 'qty', label: 'Số lượng', render: (r) => `${qtyText(r.qty, r.uom)}${r.cartons !== null ? ` <span class="bc-muted">· ${num1(r.cartons)} thùng</span>` : ''}` },
                 { key: 'idle_days', label: 'Ngày chưa xuất', render: (r) => fmtNum(r.idle_days) },
                 { key: 'last_out', label: 'Lần xuất cuối', render: (r) => (r.never ? '<span class="bc-muted">chưa từng xuất</span>' : escapeHtml(fmtDate(r.last_out))) },
                 { key: 'status', label: 'Tình trạng', sortable: false, align: 'left', render: status },
             ] })}
-        <div class="bc-note">% = trên giá trị hàng ở kho bán được của ${escapeHtml(SLOW_SCOPE[key] || '')} (${money(x.sellable_value)}, gồm cả hàng Tết).</div>
+        <div class="bc-note">% = trên giá trị tồn của ${escapeHtml(SLOW_SCOPE[key] || '')} ngoài kho trả về & cách ly (${money(x.sellable_value)}, gồm cả hàng Tết).</div>
         ${key === 'vat_tu' ? '<div class="bc-note">Bao bì theo mùa (hộp, túi Tết…) ngoài mùa trông như tồn chết — xem cùng kế hoạch sản xuất.</div>' : ''}`;
 }
 
 function slowHtml(s) {
-    if (!s.available) return off('hàng chậm luân chuyển');
+    if (!s.available) return off(s, 'hàng chậm luân chuyển');
     return `${tabs([
         { key: 'tp', label: 'Thành phẩm', count: s.tp.items },
         { key: 'vat_tu', label: 'Nguyên liệu, bao bì, BTP', count: s.vat_tu.items },
@@ -187,8 +212,8 @@ function slowHtml(s) {
     ], state.slowTab, 'tk-slow')}
         <div id="tk-slow-body">${slowBody(s, state.slowTab)}</div>
         <div class="bc-note">Ngày chưa xuất = hôm nay − lần xuất cuối (bán, hoặc dùng cho sản xuất); mã chưa từng xuất tính từ lần nhập đầu.
-            Không tính trả hàng, chuyển kho, xuất huỷ, kiểm kê. "Chậm" gồm cả tồn chết. Hàng Tết tính riêng bên dưới. Chỉ mã còn hàng ở kho
-            bán được.</div>`;
+            Không tính trả hàng, chuyển kho, xuất huỷ, kiểm kê. "Chậm" gồm cả tồn chết. Hàng Tết tính riêng bên dưới. Chỉ mã còn hàng ngoài
+            kho trả về & cách ly.</div>`;
 }
 
 function bindSlow(s) {
@@ -198,20 +223,25 @@ function bindSlow(s) {
 }
 
 function tetHtml(t) {
-    if (!t.available) return off('tồn hàng Tết');
+    if (!t.available) return off(t, 'tồn hàng Tết');
     const risk = t.phase === 'sau_mua';
+    // Số thùng như cartonText: không quy được thùng nào → "—" (không "0 + …"); đơn vị không đóng thùng (cartons null,
+    // vd kg) → "—" kèm lời giải thích, không nhắc "chưa khai quy cách thùng" (cùng luật với dải sức khoẻ).
+    const unit = escapeHtml((t.uom || '').toLowerCase());
+    const miss = noFactor(t) ? `${fmtNum(noFactor(t))} ${unit} chưa khai quy cách thùng` : '';
+    const ctSub = t.qty !== null && t.qty !== undefined && t.cartons === null ? `hàng tính theo ${unit}, không quy ra thùng`
+        : t.cartons && miss ? `+ ${miss}` : miss;
     return `<div class="bc-card-head"><div class="bc-card-title">${escapeHtml(t.label)}</div>
             <span class="bc-badge ${risk ? 'bc-badge-danger' : t.phase === 'ban' ? 'bc-badge-success' : 'bc-badge-primary'}">${escapeHtml(t.phase
                 ? PHASE_TEXT[t.phase] : 'chưa khai ngày Tết')}</span></div>
         ${kpiGrid([
             { label: 'Giá trị', value: money(t.value), cls: risk && t.value ? 'bc-txt-danger' : '' },
-            { label: 'Số hộp', value: qtyText(t.qty, t.uom) },
-            { label: 'Số thùng', value: t.cartons === null ? '—' : num1(t.cartons),
-                sub: t.boxes_without_carton_factor ? `+ ${fmtNum(t.boxes_without_carton_factor)} hộp chưa khai quy cách` : '' },
+            { label: qtyLabel(t.uom), value: qtyText(t.qty, t.uom) },
+            { label: 'Số thùng', value: t.cartons ? num1(t.cartons) : '—', sub: ctSub },
         ], 3)}
         ${t.top.length ? `<div class="bc-rank-bars bc-mt-3">${t.top.map((x) => `<div class="bc-rank-bar"><span>${escapeHtml(x.short_name)}
             <span class="bc-muted bc-text-sm">${qtyText(x.qty, x.uom)}${x.cartons !== null ? ` · ${num1(x.cartons)} thùng` : ''}</span></span><b>${money(x.value)}</b></div>`).join('')}</div>` : ''}
-        <div class="bc-note">${risk ? 'Hàng Tết còn lại sau mùa — hạn dùng thường 9 tháng, cần kế hoạch xử lý.' : 'Hàng Tết ở các kho bán được.'}</div>`;
+        <div class="bc-note">${risk ? 'Hàng Tết còn lại sau mùa — hạn dùng thường 9 tháng, cần kế hoạch xử lý.' : 'Hàng Tết ngoài kho trả về & cách ly.'}</div>`;
 }
 
 // ─── Sức khoẻ số liệu ──────────────────────────────────────────────────────
@@ -219,6 +249,10 @@ function healthItems(h, trend) {
     const out = [];
     const g = state.ov?.meta?.groups || {};
     if (h.pending_reposts) out.push(`Giá vốn đang được tính lại từ ${fmtDate(h.repost_since)} (${fmtNum(h.pending_reposts)} lượt) — số giá trị có thể còn đổi.`);
+    if (h.failed_reposts) {
+        out.push(`${fmtNum(h.failed_reposts)} lượt tính lại giá vốn bị lỗi, hệ thống không tự chạy lại (từ ${fmtDate(h.failed_repost_since)}): giá trị
+            tồn từ ngày đó có thể sai cho tới khi kế toán chạy lại.`);
+    }
     if (trend?.available && trend.future_value) {
         out.push(`Có ${fmtMoney(trend.future_value)} hàng ghi sổ với ngày sau hôm nay: đã có trong tổng tồn, chưa có trong biểu đồ.`);
     }
@@ -241,13 +275,18 @@ function healthItems(h, trend) {
     }
     if (h.company_mismatch) out.push(`Cài đặt sản xuất đang dùng công ty khác (${h.sx_company}).`);
     if (h.kho_tp_mismatch) out.push(`Kho thành phẩm của báo cáo (${h.kho_tp_bc}) khác kho thành phẩm của sản xuất (${h.kho_tp_sx}); khu vực "Kho thành phẩm" tính cả hai.`);
-    if (h.items_without_carton_factor) out.push(`${fmtNum(h.items_without_carton_factor)} mã thành phẩm chưa khai quy cách thùng (${fmtNum(h.boxes_without_carton_factor)} hộp không quy được ra thùng).`);
+    if (h.items_without_carton_factor) {
+        // Theo từng đơn vị kho (không cộng hộp với kg) — cùng số với dòng "Chưa khai quy cách thùng" của thẻ thành phẩm.
+        const per = (h.without_carton_by_uom || []).map((u) => `${fmtNum(u.qty)} ${(u.uom || '').toLowerCase()}`);
+        out.push(`${fmtNum(h.items_without_carton_factor)} mã thành phẩm còn hàng chưa khai quy cách thùng${per.length ? ` (${per.join(', ')})` : ''}.`);
+    }
     if (h.stranded_value_rows) out.push(`${fmtNum(h.stranded_value_rows)} dòng tồn đã hết hàng nhưng còn giá trị (${fmtMoney(h.stranded_value)}) — kế toán cần xử lý chênh lệch.`);
     return out;
 }
 
 function healthHtml() {
     const h = state.ov?.health;
+    if (h && h.available === false && h.error) return `<div class="bc-card bc-mt-3">${off(h, 'sức khoẻ số liệu')}</div>`;
     if (!h || !h.available) return '';
     const items = healthItems(h, state.tr?.trend);
     return `<details class="bc-card bc-mt-3" id="tk-health-box"${state.healthOpen ? ' open' : ''}>
@@ -268,8 +307,9 @@ function paintHealth() {
 
 // ─── Xu hướng + nhập–xuất–tồn ──────────────────────────────────────────────
 function trendHtml(t) {
-    if (!t.available) return off('xu hướng giá trị tồn');
+    if (!t.available) return off(t, 'xu hướng giá trị tồn');
     const pts = t.points, last = pts[pts.length - 1], prev = pts[pts.length - 2];
+    const empty = pts.every((p) => !p.value);  // sổ trống: lời nhắn thay khung biểu đồ (không để trống 240px)
     const growth = (a, b) => (b ? (a - b) / Math.abs(b) * 100 : null);
     const gtxt = (a, b, what) => { const x = growth(a, b); return x === null ? '' : `${what} ${x >= 0 ? '▲' : '▼'} ${fmtPct(Math.abs(x))}`; };
     return `${kpiGrid([
@@ -280,14 +320,14 @@ function trendHtml(t) {
         { label: `Cùng kỳ năm trước (${fmtDate(t.ly_month_end)})`, value: money(t.ly_month_end_value),
             sub: gtxt(prev.value, t.ly_month_end_value, `Cuối ${monthLabel(prev.month)} so cùng kỳ`) },
     ], 4)}
-        <div class="bc-chart-wrap bc-mt-3" id="tk-chart-wrap"><canvas id="tk-chart"></canvas></div>
+        ${empty ? '<div class="bc-muted bc-text-sm bc-mt-3" id="tk-chart-empty">Chưa có phát sinh sổ kho trong 12 tháng.</div>'
+            : '<div class="bc-chart-wrap bc-mt-3" id="tk-chart-wrap"><canvas id="tk-chart"></canvas></div>'}
         <div class="bc-note">Giá trị cuối mỗi tháng theo sổ kho; điểm cuối là hôm nay (chưa gồm hàng ghi sổ ngày sau hôm nay).
             Nhóm hàng theo nhóm hiện tại của mã.</div>`;
 }
 
 async function trendChart(t, alive) {
-    if (!t.available) return;
-    if (t.points.every((p) => !p.value)) { fill('tk-chart-wrap', '<div class="bc-muted bc-text-sm">Chưa có phát sinh sổ kho trong 12 tháng.</div>'); return; }
+    if (!t.available || !document.getElementById('tk-chart')) return;  // sổ trống: trendHtml đã thay biểu đồ bằng lời nhắn
     const Chart = await loadChartLib();
     const el = document.getElementById('tk-chart');
     if (!alive() || !el) return;
@@ -308,7 +348,7 @@ async function trendChart(t, alive) {
 
 function nxtTable() {
     const n = state.tr?.nxt;
-    if (!n || !n.available) return off('nhập – xuất – tồn');
+    if (!n || !n.available) return off(n, 'nhập – xuất – tồn');
     const loai = state.tr.meta.loai || [];
     const pick = n.months.find((m) => m.month === state.nxtMonth) || n.months[n.months.length - 2];
     const cur = n.months[n.months.length - 1];
@@ -334,7 +374,7 @@ function nxtTable() {
 
 function nxtHtml() {
     const n = state.tr?.nxt;
-    if (!n || !n.available) return off('nhập – xuất – tồn');
+    if (!n || !n.available) return off(n, 'nhập – xuất – tồn');
     const opts = n.months.slice().reverse().map((m) => `<option value="${escapeHtml(m.month)}" ${m.month === state.nxtMonth ? 'selected' : ''}>${escapeHtml(
         m.current ? `Tháng này (${monthLabel(m.month)})` : `Tháng ${monthLabel(m.month).slice(1)}`)}</option>`).join('');
     return `<div class="bc-filter-bar">
@@ -342,9 +382,10 @@ function nxtHtml() {
             <div style="min-width:0;flex:1 1 220px">${tabs(['all', 'traditional', 'tet', 'other'].map((k) => ({ key: k, label: groupLabel(k) })), state.nxtGroup, 'tk-nxt')}</div>
         </div>
         <div id="tk-nxt-table">${nxtTable()}</div>
-        <div class="bc-note">Theo giá trị (giá vốn, chưa VAT), theo ngày ghi sổ. "Giá vốn hàng xuất bán" là hàng đã xuất kho để bán, chưa trừ
-            hàng khách trả qua phiếu giảm giá — hàng trả về được nhập kho bằng phiếu riêng (dòng "Nhập khác"). Chênh lệch kiểm kê ở đây theo
-            ngày ghi sổ nên có thể khác tháng so với trang Kiểm kê.</div>`;
+        <div class="bc-note" id="tk-nxt-note">Theo giá trị (giá vốn, chưa VAT), theo ngày ghi sổ. "Xuất bán (giá vốn)" là hàng đã xuất kho để bán,
+            chưa trừ hàng khách trả qua phiếu giảm giá — hàng trả về được nhập kho bằng phiếu riêng (dòng "Nhập khác"). "Kiểm kê sản xuất"
+            gồm mọi phiếu của các lần kiểm kê sản xuất, ở mọi kho; trang Kiểm kê tính theo ngày kiểm nên hai số chỉ lệch khi phiếu ghi sổ
+            khác tháng với ngày kiểm (phiếu bù ghi lùi ngày). "Kiểm kê bằng phiếu kiểm kho" là phiếu kiểm kho ở mọi kho, không riêng cửa hàng.</div>`;
 }
 
 function bindNxt() {

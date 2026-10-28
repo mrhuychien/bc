@@ -4,11 +4,23 @@
 // (chạy được trên seed gộp của cả nhóm Kho, seed lẫn đơn vị Hộp + Kg, seed thiếu bảng lô).
 // So từng Ô của MỌI trang các bảng (lô hết hạn / cận date, chưa rõ hạn, kho trả về, lô thu hồi, tồn âm, tách tồn âm),
 // từng ô số của "không bán được" và "chưa rõ hạn", dòng đối chiếu tồn kho, số lô / thùng / số lượng của các nhóm hạn.
+// Điện thoại 390px: cột đầu mọi bảng ghi "lô · kho" (cột Lô / Kho nằm ngoài màn) — dòng cùng mã khác lô / kho không trông
+// như trùng, dòng phụ không bị cắt. Nhãn theo kho ("ngoài kho trả về & cách ly"), không "kho bán"; thẻ tồn không bán được
+// ghi rõ 3 phần. Giờ chụp số theo lô ("tính lúc HH:MM"): có đúng giờ khi meta.lo_ttl_giay > 0, KHÔNG có khi cache tắt — và
+// một lượt giả meta (chặn API, chỉ sửa meta.lo_luc / lo_ttl_giay) để lượt mặc định (cache tắt) vẫn canh dòng này.
+// Lượt phụ: node ui_kho_han.mjs <url> <lượt> — lượt kiểm sổ đúng hình dạng (không âm thầm thành lượt rỗng), sổ do
+// BC_TEST_DB=<db> python3 -B test_kho_han.py <lệnh> dựng trước khi chạy server:
+//   empty   (seed-empty)   sổ RỖNG: "Chưa rõ hạn dùng" báo "Không có tồn thành phẩm", không trấn an giả "đều đã rõ hạn dùng";
+//   thu-hoi (seed-thu-hoi) chỉ còn lô thu hồi + phần âm: "Chưa rõ hạn dùng" KHÔNG nói "không có tồn thành phẩm" (trái dòng
+//                          đối chiếu ngay trên) mà ghi còn gì — số tính tay từ seed_thu_hoi;
+//   cache   (seed-cache, chạy SAU seed_ui_kho.py, không reset) cache bật: API có ảnh chụp lô 3600 giây, màn ghi giờ chụp.
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
 const base = process.argv[2] || 'http://127.0.0.1:8132';
+const MODE = process.argv[3] || '';
+if (!['', 'empty', 'thu-hoi', 'cache'].includes(MODE)) { console.log(`lượt không biết: ${MODE}`); process.exit(2); }
 const SHOTS = process.env.SHOTS || '';
 let n = 0, bad = 0;
 function check(label, ok, detail = '') {
@@ -37,7 +49,7 @@ async function allRows(page, sel, idx = 0) {
     return out;
 }
 
-async function scenario(page) {
+async function scenario(page, mobile) {
     await page.waitForSelector('.bc-view-banner', { timeout: 15000 });
     await page.waitForFunction(() => !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
     const banner = flat(await page.textContent('.bc-view-banner'));
@@ -47,7 +59,7 @@ async function scenario(page) {
     check('không có "số thùng âm" trên màn (phần âm không quy thùng)', !/-\s?[\d.,]+ thùng/.test(main), (main.match(/.{30}-\s?[\d.,]+ thùng/) || [''])[0]);
 
     // API + kết quả kỳ vọng từng ô, định dạng bằng lib/format.js của trang (số liệu lấy từ API, không từ seed)
-    const r = await page.evaluate(async () => {
+    const r = await page.evaluate(async (mobile) => {
         const f = await import('/assets/bc/bc/lib/format.js');
         const res = await fetch('/api/method/bc.api.kho_han.get_overview', { method: 'POST', body: new URLSearchParams({}) });
         const d = (await res.json()).message;
@@ -69,7 +81,8 @@ async function scenario(page) {
                 .join((x.theo_dvt || []).some((p) => p.qty < 0) ? ', ' : ' + ') || 'nhiều đơn vị'
             : one(x.qty, x.uom || uom, x.cartons, x.boxes_without_carton_factor));
         const con = (nn) => (nn < 0 ? `Quá ${f.fmtNum(-nn)} ngày` : nn === 0 ? 'Hết hạn hôm nay' : `Còn ${f.fmtNum(nn)} ngày`);
-        const item = (x) => `${x.short_name || x.item_code}${x.item_code}`;
+        // Cột đầu: tên + dòng phụ — màn rộng: mã hàng; điện thoại: "lô · kho" (thiếu cả hai thì mã hàng).
+        const item = (x) => `${x.short_name || x.item_code}${mobile ? [x.lo, x.kho].filter(Boolean).join(' · ') || x.item_code : x.item_code}`;
         const LOAI = { toncu: 'Lô tồn cũ', lo_khong_hsd: 'Lô chưa ghi hạn', khong_lo: 'Chưa gắn lô', chua_quan_ly_lo: 'Mã không theo lô' };
         const partVal = (p) => (p.available ? m(p.value) : p.error ? 'chưa tính được' : 'chưa có');
         const sorted = (rows, key, dir) => {   // sắp như data-table (ổn định), mọi trang
@@ -101,6 +114,9 @@ async function scenario(page) {
             out.fm.lots = sorted(h.lo_can_date, 'con_ngay', 'asc').map((x) => [item(x), con(x.con_ngay), m(x.value),
                 q(x.qty, x.uom), x.cartons === null || x.cartons === undefined ? '—' : CT2.format(x.cartons), f.fmtDate(x.hsd), x.lo, x.kho]);
             out.fm.cr_parts = h.chua_ro.parts.map((p) => [p.label, m(p.value), qtyText(p, h.uom)]);
+            const crCon = [h.thu_hoi.rows ? `lô đang thu hồi ${qtyText(h.thu_hoi, h.uom)} (xem Tồn không bán được)` : '',
+                h.phan_am.rows ? `phần âm ${qtyText(h.phan_am, h.uom)} (sổ ghi xuất nhiều hơn nhập — xem Tồn âm)` : ''].filter(Boolean);
+            out.fm.cr_con = `Thành phẩm ngoài kho trả về & cách ly chỉ còn ${crCon.join(' và ')}.`;
             out.fm.cr_rows = sorted(h.chua_ro_ds, 'value', 'desc').map((x) => [item(x), m(x.value), q(x.qty, x.uom), LOAI[x.loai] || x.loai,
                 x.lo || '—', x.kho, x.hsd_uoc_tinh ? f.fmtDate(x.hsd_uoc_tinh) : '—']);
         }
@@ -120,10 +136,19 @@ async function scenario(page) {
                 q(x.qty, x.uom), x.kho]);
         }
         return out;
-    });
+    }, mobile);
     const d = r.d, fm = r.fm;
     check('API trả dữ liệu', d && d.available === true, JSON.stringify(d).slice(0, 200));
     if (!d || !d.available) return;
+    const rowsOf = (h) => (h.available ? [h.tong.rows, h.thu_hoi.rows, h.phan_am.rows] : null);
+    if (MODE === 'empty') {
+        check('lượt empty: sổ rỗng thật (phần dương / thu hồi / âm đều 0 dòng)', same(rowsOf(d.han), [0, 0, 0]), JSON.stringify(rowsOf(d.han)));
+    } else if (MODE === 'thu-hoi') {   // seed_thu_hoi: R1 một lô thu hồi, R2 một dòng âm, không phần dương nào
+        check('lượt thu-hoi: sổ đúng hình dạng (phần dương 0, thu hồi 1, âm 1 dòng)', same(rowsOf(d.han), [0, 1, 1]), JSON.stringify(rowsOf(d.han)));
+    } else if (MODE === 'cache') {     // LOT_TTL = 3600 giây khi BC Settings.cache_ttl > 0
+        check('lượt cache: API có ảnh chụp số theo lô (lo_ttl_giay 3600, có giờ chụp)', d.meta.lo_ttl_giay === 3600 && !!d.meta.lo_luc,
+            JSON.stringify(d.meta));
+    }
     const k = flat(await page.textContent('#hd-kpis'));
     const cards = await page.$$eval('#hd-kpis .bc-stat', (els) => els.map((e) => ({
         label: e.querySelector('.bc-stat-label').textContent.trim(), value: e.querySelector('.bc-stat-value').textContent.trim(),
@@ -163,13 +188,44 @@ async function scenario(page) {
             const got = await allRows(page, '#hd-lots');
             check(`bảng lô: từng ô mọi trang (${fm.lots.length} dòng: sản phẩm, còn ngày, giá trị, số lượng, thùng, hạn dùng, lô, kho) = API`,
                 same(got, fm.lots), firstDiff(got || [], fm.lots));
+            if (mobile) {   // UX-13: cột Lô / Kho ngoài màn → cột đầu phải tự phân biệt được các dòng (cùng mã, khác lô / kho)
+                const firsts = (got || []).map((x) => x[0]);
+                const keys = new Set(lots.map((x) => `${x.item_code}|${x.lo}|${x.kho}`));
+                check(`điện thoại: cột đầu bảng lô phân biệt được từng dòng (${new Set(firsts).size}/${keys.size} khác nhau)`,
+                    new Set(firsts).size === keys.size, firsts.join(' | '));
+                const clip = await page.$$eval('#hd-lots tbody td:first-child > div', (els) => els.map((e) => {
+                    const td = e.closest('td').getBoundingClientRect(), b = e.getBoundingClientRect();
+                    return { t: e.textContent, ok: b.right <= td.right + 1 && e.scrollWidth <= e.clientWidth + 1 };
+                }));
+                check('điện thoại: dòng phụ lô · kho của cột đầu không bị cắt', clip.length > 0 && clip.every((x) => x.ok),
+                    JSON.stringify(clip.filter((x) => !x.ok)));
+            }
         } else {
             check('bảng lô rỗng có lời nhắn', lt.includes('Không có lô'), lt);
         }
-        const crParts = await page.$$eval('#hd-chuaro .bc-kpi', (els) => els.map((e) => [e.querySelector('.bc-kpi-label').textContent.trim(),
-            e.querySelector('.bc-kpi-value').textContent.trim(), (e.querySelector('.bc-kpi-sub')?.textContent || '').replace(/\s+/g, ' ').trim()]));
-        check('chưa rõ hạn: 4 phần — tên, giá trị, số lượng = API', same(crParts, fm.cr_parts), firstDiff(crParts, fm.cr_parts));
         const cr = flat(await page.textContent('#hd-chuaro'));
+        if (empty) {   // UX-11(a): không có tồn thành phẩm → không nói "mọi thành phẩm đều đã rõ hạn"
+            check('không có tồn thành phẩm: "Chưa rõ hạn dùng" báo trống thật, không trấn an giả',
+                cr.includes('Không có tồn thành phẩm') && !cr.includes('đều đã rõ hạn dùng'), cr.slice(0, 200));
+        } else if (!d.han.tong.rows) {   // còn lô thu hồi / phần âm: dòng đối chiếu ngay trên ghi số thành phẩm → không nói "không có"
+            check(`phần dương rỗng nhưng còn lô thu hồi / phần âm: "Chưa rõ hạn dùng" không nói "không có tồn thành phẩm", ghi còn gì = API`,
+                !cr.includes('Không có tồn thành phẩm') && !cr.includes('đều đã rõ hạn dùng') && cr.includes('Không có thành phẩm cần xét hạn dùng')
+                && cr.includes(fm.cr_con), `${fm.cr_con} | ${cr.slice(0, 300)}`);
+        } else {
+            const crParts = await page.$$eval('#hd-chuaro .bc-kpi', (els) => els.map((e) => [e.querySelector('.bc-kpi-label').textContent.trim(),
+                e.querySelector('.bc-kpi-value').textContent.trim(), (e.querySelector('.bc-kpi-sub')?.textContent || '').replace(/\s+/g, ' ').trim()]));
+            check('chưa rõ hạn: 4 phần — tên, giá trị, số lượng = API', same(crParts, fm.cr_parts), firstDiff(crParts, fm.cr_parts));
+        }
+        if (MODE === 'thu-hoi') {   // số TÍNH TAY từ seed_thu_hoi (test_kho_han.py): R1 lô thu hồi 10 hộp, 20 hộp/thùng; R2 Bin −3
+            // 10 / 20 = 0,5 thùng; phần âm không quy thùng; tồn kho 10 − 3 = 7 hộp.
+            check('lượt thu-hoi: "Chưa rõ hạn dùng" ghi "chỉ còn lô đang thu hồi 10 Hộp · 0,5 thùng … và phần âm -3 Hộp …"',
+                cr.includes('Thành phẩm ngoài kho trả về & cách ly chỉ còn lô đang thu hồi 10 Hộp · 0,5 thùng (xem Tồn không bán được) và phần âm -3 Hộp (sổ ghi xuất nhiều hơn nhập — xem Tồn âm).'),
+                cr);
+            const dcEl = await page.$('#hd-doichieu');
+            const dc = dcEl ? flat(await dcEl.textContent()) : '(không có dòng đối chiếu)';
+            check('lượt thu-hoi: đối chiếu "0 Hộp (các nhóm hạn dùng) + 10 Hộp lô đang thu hồi − 3 Hộp phần âm = 7 Hộp"',
+                dc.includes('0 Hộp (các nhóm hạn dùng) + 10 Hộp lô đang thu hồi − 3 Hộp phần âm = 7 Hộp'), dc);
+        }
         if (d.han.chua_ro_ds.length) {
             check(`chưa rõ hạn: ${d.han.chua_ro_ds.length} dòng như API`, cr.includes(`${d.han.chua_ro_ds.length} dòng`), cr.slice(0, 300));
             const got = await allRows(page, '#hd-chuaro');
@@ -185,6 +241,11 @@ async function scenario(page) {
         const parts = await page.$$eval('#hd-khongban .bc-kpi', (els) => els.map((e) => [e.querySelector('.bc-kpi-label').textContent.trim(),
             e.querySelector('.bc-kpi-value').textContent.trim()]));
         check('khối không bán được: 3 phần + tổng — giá trị từng ô = API', same(parts, fm.kb_parts), firstDiff(parts, fm.kb_parts));
+        const defEl = await page.$('#hd-kb-def');
+        const def = defEl ? flat(await defEl.textContent()) : '';
+        check('UX-3: thẻ giữ tên "Tồn không bán được", khối ghi rõ = tổng 3 phần (theo kho)', (card('không bán được')?.label || '').endsWith('Tồn không bán được')
+            && def.includes('Tồn không bán được gồm 3 phần không trùng nhau: hàng đang nằm ở kho trả về & cách ly; lô đang thu hồi và thành phẩm đã hết hạn')
+            && kb.parts.length === 3, def);
         const kt = flat(await page.textContent('#hd-khongban'));
         if (kb.kho_loai.ds.length) {
             const g0 = await allRows(page, '#hd-khongban', 0);
@@ -217,6 +278,17 @@ async function scenario(page) {
         }
     }
     check('không lộ email trên màn', !main.includes('@') && !(await page.textContent('.bc-main')).includes('@'));
+    // UX-3: phạm vi theo KHO — "kho bán (được)" sai cho kho xưởng / BTP / NVL (tên kho "Kho bán thành phẩm" thì được).
+    const main2 = flat(await page.textContent('.bc-main'));
+    check('UX-3: không còn nhãn "kho bán" / "kho bán được" trên màn', !/kho bán(?! thành phẩm)/i.test(main2),
+        (main2.match(/.{40}kho bán(?! thành phẩm).{20}/i) || [''])[0]);
+    check('UX-3: khối hạn dùng ghi phạm vi "ngoài kho trả về & cách ly"', main2.includes('Thành phẩm theo hạn dùng (ngoài kho trả về & cách ly)'));
+    const asof = flat(await page.textContent('#hd-asof'));
+    if (d.meta.lo_luc && d.meta.lo_ttl_giay) {   // PERF-2: số theo lô là ảnh chụp ≤ 1 giờ — ghi giờ chụp
+        check(`ghi giờ chụp số theo lô (${d.meta.lo_luc.slice(11, 16)})`, asof.includes(`tính lúc ${d.meta.lo_luc.slice(11, 16)} — tự tính lại sau mỗi giờ`), asof);
+    } else {   // cache tắt: không giữ ảnh chụp — số theo lô là số lúc mở màn, không ghi giờ chụp
+        check('cache tắt: không ghi giờ chụp số theo lô', !asof.includes('tính lúc') && !asof.includes('Số theo lô'), asof);
+    }
     const nav = await page.textContent('body');
     check('menu có Hạn dùng & tồn âm', nav.includes('Hạn dùng & tồn âm'));
 
@@ -241,11 +313,40 @@ for (const mobile of [false, true]) {
     page.on('response', (r) => { if (r.status() >= 400 && !r.url().endsWith('favicon.ico')) errors.push(`${r.status()} ${r.url()}`); });
     console.log(mobile ? '\n— Điện thoại 390px' : '— Desktop 1366px');
     await page.goto(`${base}/bc#/han-dung`);
-    try { await scenario(page); } catch (e) { check('kịch bản chạy hết', false, e.message.split('\n')[0]); }
+    try { await scenario(page, mobile); } catch (e) { check('kịch bản chạy hết', false, e.message.split('\n')[0]); }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check(`không cuộn ngang trang (${overflow}px)`, overflow <= 1);
     check('không lỗi JS/HTTP', errors.length === 0, errors.join(' | '));
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/han-dung-${mobile ? 'm' : 'd'}.png`, fullPage: true });
+    await ctx.close();
+}
+// Lượt giả meta (desktop): API thật, chỉ sửa meta thành ảnh chụp lô 3600 giây chụp lúc 08:05 (khác đồng hồ giả 10:30 của
+// bộ thử) — lượt mặc định (cache tắt, lo_ttl_giay 0) vẫn canh dòng giờ chụp của màn.
+{
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    let hit = 0;
+    await page.route('**/api/method/bc.api.kho_han.get_overview', async (route) => {
+        const resp = await route.fetch();
+        const j = await resp.json();
+        if (j.message && j.message.available && j.message.meta) { Object.assign(j.message.meta, { lo_luc: '2026-10-27 08:05:00.123456', lo_ttl_giay: 3600 }); hit++; }
+        await route.fulfill({ response: resp, json: j });
+    });
+    console.log('\n— Giả meta: ảnh chụp lô lúc 08:05, giữ 3600 giây');
+    await page.goto(`${base}/bc#/han-dung`);
+    try {
+        await page.waitForSelector('.bc-view-banner', { timeout: 15000 });
+        await page.waitForFunction(() => !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+        const asof = flat(await page.textContent('#hd-asof'));
+        if (hit) {
+            check('giả meta: ghi "Số theo lô … tính lúc 08:05 — tự tính lại sau mỗi giờ"', asof.includes('Số theo lô (hạn dùng, lô thu hồi, lô âm) tính lúc 08:05 — tự tính lại sau mỗi giờ'), asof);
+        } else {
+            check('giả meta: API không có số liệu (chưa có công ty) — không có dòng giờ chụp', !asof.includes('tính lúc'), asof);
+        }
+    } catch (e) { check('lượt giả meta chạy hết', false, e.message.split('\n')[0]); }
+    check('giả meta: không lỗi JS', errors.length === 0, errors.join(' | '));
     await ctx.close();
 }
 await browser.close();

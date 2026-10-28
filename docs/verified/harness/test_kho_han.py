@@ -13,14 +13,23 @@ Bin của đúng kho), lô dương ở kho giá vốn 0, nhóm con của Hàng T
 hết hạn, trả về, thu hồi, tồn âm — bỏ khỏi danh sách, vẫn vào tổng), mã ngoài tập TP, giá vốn dự phòng đủ 5 nấc chỉ
 trong công ty (công ty khác giữ cùng mã với Bin tồn lớn hơn / dòng sổ mới hơn giá cao hơn — không được dùng), dòng âm
 ở kho cách ly / kho đi đường / kho công ty khác, tuổi hàng kho trả về / cách ly (bỏ phiếu xuất, phiếu huỷ, phiếu ghi
-ngày sau). Các kịch bản phụ: N = 45 / N không hợp lệ, tập TP
-theo sx.utils.items_tp, site không có sx (kho trả về = is_rejected_warehouse), thiếu cột thu hồi, DB rỗng, chưa có
-công ty, một khối lỗi, quyền / mảng ẩn, cache, riêng tư, helper sx cấm import.
+ngày sau), am_value không công bố (C8), nhãn 3 phần theo kho (không "kho bán"). Ảnh chụp Bin + lô (PERF-2): một lần đọc sổ
+lô cho tập TP + một lần chỉ cho mã thu hồi ngoài tập TP, kho.rates một lần, cache riêng 3600 giây khoá theo hôm nay, trang
+hết cache trong giờ dùng lại ảnh chụp, phiếu mới sau lúc chụp không làm lệch "chưa gắn lô", Làm mới chụp lại, tắt cache
+thì không giữ. Tuổi kho trả về / cách ly sau kiểm kê (seed_tuoi — XR-T1): kiểm kê có lô hai chân đếm thiếu / khớp, chuyển
+lô TONCU D191, phiếu dọn tồn, tồn đầu kỳ có lô / không lô, nhập thật sau kiểm kê. Các kịch bản phụ: N = 45 / N không hợp
+lệ, tập TP theo sx.utils.items_tp, site không có sx (kho trả về = is_rejected_warehouse), thiếu cột thu hồi, DB rỗng, chưa
+có công ty, một khối lỗi, quyền / mảng ẩn, cache, riêng tư, helper sx cấm import.
+Sổ cho các lượt kiểm giao diện phụ (BC_TEST_DB=<db> python3 -B test_kho_han.py <lệnh>, rồi node ui_kho_han.mjs <url> <lượt>):
+seed-empty (sổ rỗng → lượt empty), seed-thu-hoi (chỉ còn lô thu hồi + phần âm → lượt thu-hoi), seed-cache (bật cache trên
+sổ đang có, không reset → lượt cache: giờ chụp số theo lô).
 """
 import ast
+import datetime
 import json
 import os
 import re
+import sys
 
 from seed import Check, bc_settings, drop_column, insert, reset, single
 from seed_kho import (BTP, CACH_LY, CH1, CH2, DI_DUONG, G_BB, G_NL, G_QUA_TET, G_TRAD, K, KHO_CU, NVL, RV, TP, TRA_VE,
@@ -189,12 +198,111 @@ def seed(k):
 		idx=1, item_code=H, note="GHI CHÚ ẨN RIÊNG HAN", hidden_by="admin.han@example.com")
 
 
-def build(sx=True, **settings):
+T1, T2, T3, T4, T5, T6, T7 = (f"HAN-T{i}" for i in range(1, 8))
+
+
+def seed_tuoi(k):
+	"""Tuổi hàng kho trả về / cách ly khi có KIỂM KÊ (XR-T1 / XR-REAL-2) — kịch bản riêng, gọi sau seed(k). recon() của
+	seed_kho ghi mã có lô thành HAI chân như ERPNext v16 (−sổ rồi +đếm, kể cả khi đếm thiếu / khớp). Hôm nay 27/10/2026.
+	Tuổi = hôm nay − lần NHẬP THẬT gần nhất (kiểm kê, phiếu điều chỉnh sx không phải nhập; tồn đầu kỳ là lần vào sổ):
+	- T1 (lô) nhập TP 04/05, chuyển vào kho trả về 01/06 (nhập thật), kiểm 20/10 đếm 9/10 (THIẾU) → 01/06, 148 ngày;
+	- T2 (lô) khách trả 01/07 vào kho trả về, kiểm 20/10 đếm KHỚP 5/5 (vẫn hai chân −5 / +5) → 01/07, 118 ngày;
+	- T3 (vừa bật lô) nhập cách ly 01/08 không lô, sx chuyển sang lô TONCU 22/10 (xuất + nhập có custom_kiem_ke, D191)
+	  → 01/08, 87 ngày;
+	- T4 (không lô) nhập cách ly 01/09, phiếu "Dọn tồn âm thành phẩm" nhập +2 ngày 24/10 → 01/09, 56 ngày;
+	- T5 (không lô) TỒN ĐẦU KỲ 01/03 ở cách ly (actual_qty 0, tồn sau 6) → 01/03, 240 ngày (trước: "—");
+	- T6 (lô) TỒN ĐẦU KỲ 01/03 ở cách ly (chân nhập +6), kiểm 20/10 đếm 5/6 → 01/03, 240 ngày (cùng câu trả lời với T5);
+	- T7 (lô) khách trả 01/06, kiểm 10/10 đếm 4/5, khách trả THÊM 2 ngày 15/10 (nhập thật SAU kiểm kê) → 15/10, 12 ngày.
+	Số ngày: 01/06→27/10 = 30+31+31+30+26 = 148; 01/07→ = 31+31+30+26 = 118; 01/08→ = 31+30+26 = 87; 01/09→ = 30+26
+	= 56; 01/03→ = 31+30+31+30+31+31+30+26 = 240; 15/10→27/10 = 12."""
+	tp = {"custom_sx_nhom": "TP"}
+	for code, name, lo in ((T1, "Bánh trả về kiểm thiếu HAN T1", True), (T2, "Bánh trả về kiểm khớp HAN T2", True),
+			(T3, "Bánh vừa bật lô HAN T3", True), (T4, "Bánh dọn âm HAN T4", False), (T5, "Bánh tồn đầu không lô HAN T5", False),
+			(T6, "Bánh tồn đầu có lô HAN T6", True), (T7, "Bánh trả thêm HAN T7", True)):
+		k.item(code, name, G_TRAD, batch=lo, **tp)
+	for b, item in (("HAN-T1-L1", T1), ("HAN-T2-L1", T2), ("HAN-T3-TONCU", T3), ("HAN-T6-L1", T6), ("HAN-T7-L1", T7)):
+		k.batch(b, item, "2027-06-01")
+	# T1: nhập TP 04/05 → chuyển kho trả về 01/06 → kiểm kê 20/10 đếm 9 / sổ 10 (chân −10 × 10k, +9 × 10k)
+	k.se("Material Receipt", "2026-05-04", [dict(item_code=T1, t_warehouse=TP, qty=10, rate=10_000, batch="HAN-T1-L1")],
+		name="HAN-SE-T1A")
+	k.se("Material Transfer", "2026-06-01", [dict(item_code=T1, s_warehouse=TP, t_warehouse=TRA_VE, qty=10, rate=10_000,
+		batch="HAN-T1-L1")], name="HAN-SE-T1B")
+	k.recon("2026-10-20", [dict(item_code=T1, warehouse=TRA_VE, qty=9, current_qty=10, value_diff=-10_000, current_rate=10_000,
+		batch="HAN-T1-L1")], name="HAN-RECO-T1")
+	# T2: khách trả 5 hộp vào kho trả về 01/07 → kiểm 20/10 đếm khớp 5 (chân −5 / +5, giá trị −50k / +50k)
+	k.sale(T2, TRA_VE, -5, -50_000, "2026-07-01", name="HAN-SINV-T2", batch="HAN-T2-L1", is_return=1)
+	k.recon("2026-10-20", [dict(item_code=T2, warehouse=TRA_VE, qty=5, current_qty=5, value_diff=0, current_rate=10_000,
+		batch="HAN-T2-L1")], name="HAN-RECO-T2")
+	# T3: nhập cách ly 01/08 không lô → sx D191 (custom_kiem_ke) xuất 4 không lô + nhập 4 vào lô TONCU 22/10
+	k.se("Material Receipt", "2026-08-01", [dict(item_code=T3, t_warehouse=CACH_LY, qty=4, rate=10_000)], name="HAN-SE-T3A")
+	k.se("Material Issue", "2026-10-22", [dict(item_code=T3, s_warehouse=CACH_LY, qty=4, rate=10_000)], name="HAN-SE-T3B",
+		kiem_ke="HAN-KK-T3")
+	k.se("Material Receipt", "2026-10-22", [dict(item_code=T3, t_warehouse=CACH_LY, qty=4, rate=10_000, batch="HAN-T3-TONCU")],
+		name="HAN-SE-T3C", kiem_ke="HAN-KK-T3")
+	# T4: nhập cách ly 01/09 → phiếu dọn tồn âm của sx (remarks bắt đầu bằng tiền tố ADJUSTMENT_REMARKS) nhập +2 ngày 24/10
+	k.se("Material Receipt", "2026-09-01", [dict(item_code=T4, t_warehouse=CACH_LY, qty=3, rate=10_000)], name="HAN-SE-T4A")
+	k.se("Material Receipt", "2026-10-24", [dict(item_code=T4, t_warehouse=CACH_LY, qty=2, rate=10_000)], name="HAN-SE-T4B",
+		remarks="Dọn tồn âm thành phẩm — HAN-T4")
+	# T5 / T6: tồn đầu kỳ 01/03 ở cách ly (không lô: một dòng actual_qty 0; có lô: chân nhập +6); T6 kiểm 20/10 đếm 5/6
+	k.recon("2026-03-01", [dict(item_code=T5, warehouse=CACH_LY, qty=6, current_qty=0, value_diff=60_000),
+		dict(item_code=T6, warehouse=CACH_LY, qty=6, current_qty=0, value_diff=60_000, batch="HAN-T6-L1")],
+		purpose="Opening Stock", name="HAN-RECO-T56")
+	k.recon("2026-10-20", [dict(item_code=T6, warehouse=CACH_LY, qty=5, current_qty=6, value_diff=-10_000, current_rate=10_000,
+		batch="HAN-T6-L1")], name="HAN-RECO-T6")
+	# T7: khách trả 5 ngày 01/06 → kiểm 10/10 đếm 4/5 → khách trả thêm 2 ngày 15/10 (nhập thật)
+	k.sale(T7, TRA_VE, -5, -50_000, "2026-06-01", name="HAN-SINV-T7A", batch="HAN-T7-L1", is_return=1)
+	k.recon("2026-10-10", [dict(item_code=T7, warehouse=TRA_VE, qty=4, current_qty=5, value_diff=-10_000, current_rate=10_000,
+		batch="HAN-T7-L1")], name="HAN-RECO-T7")
+	k.sale(T7, TRA_VE, -2, -20_000, "2026-10-15", name="HAN-SINV-T7B", batch="HAN-T7-L1", is_return=1)
+
+
+def seed_thu_hoi(k):
+	"""Sổ RIÊNG (UX-11): thành phẩm ngoài kho trả về & cách ly chỉ còn LÔ THU HỒI và PHẦN ÂM — không có phần dương nào để
+	xét hạn dùng, nhưng vẫn có tồn thành phẩm. Gọi trên base(k), KHÔNG kèm seed(k). Hôm nay 27/10/2026.
+	- HAN-R1 (lô, 20 hộp/thùng): lô HAN-R1-L1 đang thu hồi (HSD 30/06/2027), nhập 10 hộp × 10.000 vào kho Thành phẩm 01/09
+	  → Bin TP 10 / 100.000; lô thu hồi 10 hộp = 0,5 thùng, 100.000.
+	- HAN-R2 (không lô, giá Item 12.000): bán 3 hộp ở CH Bạch Đằng 20/10 khi chưa nhập → Bin −3 / −36.000 (giá vốn Bin 0
+	  → phần âm định giá theo giá Item: 3 × 12.000 = 36.000).
+	Đối chiếu: 0 (các nhóm hạn dùng) + 10 (lô thu hồi) − 3 (phần âm) = 7 hộp = Bin 10 − 3; giá trị sổ 100.000 − 36.000 = 64.000."""
+	tp = {"custom_sx_nhom": "TP"}
+	k.item("HAN-R1", "Bánh thu hồi HAN R1", G_TRAD, carton=20, batch=True, **tp)
+	k.batch("HAN-R1-L1", "HAN-R1", "2027-06-30", custom_thu_hoi=1)
+	k.receipt("HAN-R1", TP, 10, 100_000, "2026-09-01", name="HAN-R-PR-1", batch="HAN-R1-L1")
+	k.item("HAN-R2", "Bánh cửa hàng HAN R2", G_TRAD, rate=12_000, **tp)
+	k.sale("HAN-R2", CH1, 3, 36_000, "2026-10-20", name="HAN-R-SINV-1")
+
+
+def build(sx=True, extra=None, **settings):
 	reset()
 	bc_settings(**settings)
 	k = K()
 	base(k, sx=sx)
 	seed(k)
+	if extra:
+		extra(k)
+	k.finalize()
+	return k
+
+
+def build_empty():
+	"""Sổ RỖNG có cây kho (công ty, kho, nhóm hàng, chưa có mã / phiếu) — kiểm giao diện trạng thái trống:
+	BC_TEST_DB=<db> python3 -B test_kho_han.py seed-empty, rồi server.py + ui_kho_han.mjs."""
+	reset()
+	bc_settings()
+	k = K()
+	base(k)
+	k.finalize()
+	return k
+
+
+def build_thu_hoi():
+	"""Sổ chỉ còn lô thu hồi + phần âm (seed_thu_hoi), cache tắt: BC_TEST_DB=<db> python3 -B test_kho_han.py seed-thu-hoi,
+	rồi server.py + node ui_kho_han.mjs <url> thu-hoi."""
+	reset()
+	bc_settings()
+	k = K()
+	base(k)
+	seed_thu_hoi(k)
 	k.finalize()
 	return k
 
@@ -213,9 +321,26 @@ def pick(d, *keys):
 	return tuple(d.get(k) for k in keys)
 
 
+if __name__ == "__main__" and sys.argv[1:] == ["seed-empty"]:
+	build_empty()
+	print("seeded empty kho book")
+	sys.exit(0)
+
+if __name__ == "__main__" and sys.argv[1:] == ["seed-thu-hoi"]:
+	build_thu_hoi()
+	print("seeded kho book: only recalled lot + negative part outside returns / quarantine")
+	sys.exit(0)
+
+if __name__ == "__main__" and sys.argv[1:] == ["seed-cache"]:
+	# Bật cache trên sổ ĐANG CÓ (không reset) — lượt giao diện có ảnh chụp số theo lô (meta.lo_ttl_giay 3600, "tính lúc HH:MM"):
+	# sau seed_ui_kho.py: BC_TEST_DB=<db> python3 -B test_kho_han.py seed-cache; node ui_kho_han.mjs <url> cache.
+	single("BC Settings", cache_ttl=300)
+	print("BC Settings cache_ttl = 300")
+	sys.exit(0)
+
 if __name__ == "__main__":
 	c = Check()
-	build()
+	k_main = build()
 	# ── Sổ seed đúng như tính tay (kiểm seed, không kiểm code) ──
 	c("seed: Bin A@TP = 30+40+15+7+25+100+25−25+5−35−2+10 = 195", bin_of(A, TP) == (195.0, 1_950_000.0, 10_000.0), bin_of(A, TP))
 	c("seed: Bin A@CH1 = 25+18−3 = 40; C@TP = 80; C@CH1 = −4 (giá 0); G@XUONG = −6",
@@ -347,8 +472,17 @@ if __name__ == "__main__":
 	# = 130.000. Tổng 232.000.
 	c("(a) kho trả về 102.000 (gồm mã ẩn), cách ly 130.000 (gồm dòng âm như tổng tồn), tổng 232.000",
 		pick(roles["tra_ve"], "value", "rows", "items", "am_rows") == (102_000, 2, 2, 0)
-		and pick(roles["cach_ly"], "value", "rows", "items", "am_rows", "am_value") == (130_000, 3, 2, 1, -50_000)
+		and pick(roles["cach_ly"], "value", "rows", "items", "am_rows") == (130_000, 3, 2, 1)
 		and kb["kho_loai"]["value"] == 232_000, kb["kho_loai"]["roles"])
+	# XR-COMP-5: dòng âm B@cách ly (Bin −1, stock_value −50.000) chỉ được ĐẾM (am_rows 1) — không công bố Bin.stock_value
+	# của dòng âm (đặc tả C8 / W9: giá trị phần âm chỉ là |qty| × giá vốn dự phòng, ở K8 = 1 × 50.000).
+	c("(a) vai trò không trả giá trị Bin của dòng âm (am_value) — chỉ số dòng âm",
+		not [r["role"] for r in kb["kho_loai"]["roles"] if "am_value" in r], kb["kho_loai"]["roles"])
+	# UX-3: nhãn theo KHO, không "kho bán" — (b), (c) tính ở mọi kho ngoài trả về & cách ly (gồm BTP: NL-R ở kho BTP).
+	c("3 phần của tồn không bán được: nhãn theo kho, không nói 'kho bán'",
+		[p["label"] for p in kb["parts"]] == ["Kho trả về & cách ly", "Lô đang thu hồi ngoài kho trả về & cách ly",
+			"Thành phẩm hết hạn ngoài kho trả về & cách ly"] and not [p for p in kb["parts"] if "kho bán" in p["label"]],
+		[p["label"] for p in kb["parts"]])
 	got = [pick(r, "item_code", "kho", "qty", "value", "nhap_cuoi", "tuoi_ngay") for r in kb["kho_loai"]["ds"]]
 	# Tuổi = hôm nay − lần NHẬP sống gần nhất ≤ hôm nay: A@cách ly 20/08 (phiếu huỷ 25/10 bỏ) → 68 ngày; NL@cách ly 01/08 → 87;
 	# A@trả về 01/10 (bỏ phiếu xuất 20/10 và phiếu ghi ngày 02/11 — không thành −6 ngày) → 26. H@trả về bị ẩn.
@@ -463,6 +597,118 @@ if __name__ == "__main__":
 		c(f"số ngày cận date không hợp lệ ({bad}) → 60", run()["han"]["can_date"]["ngay"] == 60)
 	single("BC Settings", kho_can_date_ngay="")
 
+	# ═══ PERF-2: ảnh chụp Bin + lô cache riêng ≤ 1 giờ (khoá theo hôm nay); K7(b) dùng lại lô đã đọc; giá vốn dự phòng
+	# một lần mỗi lượt ═══
+	from bc.api import kho as kho_mod
+	cache = frappe.cache()
+	spy = {"lot": [], "rates": [], "ttl": {}}
+	o_lot, o_rates, o_today, o_set = kho_mod.lot_rows, kho_mod.rates, kho_mod.today, cache.set_value
+
+	def lot_spy(items, whs):
+		items = list(items)
+		spy["lot"].append(sorted(set(items)))
+		return o_lot(items, whs)
+
+	def rates_spy(pairs, co=None):
+		pairs = list(pairs)
+		spy["rates"].append(set(pairs))
+		return o_rates(pairs, co)
+
+	def set_spy(key, value, expires_in_sec=None, **kw):
+		spy["ttl"][key] = expires_in_sec
+		return o_set(key, value, expires_in_sec=expires_in_sec, **kw)
+
+	def lo_keys():
+		return [k_ for k_ in cache.store if k_.startswith("bc:kho_han.lo:")]
+
+	def calls_reset():
+		spy["lot"].clear()
+		spy["rates"].clear()
+
+	TP_LO = [A, B, D, F, H, P]   # mã TP quản lý lô (C, E, G, K không lô; NL ngoài tập TP)
+	kho_mod.lot_rows, kho_mod.rates, cache.set_value = lot_spy, rates_spy, set_spy
+	try:
+		single("BC Settings", cache_ttl=300, kho_can_date_ngay="")
+		cache.store.clear()
+		calls_reset()
+		pa = run()   # Làm mới (refresh=1): chụp lại
+		# Sổ lô đọc 2 lần: một lần cho cả tập mã TP có lô (ảnh chụp — K6, K7(b) phần mã TP, K8 mức lô), một lần CHỈ cho mã thu
+		# hồi ngoài tập đó (NL — lô NL-R ở kho BTP). Trước: lần hai đọc lại cả A, H (lô thu hồi của mã TP) {A, H, NL}.
+		c("lô: một lần đọc sổ cho tập mã TP có lô + một lần chỉ cho mã thu hồi ngoài tập TP (NL), không đọc lại A, H",
+			spy["lot"] == [TP_LO, [NL]], spy["lot"])
+		# Giá vốn dự phòng: K6 phần âm (A-NEG@TP, chưa gắn lô A@CH1 / P@CH2 / H@CH2, C@CH1, G@xưởng, K@CH2) ∪ K8 dòng Bin âm
+		# (C@CH1, G@xưởng, K@CH2, B@cách ly, NL@NVL, X@xưởng, S@CH2, S@đi đường, P@CH2, H@CH2) = 7 + 10 − 5 trùng = 12 cặp.
+		want = {(A, TP), (A, CH1), (C, CH1), (G, XUONG), (KK, CH2), (P, CH2), (H, CH2), (B, CACH_LY), (NL, NVL), (X, XUONG),
+			(S, CH2), (S, DI_DUONG)}
+		c("giá vốn dự phòng: MỘT lần gọi kho.rates cho hợp 12 cặp của K6 và K8", spy["rates"] == [want],
+			[sorted(x) for x in spy["rates"]])
+		pkey = [k_ for k_ in spy["ttl"] if k_.startswith("bc:kho_han.get_overview:")]
+		c("ảnh chụp lô cache RIÊNG 3600 giây (trang 300 giây)", len(lo_keys()) == 1 and spy["ttl"].get(lo_keys()[0]) == 3600
+			and len(pkey) == 1 and spy["ttl"][pkey[0]] == 300, (lo_keys(), spy["ttl"]))
+		c("meta: thời điểm chụp lô, chụp mới (không từ cache), giữ 3600 giây",
+			pa["meta"].get("lo_luc") and pa["meta"].get("lo_tu_cache") is False and pa["meta"].get("lo_ttl_giay") == 3600,
+			pa["meta"])
+
+		# Hết hạn cache TRANG (5 phút) mà chưa quá giờ: N = 45 → khoá trang mới, ảnh chụp dùng lại — không quét sổ lô của tập
+		# TP; chỉ còn lần đọc nhỏ cho NL. Nhóm hạn dùng y hệt lượt chụp.
+		single("BC Settings", kho_can_date_ngay=45)
+		calls_reset()
+		pb = kho_han.get_overview()
+		c("trang hết cache trong giờ: dùng lại ảnh chụp (không đọc sổ lô tập TP), cùng thời điểm chụp, cùng nhóm hạn dùng",
+			pb["meta"]["cached"] is False and spy["lot"] == [[NL]] and pb["meta"].get("lo_tu_cache") is True
+			and pb["meta"].get("lo_luc") == pa["meta"]["lo_luc"] and pb["han"]["buckets"] == pa["han"]["buckets"],
+			(spy["lot"], pb["meta"]))
+
+		# Phiếu MỚI sau lúc chụp: bán 5 hộp lô A-D91 ở TP (Bin A@TP 195 → 190). Trong giờ, K6 vẫn là ảnh chụp — Bin và lô CÙNG
+		# thời điểm: trên 90 ngày 80 hộp / 800.000, chưa gắn lô A@TP vẫn +5 (Bin 195 − Σ lô 190), khớp tồn kho 509. Nếu chỉ lô
+		# lấy từ cache mà Bin mới: chưa gắn lô = 190 − 190 = 0 (mất 5 hộp giả). Không ảnh chụp: trên 90 = 75 ngay.
+		k_main.sale(A, TP, 5, 50_000, "2026-10-26", name="HAN-SINV-90", batch="HAN-A-D91")
+		frappe.db.sql("""UPDATE `tabBin` SET actual_qty = actual_qty - 5, stock_value = stock_value - 50000
+			WHERE item_code = %s AND warehouse = %s""", (A, TP))
+		single("BC Settings", kho_can_date_ngay=44)
+		pc = kho_han.get_overview()
+		bkc = {x["key"]: x for x in pc["han"]["buckets"]}
+		khl = {x["key"]: x for x in pc["han"]["chua_ro"]["parts"]}["khong_lo"]
+		c("phiếu sau lúc chụp: trong giờ K6 vẫn đúng ảnh chụp (trên 90: 80 hộp / 800.000; chưa gắn lô 5; khớp tồn kho 509)",
+			pick(bkc["tren90"], "qty", "value") == (80, 800_000) and pick(khl, "qty", "value") == (5, 50_000)
+			and pick(pc["han"]["doi_chieu"], "ton_kho_qty", "khop") == (509, True) and pc["meta"].get("lo_tu_cache") is True,
+			(bkc["tren90"], khl, pc["han"]["doi_chieu"]))
+		calls_reset()
+		pd = run()   # Làm mới: chụp lại → 80 − 5 = 75 hộp / 750.000; chưa gắn lô vẫn 5; tồn kho 509 − 5 = 504
+		bkd = {x["key"]: x for x in pd["han"]["buckets"]}
+		khd = {x["key"]: x for x in pd["han"]["chua_ro"]["parts"]}["khong_lo"]
+		c("Làm mới: chụp lại ngay (đọc sổ lô tập TP) → trên 90 = 75 hộp / 750.000, chưa gắn lô 5, khớp tồn kho 504",
+			spy["lot"][:1] == [TP_LO] and pick(bkd["tren90"], "qty", "value") == (75, 750_000) and pick(khd, "qty") == (5,)
+			and pick(pd["han"]["doi_chieu"], "ton_kho_qty", "khop") == (504, True) and pd["meta"].get("lo_tu_cache") is False,
+			(spy["lot"], bkd["tren90"], khd, pd["han"]["doi_chieu"]))
+
+		# Sang ngày mới: khoá có hôm nay → chụp lại dù chưa hết giờ.
+		kho_mod.today = lambda: datetime.date(2026, 10, 28)
+		calls_reset()
+		pe = kho_han.get_overview()
+		c("ngày mới (28/10): ảnh chụp hôm qua không dùng — đọc lại sổ lô", spy["lot"][:1] == [TP_LO]
+			and pe["meta"].get("lo_tu_cache") is False and len(lo_keys()) == 2, (spy["lot"], lo_keys()))
+		kho_mod.today = o_today
+
+		# Tắt cache (cache_ttl = 0): không giữ ảnh chụp.
+		single("BC Settings", cache_ttl=0, kho_can_date_ngay="")
+		cache.store.clear()
+		pf = kho_han.get_overview()
+		c("tắt cache (cache_ttl 0): không giữ ảnh chụp lô", not lo_keys() and pf["meta"].get("lo_ttl_giay") == 0
+			and pf["meta"].get("lo_tu_cache") is False, (lo_keys(), pf["meta"]))
+	finally:
+		kho_mod.lot_rows, kho_mod.rates, kho_mod.today = o_lot, o_rates, o_today
+		cache.set_value = o_set
+	# Gỡ phiếu bán thử để các ca sau dùng đúng seed.
+	frappe.db.sql("""DELETE FROM `tabSerial and Batch Entry` WHERE parent IN
+		(SELECT name FROM `tabSerial and Batch Bundle` WHERE voucher_no = 'HAN-SINV-90')""")
+	for t_ in ("Serial and Batch Bundle", "Stock Ledger Entry"):
+		frappe.db.sql(f"DELETE FROM `tab{t_}` WHERE voucher_no = 'HAN-SINV-90'")
+	frappe.db.sql("DELETE FROM `tabSales Invoice` WHERE name = 'HAN-SINV-90'")
+	frappe.db.sql("UPDATE `tabBin` SET actual_qty = 195, stock_value = 1950000 WHERE item_code = %s AND warehouse = %s", (A, TP))
+	cache.store.clear()
+	c("gỡ phiếu thử: Bin A@TP về 195 / 1.950.000", bin_of(A, TP) == (195.0, 1_950_000.0, 10_000.0), bin_of(A, TP))
+
 	# ═══ Tập TP: sx chưa đánh dấu mã nào → dự phòng cây nhóm Tết ∪ truyền thống (cùng 10 mã → cùng số) ═══
 	TPS = (A, B, C, D, E, F, G, H, KK, P)
 	frappe.db.sql("UPDATE `tabItem` SET custom_sx_nhom = NULL WHERE name IN %s", (TPS,))
@@ -530,6 +776,31 @@ if __name__ == "__main__":
 		and k7["het_han"] == {"available": False, "error": True} and k7["thu_hoi"] == {"available": False, "error": True}
 		and [p.get("error") for p in k7["parts"]] == [False, True, True], {k_: d7[k_] for k_ in ("han", "am", "khong_ban")})
 
+	# ═══ XR-T1 / XR-REAL-2: tuổi hàng kho trả về / cách ly — kiểm kê và phiếu điều chỉnh sx KHÔNG phải lần nhập ═══
+	build(extra=seed_tuoi)
+	c("seed tuổi: có cột custom_kiem_ke (phiếu D191 mang lần kiểm)", frappe.db.has_column("Stock Entry", "custom_kiem_ke"))
+	legs = [tuple(float(x) for x in r) for r in frappe.db.sql("""SELECT actual_qty, stock_value_difference
+		FROM `tabStock Ledger Entry` WHERE voucher_no = 'HAN-RECO-T1' ORDER BY creation""")]
+	# T1@trả về 10 → kiểm 9: chân −10 × 10k rồi +9 × 10k; Bin 9 / 90.000. T2 5 − 5 + 5 = 5. T3 4 − 4 + 4 = 4; T4 3 + 2 = 5;
+	# T5 tồn đầu 6 (60k); T6 6 − 6 + 5 = 5 (60k − 60k + 50k); T7 5 − 5 + 4 + 2 = 6 (50k − 50k + 40k + 20k = 60k).
+	c("seed tuổi: kiểm kê có lô ghi HAI chân như ERPNext (T1 −10 rồi +9) và Bin đúng sổ",
+		legs == [(-10.0, -100_000.0), (9.0, 90_000.0)]
+		and [bin_of(i, w)[:2] for i, w in ((T1, TRA_VE), (T2, TRA_VE), (T3, CACH_LY), (T4, CACH_LY), (T5, CACH_LY), (T6, CACH_LY),
+			(T7, TRA_VE))] == [(9.0, 90_000.0), (5.0, 50_000.0), (4.0, 40_000.0), (5.0, 50_000.0), (6.0, 60_000.0), (5.0, 50_000.0),
+				(6.0, 60_000.0)], legs)
+	dt = run()["khong_ban"]["kho_loai"]
+	age = {r["item_code"]: pick(r, "kho", "qty", "nhap_cuoi", "tuoi_ngay") for r in dt["ds"]}
+	c("kiểm kê mã có lô (đếm THIẾU 9/10, đếm KHỚP 5/5) không làm mới tuổi: T1 từ 01/06 = 148 ngày, T2 từ 01/07 = 118 ngày",
+		(age.get(T1), age.get(T2)) == (("Hàng trả về", 9, "2026-06-01", 148), ("Hàng trả về", 5, "2026-07-01", 118)), (age.get(T1), age.get(T2)))
+	c("phiếu điều chỉnh sx không phải nhập: chuyển lô TONCU (custom_kiem_ke) T3 từ 01/08 = 87; dọn tồn âm T4 từ 01/09 = 56",
+		(age.get(T3), age.get(T4)) == (("Kho cách ly", 4, "2026-08-01", 87), ("Kho cách ly", 5, "2026-09-01", 56)), (age.get(T3), age.get(T4)))
+	c("tồn đầu kỳ là lần vào sổ, mã không lô (T5) và có lô (T6, kiểm lại 5/6) cùng câu trả lời: 01/03 = 240 ngày",
+		(age.get(T5), age.get(T6)) == (("Kho cách ly", 6, "2026-03-01", 240), ("Kho cách ly", 5, "2026-03-01", 240)), (age.get(T5), age.get(T6)))
+	c("nhập thật SAU kiểm kê vẫn tính: T7 khách trả thêm 15/10 = 12 ngày; ca cũ giữ nguyên (A@cách ly 68, NL 87, A@trả về 26)",
+		age.get(T7) == ("Hàng trả về", 6, "2026-10-15", 12)
+		and [pick(r, "item_code", "kho", "tuoi_ngay") for r in dt["ds"] if not r["item_code"].startswith("HAN-T")]
+		== [(A, "Kho cách ly", 68), (NL, "Kho cách ly", 87), (A, "Hàng trả về", 26)], (age.get(T7), dt["ds"]))
+
 	# ═══ Site không cài sx: không SX Settings; kho trả về đánh dấu is_rejected_warehouse ═══
 	build(sx=False)
 	frappe.db.sql("UPDATE `tabWarehouse` SET is_rejected_warehouse = 1 WHERE name = %s", (TRA_VE,))
@@ -549,6 +820,23 @@ if __name__ == "__main__":
 	sp8 = {x["key"]: pick(x, "rows", "value_abs") for x in d8["am"]["split"]}
 	c("không sx: không có kho xưởng → G sang 'khác'; tổng tồn âm không đổi",
 		sp8 == {"tp_xuong": (0, 0), "cua_hang": (5, 115_000), "khac": (5, 296_000)} and d8["am"]["value_abs"] == 411_000, sp8)
+
+	# ═══ Sổ chỉ còn lô thu hồi + phần âm (seed_thu_hoi — sổ của lượt giao diện thu-hoi, UX-11) ═══
+	build_thu_hoi()
+	dr = run()
+	hr = dr["han"]
+	# Phần dương rỗng (R1 chỉ có lô thu hồi; R2 chỉ có phần âm) nhưng tồn thành phẩm ngoài kho trả về & cách ly = 10 − 3 = 7.
+	c("sổ chỉ còn lô thu hồi + phần âm: phần dương 0 dòng; thu hồi 1 dòng 10 hộp / 0,5 thùng / 100.000; âm 1 dòng −3 / −36.000",
+		pick(hr["tong"], "rows", "qty", "value") == (0, 0, 0) and pick(hr["thu_hoi"], "rows", "qty", "cartons", "value") == (1, 10, 0.5, 100_000)
+		and pick(hr["phan_am"], "rows", "qty", "value") == (1, -3, -36_000) and hr["chua_ro_ds"] == [] and hr["lo_can_date"] == [],
+		(hr["tong"], hr["thu_hoi"], hr["phan_am"]))
+	c("sổ chỉ còn lô thu hồi + phần âm: đối chiếu 0 + 10 − 3 = 7 hộp khớp Bin, giá trị sổ 100.000 − 36.000 = 64.000",
+		hr["doi_chieu"]["khop"] and pick(hr["doi_chieu"], "ton_kho_qty", "ton_kho_value") == (7, 64_000)
+		and [pick(x, "uom", "duong", "thu_hoi", "am", "ton_kho") for x in hr["doi_chieu"]["theo_dvt"]] == [("Hộp", 0, 10, -3, 7)],
+		hr["doi_chieu"])
+	c("sổ chỉ còn lô thu hồi + phần âm: không bán được = lô thu hồi 100.000; tồn âm 1 dòng 36.000",
+		dr["khong_ban"]["tong"] == 100_000 and pick(dr["am"], "rows", "value_abs") == (1, 36_000), (dr["khong_ban"]["tong"], dr["am"]["rows"],
+			dr["am"]["value_abs"]))
 
 	# ═══ DB rỗng (có công ty, chưa có kho / mã) ═══
 	reset()

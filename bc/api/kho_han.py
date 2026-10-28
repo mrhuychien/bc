@@ -3,7 +3,9 @@
 
 Một lượt get_overview() trả 3 khối, mỗi khối một safe_block (khối lỗi chỉ tắt khối đó):
 
-- han (K6) — Tồn THÀNH PHẨM ở kho BÁN ĐƯỢC theo hạn dùng, số "bây giờ" (Bin, gồm phiếu ghi ngày tương lai).
+- han (K6) — Tồn THÀNH PHẨM ở kho BÁN ĐƯỢC (= ngoài kho trả về & cách ly — gồm cả kho xưởng / BTP / NVL; giao diện gọi
+  theo kho, không nói "kho bán") theo hạn dùng, số tại lúc chụp lô (≤ 1 giờ, xem ẢNH CHỤP LÔ; Bin, gồm phiếu ghi ngày
+  tương lai).
   Tập TP = kho.tp_items() (sx.utils.items_tp → dự phòng cây nhóm Tết ∪ truyền thống). Tồn từng lô = kho.lot_rows
   (MỘT định nghĩa, không giới hạn ngày → khớp Bin). Phân loại theo Item.has_batch_no HIỆN TẠI (sx bật / tắt cờ lô
   tạm thời — đặc tả lô T10): mã quản lý lô = các lô + phần chưa gắn lô (Bin − Σ lô, LO Q3); mã không quản lý lô =
@@ -25,16 +27,29 @@ Một lượt get_overview() trả 3 khối, mỗi khối một safe_block (kh�
   % giá trị = trên Σ giá trị các phần DƯƠNG (lô dương + chưa gắn lô dương + mã không lô dương), cùng cơ sở ước tính.
   HSD ước tính (NSX / ngày tạo lô + hạn dùng công bố tháng hoặc shelf_life ngày) CHỈ để hiện cạnh lô chưa ghi HSD,
   không bao giờ vào nhóm hết hạn / cận date (TONCU không ước tính).
+  ẢNH CHỤP LÔ (_snapshot): Bin của tập TP + tồn từng lô của mã TP quản lý lô, ở mọi kho lá của công ty, đọc CÙNG lúc
+  (Bin trước, lô sau, một giao dịch đọc) và cache riêng LOT_TTL ≤ 1 giờ, khoá {hôm nay, công ty, tập TP, tập mã lô,
+  kho} (đặc tả lô T7: số theo lô cache không quá một ngày) — lô là truy vấn nặng (quét sổ kho). Cả K6, K7(b) phần mã TP
+  và K8 mức lô dùng ảnh chụp này: Bin và lô cùng một thời điểm nên "chưa gắn lô = Bin − Σ lô" không bao giờ lệch giả
+  (Bin mới + lô cũ sẽ đẻ ra phần âm ma). Thời điểm chụp trả ở meta.lo_luc. refresh=1 (nút Làm mới) chụp lại;
+  BC Settings.cache_ttl ≤ 0 (tắt cache) thì không giữ ảnh chụp.
 - khong_ban (K7) — (a) Σ Bin.stock_value ở kho hàng trả về / cách ly (mọi mã, gồm dòng âm như tổng K1) + tuổi
-  (ngày từ lần nhập gần nhất vào kho đó, dòng sổ sống, ngày ≤ hôm nay — phiếu ghi ngày sau có trong số lượng nhưng
-  không làm tuổi âm); (b) lô đang thu hồi còn tồn dương ở kho BÁN ĐƯỢC (mã quản lý lô, ước tính
-  như K6); (c) = phần het_han của K6 (cùng số, không tính lại). (b) ⊥ (c) vì K6 đã rút lô thu hồi.
+  (ngày từ lần NHẬP THẬT gần nhất vào kho đó, dòng sổ sống, ngày ≤ hôm nay — phiếu ghi ngày sau có trong số lượng nhưng
+  không làm tuổi âm). Kiểm kê KHÔNG phải nhập: bỏ Stock Reconciliation (ERPNext v16 ghi mã có lô thành HAI chân −sổ
+  rồi +đếm kể cả khi đếm THIẾU; Adjustment Entry cũng là Stock Reconciliation) và phiếu điều chỉnh của sx
+  (kho.is_adjust_sql: kiểm kê custom_kiem_ke — gồm chuyển lô TONCU D191, bù D216 —, 3 loại dọn tồn). Riêng phiếu Tồn
+  đầu kỳ (Stock Reconciliation purpose Opening Stock) là lần hàng vào sổ: tính cho CẢ mã có lô (chân nhập) lẫn mã không
+  lô (actual_qty 0, tồn sau > 0) — cùng câu trả lời cho hai loại mã. (b) lô đang thu hồi còn tồn dương ở kho BÁN ĐƯỢC
+  (mã quản lý lô, ước tính như K6; mã TP lấy từ ảnh chụp lô, chỉ mã ngoài tập TP mới đọc sổ riêng); (c) = phần het_han
+  của K6 (cùng số, không tính lại). (b) ⊥ (c) vì K6 đã rút lô thu hồi. Mỗi vai trò (a) chỉ trả số dòng âm (am_rows),
+  không trả giá trị Bin của dòng âm (đặc tả C8: giá trị phần âm chỉ là |qty| × giá vốn dự phòng — ở K8).
 - am (K8) — dòng Bin âm (< −1e-6) ở MỌI kho của công ty: số dòng / mã / kho, giá trị |âm| = Σ |qty| × giá vốn dự
   phòng C2 TRONG CÔNG TY (C5): Bin(mã, kho) → Bin khác của mã ở kho công ty (tồn lớn nhất) → dòng sổ gần nhất ở kho
   công ty → Item.valuation_rate → "chưa có giá vốn" (không dùng Bin.stock_value của dòng âm, không dùng Item Price,
   không lấy giá vốn của công ty khác giữ cùng mã); tách TP ở kho xưởng (đích dọn âm của sx) / cửa hàng (bán POS trước khi chốt ca) /
   khác. Mức lô (mã TP quản lý lô, mọi kho công ty): số lô âm, số (mã, kho) có phần chưa gắn lô ≠ 0.
 
+Giá vốn dự phòng (kho.rates) gọi MỘT lần mỗi lượt cho hợp các cặp của K6 (phần âm) và K8 (dòng Bin âm) — _Ctx.rates.
 Đơn vị = Item.stock_uom; số lượng cộng chỉ khi mọi mã cùng một đơn vị (không cộng Hộp với Kg → qty None), thùng qua
 carton_factors kèm số hộp chưa khai quy cách thùng. Danh sách qua drop_hidden, tổng thì không. Không trả người
 tạo / người thu hồi / lý do / ghi chú — chỉ mã hàng, tên rút gọn, lô, kho. Không import gì của app sx (tập TP đọc mềm
@@ -47,10 +62,12 @@ import frappe
 from frappe.utils import add_days, add_months, cint, flt, getdate
 
 from bc.api import kho
-from bc.api._common import _guard, drop_hidden, iso, pct, run_cached, safe_block, short_name, to_cartons
+from bc.api._common import (_guard, cache_key, cached, drop_hidden, iso, pct, run_cached, safe_block, setting_int,
+	short_name, to_cartons)
 
 EPS = kho.EPS
 LOT_EPS = 0.0005        # lô làm tròn 3 chữ số (Serial and Batch Entry.qty) — như sx
+LOT_TTL = 3600          # ảnh chụp Bin + lô (truy vấn lô quét sổ kho): giữ ≤ 1 giờ, khoá theo hôm nay
 TOP_LO = 50             # dòng tối đa của mỗi danh sách lô
 TOP_DS = 20             # dòng tối đa của danh sách kho không bán được / tồn âm
 BUCKETS = (("het_han", "Đã hết hạn"), ("d30", "Còn 0–30 ngày"), ("d60", "Còn 31–60 ngày"),
@@ -66,15 +83,28 @@ def get_overview(refresh=0):
 	_guard("han-dung")
 	today = kho.today()
 	n = kho.kho_int("kho_can_date_ngay")
-	return run_cached("kho_han.get_overview", {"today": iso(today), "can_date": n}, lambda: _build(today, n), refresh)
+	return run_cached("kho_han.get_overview", {"today": iso(today), "can_date": n}, lambda: _build(today, n, refresh),
+		refresh)
 
 
 # ─── Khung ───────────────────────────────────────────────────────────────────
+def _snapshot(items: list, lot_items: list, whs: list) -> dict:
+	"""Ảnh chụp: Bin của `items` (mọi dòng, kể cả tồn 0 — để có đơn giá) rồi tồn từng lô của `lot_items`, ở các kho lá
+	`whs`. Bin đọc TRƯỚC lô (cùng giao dịch đọc): nếu có phiếu chen giữa thì lô mới hơn Bin chứ không ngược lại.
+	Chỉ kiểu JSON (cache Redis / giả đều giữ được): bins [mã, kho, tồn, giá trị, đơn giá], lots [mã, kho, lô, tồn]."""
+	bins = frappe.db.sql(
+		"""SELECT item_code, warehouse, actual_qty, stock_value, valuation_rate FROM `tabBin`
+		WHERE item_code IN %(i)s AND warehouse IN %(w)s""", {"i": kho.in_tuple(items), "w": kho.in_tuple(whs)})
+	lots = kho.lot_rows(lot_items, whs)
+	return {"bins": [[r[0], r[1], flt(r[2]), flt(r[3]), flt(r[4])] for r in bins],
+		"lots": [[l.item_code, l.warehouse, l.batch_no, flt(l.qty)] for l in lots]}
+
+
 class _Ctx:
 	"""Dữ liệu dùng chung giữa các khối, đọc một lần (lỗi thì mỗi khối tự báo lỗi — không ghi nhớ lỗi)."""
 
-	def __init__(self, today, n):
-		self.today, self.n = today, n
+	def __init__(self, today, n, refresh=0):
+		self.today, self.n, self.refresh = today, n, cint(refresh)
 		self.co = kho.company()
 		self.whs = kho.warehouse_map(self.co)                                  # kho lá của công ty
 		self.sell = {w for w, x in self.whs.items() if x.sellable}
@@ -86,6 +116,7 @@ class _Ctx:
 		return self._m[key]
 
 	def bins(self):
+		"""Bin "bây giờ" của MỌI mã (K7(a), K8 dòng âm) — không qua ảnh chụp lô."""
 		return self._memo("bins", lambda: kho.bin_rows(self.co, self.whs))
 
 	def tp(self):
@@ -94,12 +125,53 @@ class _Ctx:
 	def tp_info(self):
 		return self._memo("tp_info", lambda: kho.item_info(self.tp()[0]))
 
-	def tp_lots(self):
-		"""Lô của mã TP đang quản lý lô (cờ HIỆN TẠI), ở MỌI kho lá của công ty (K6 lọc kho bán được, K8 lấy hết)."""
+	def lot_items(self) -> set:
+		"""Mã TP đang quản lý lô (cờ HIỆN TẠI, đặc tả lô T10)."""
+		return {i for i, x in self.tp_info().items() if x.has_batch_no}
+
+	def snap(self) -> dict:
+		"""Ảnh chụp Bin + lô của tập TP (xem _snapshot), cache LOT_TTL theo hôm nay; refresh=1 chụp lại."""
 		def f():
 			info = self.tp_info()
-			return kho.lot_rows([i for i, x in info.items() if x.has_batch_no], list(self.whs))
-		return self._memo("tp_lots", f)
+			items, lot_items, whs = sorted(info), sorted(self.lot_items()), sorted(self.whs)
+			key = cache_key("kho_han.lo", {"today": iso(self.today), "co": self.co, "tp": items, "lo": lot_items, "whs": whs})
+			ttl = LOT_TTL if setting_int("cache_ttl", 300) > 0 else 0
+			s = cached(key, lambda: _snapshot(items, lot_items, whs), ttl=ttl, refresh=self.refresh)
+			rows = [frappe._dict(item_code=i, warehouse=w, qty=q, value=v, rate=r) for i, w, q, v, r in s["bins"]]
+			return {"bins": [r for r in rows if abs(r.qty) > EPS or abs(r.value) >= kho.VALUE_EPS],   # như kho.bin_rows
+				"rate": {(r.item_code, r.warehouse): r.rate for r in rows},
+				"lots": [frappe._dict(item_code=i, warehouse=w, batch_no=b, qty=q) for i, w, b, q in s["lots"]],
+				"luc": s["meta"].get("generated_at"), "cached": bool(s["meta"].get("cached")), "ttl": ttl}
+		return self._memo("snap", f)
+
+	def tp_bins(self):
+		"""Bin của tập TP ở mọi kho lá công ty, CÙNG thời điểm với tp_lots (ảnh chụp)."""
+		return self.snap()["bins"]
+
+	def tp_rate(self, pair) -> float:
+		"""Bin.valuation_rate của (mã TP, kho) trong ảnh chụp (không có Bin → 0)."""
+		return flt(self.snap()["rate"].get(pair))
+
+	def tp_lots(self):
+		"""Lô của mã TP đang quản lý lô (cờ HIỆN TẠI), ở MỌI kho lá của công ty (K6 lọc kho bán được, K8 lấy hết)."""
+		return self.snap()["lots"]
+
+	def rates(self, pairs) -> dict:
+		"""Giá vốn dự phòng kho.rates — MỘT lần mỗi lượt: lần đầu xin luôn hợp với các cặp K8 cần (dòng Bin âm). Kết quả
+		từng cặp không phụ thuộc cặp khác (kho.rates) nên gộp không đổi số."""
+		pairs = set(pairs)
+		if "rates" not in self._m:
+			try:
+				k8 = {(r.item_code, r.warehouse) for r in self.bins() if r.qty < -EPS}
+			except Exception:   # Bin lỗi: K8 tự báo lỗi của nó, K6 vẫn tính được
+				frappe.clear_last_message()
+				k8 = set()
+			self._m["rates"] = kho.rates(pairs | k8, self.co)
+		got = self._m["rates"]
+		miss = pairs - set(got)
+		if miss:   # chỉ khi một khối xin cặp ngoài dự kiến
+			got.update(kho.rates(miss, self.co))
+		return got
 
 	def thu_hoi_col(self) -> bool:
 		return self._memo("thu_hoi_col", lambda: bool(frappe.db.has_column("Batch", "custom_thu_hoi")))
@@ -109,9 +181,9 @@ class _Ctx:
 		return x.label if x else w
 
 
-def _build(today, n):
+def _build(today, n, refresh=0):
 	try:
-		c = _Ctx(today, n)
+		c = _Ctx(today, n, refresh)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "bc.kho_han.context")
 		frappe.clear_last_message()
@@ -132,6 +204,9 @@ def _meta(c) -> dict:
 		m.update(tp_nguon=src, so_ma_tp=len(tp), co_cot_thu_hoi=c.thu_hoi_col())
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "bc.kho_han.meta")
+	s = c._m.get("snap")   # ảnh chụp lô đã đọc được (khối lô lỗi → không có)
+	if s:
+		m.update(lo_luc=s["luc"], lo_tu_cache=s["cached"], lo_ttl_giay=s["ttl"])
 	return m
 
 
@@ -260,9 +335,8 @@ def _hsd_uoc_tinh(entries) -> None:
 
 # ─── K6. Tồn TP theo hạn dùng ────────────────────────────────────────────────
 def _han(c) -> dict:
-	tp, _src = c.tp()
 	info = c.tp_info()
-	bins = [r for r in c.bins() if r.item_code in tp and r.warehouse in c.sell]
+	bins = [r for r in c.tp_bins() if r.warehouse in c.sell]   # ảnh chụp: cùng thời điểm với tp_lots
 	binq = {(r.item_code, r.warehouse): r.qty for r in bins}
 	lots = [l for l in c.tp_lots() if l.warehouse in c.sell and abs(flt(l.qty)) >= LOT_EPS]
 	meta = _batches({l.batch_no for l in lots}, c.thu_hoi_col())
@@ -286,14 +360,12 @@ def _han(c) -> dict:
 		if not info[i].has_batch_no and abs(q) > EPS:
 			ent.append({"item": i, "wh": w, "lo": None, "qty": q, "kind": "chua_quan_ly_lo", "exp": None, "thu_hoi": 0})
 
-	rate = _bin_rates(c, {(e["item"], e["wh"]) for e in ent})
-	neg = [e for e in ent if e["qty"] < 0]
-	rt_neg = kho.rates([(e["item"], e["wh"]) for e in neg], c.co)
+	rt_neg = c.rates((e["item"], e["wh"]) for e in ent if e["qty"] < 0)
 	for e in ent:
 		if e["qty"] < 0:
 			e["slice"], e["value"] = "phan_am", -abs(e["qty"]) * rt_neg[(e["item"], e["wh"])][0]
 			continue
-		r = rate[(e["item"], e["wh"])]
+		r = c.tp_rate((e["item"], e["wh"]))
 		e["value"], e["no_rate"] = e["qty"] * r, r <= 0
 		if e["kind"] == "lo" and e["thu_hoi"]:
 			e["slice"] = "thu_hoi"
@@ -373,31 +445,50 @@ def _han(c) -> dict:
 
 # ─── K7. Tồn không bán được ──────────────────────────────────────────────────
 def _last_in(pairs, today) -> dict:
-	"""{(mã, kho): ngày nhập gần nhất} — dòng sổ sống, số lượng vào > 0, ngày ≤ hôm nay (phiếu ghi ngày sau không làm
-	tuổi âm; số lượng Bin vẫn gồm nó). Lọc theo mã: dùng chỉ mục mã-kho."""
+	"""{(mã, kho): ngày NHẬP THẬT gần nhất} — dòng sổ sống, ngày ≤ hôm nay (phiếu ghi ngày sau không làm tuổi âm; số
+	lượng Bin vẫn gồm nó). Nhập thật = actual_qty > 0, TRỪ kiểm kê: Stock Reconciliation (v16 ghi mã có lô thành chân
+	−sổ rồi +đếm, kể cả khi đếm thiếu / đếm khớp; Adjustment Entry cũng là Stock Reconciliation) và phiếu điều chỉnh của
+	sx (kho.is_adjust_sql: custom_kiem_ke — gồm chuyển lô TONCU D191, bù D216 —, 3 loại dọn tồn). Tồn đầu kỳ (Stock
+	Reconciliation purpose Opening Stock) là lần hàng vào sổ: mã có lô (chân nhập, actual_qty > 0) và mã không lô
+	(actual_qty 0, tồn sau > 0) đều tính. Lọc theo mã: dùng chỉ mục mã-kho."""
 	pairs = set(pairs)
 	if not pairs:
 		return {}
+	adj = kho.is_adjust_sql("se")
 	rows = frappe.db.sql(
-		"""SELECT item_code, warehouse, MAX(posting_date) AS d FROM `tabStock Ledger Entry`
-		WHERE is_cancelled = 0 AND actual_qty > 0 AND posting_date <= %(t)s AND item_code IN %(i)s AND warehouse IN %(w)s
-		GROUP BY item_code, warehouse""",
-		{"t": today, "i": kho.in_tuple(i for i, _ in pairs), "w": kho.in_tuple(w for _, w in pairs)}, as_dict=True)
+		f"""SELECT sle.item_code, sle.warehouse, MAX(sle.posting_date) AS d
+		FROM `tabStock Ledger Entry` sle
+		LEFT JOIN `tabStock Entry` se ON sle.voucher_type = 'Stock Entry' AND se.name = sle.voucher_no
+		LEFT JOIN `tabStock Reconciliation` sr ON sle.voucher_type = 'Stock Reconciliation' AND sr.name = sle.voucher_no
+		WHERE sle.is_cancelled = 0 AND sle.posting_date <= %(t)s AND sle.item_code IN %(i)s AND sle.warehouse IN %(w)s
+			AND ((sle.actual_qty > 0 AND sle.voucher_type != 'Stock Reconciliation' AND NOT {adj})
+				OR (sr.purpose = 'Opening Stock' AND (sle.actual_qty > 0 OR sle.qty_after_transaction > 0)))
+		GROUP BY sle.item_code, sle.warehouse""",
+		{"t": today, "i": kho.in_tuple(i for i, _ in pairs), "w": kho.in_tuple(w for _, w in pairs),
+			**kho.adjust_params()}, as_dict=True)
 	return {(r.item_code, r.warehouse): getdate(r.d) for r in rows if (r.item_code, r.warehouse) in pairs}
 
 
 def _thu_hoi(c) -> dict:
 	"""(b) Lô đang thu hồi (mã quản lý lô) còn tồn dương ở kho bán được — giá trị ước tính như K6. "Số lô" = lô khác nhau
-	(mã, lô); số dòng lô × kho ở `rows`. Site chưa có cột thu hồi → {available: False, no_column: True} (khác lỗi)."""
+	(mã, lô); số dòng lô × kho ở `rows`. Site chưa có cột thu hồi → {available: False, no_column: True} (khác lỗi).
+	Mã TP quản lý lô: lô + đơn giá lấy từ ảnh chụp đã đọc cho K6 (không quét sổ lần hai); chỉ mã NGOÀI tập đó (nguyên
+	liệu…) mới đọc sổ riêng, đơn giá theo Bin hiện tại."""
 	if not c.thu_hoi_col():
 		return {"available": False, "no_column": True}
 	rec = {r.name: r for r in frappe.db.sql(
 		"""SELECT b.name, b.item, b.expiry_date FROM `tabBatch` b JOIN `tabItem` i ON i.name = b.item
 		WHERE IFNULL(b.custom_thu_hoi, 0) = 1 AND IFNULL(i.has_batch_no, 0) = 1""", as_dict=True)}
-	lots = [l for l in kho.lot_rows({r.item for r in rec.values()}, c.sell) if l.batch_no in rec and l.qty > LOT_EPS] \
-		if rec else []
+	lots, rate = [], {}
+	if rec:
+		lots = [l for l in c.tp_lots() if l.warehouse in c.sell and l.batch_no in rec and l.qty > LOT_EPS]
+		rate = {(l.item_code, l.warehouse): c.tp_rate((l.item_code, l.warehouse)) for l in lots}
+		other = {r.item for r in rec.values()} - c.lot_items()
+		if other:
+			ol = [l for l in kho.lot_rows(other, c.sell) if l.batch_no in rec and l.qty > LOT_EPS]
+			rate.update(_bin_rates(c, {(l.item_code, l.warehouse) for l in ol}))
+			lots += ol
 	info = kho.item_info({l.item_code for l in lots})
-	rate = _bin_rates(c, {(l.item_code, l.warehouse) for l in lots})
 	f = kho.carton_factors({l.item_code for l in lots})
 	uoms = {info[l.item_code].stock_uom for l in lots}
 	ds = sorted(({"item_code": l.item_code, "short_name": info[l.item_code].short_name, "lo": l.batch_no,
@@ -420,9 +511,11 @@ def _khong_ban(c, han) -> dict:
 	for role in kho.UNSELLABLE:
 		rr = [r for r in rows if r.role == role]
 		am = [r for r in rr if r.qty < -EPS]
+		# Dòng âm: chỉ đếm (am_rows). Không trả Bin.stock_value của dòng âm (đặc tả C8 / W9 — giá trị phần âm chỉ là
+		# |qty| × giá vốn dự phòng, ở K8); `value` của vai trò vẫn là Σ Bin.stock_value như tổng K1.
 		roles.append({"role": role, "label": kho.ROLE_LABELS[role], "value": round(sum(r.value for r in rr), 2),
 			"rows": len(rr), "items": len({r.item_code for r in rr if r.qty > EPS}),
-			"warehouses": len({r.warehouse for r in rr}), "am_rows": len(am), "am_value": round(sum(r.value for r in am), 2)})
+			"warehouses": len({r.warehouse for r in rr}), "am_rows": len(am)})
 	pos = [r for r in rows if r.qty > EPS]
 	last = _last_in(((r.item_code, r.warehouse) for r in pos), c.today)
 	top = sorted(({"item_code": r.item_code, "short_name": short_name(r.item_name or r.item_code), "kho": c.wh_label(r.warehouse),
@@ -437,11 +530,13 @@ def _khong_ban(c, han) -> dict:
 	cc = {"available": True, "value": hh["value"], "qty": hh["qty"], "uom": hh["uom"], "lots": hh["lots"], "items": hh["items"]} \
 		if hh else {"available": False, "error": bool(han.get("error"))}
 	# error: khối tính lỗi (khác "site chưa có đánh dấu thu hồi" — no_column) để giao diện nói đúng lý do.
-	parts = [{"key": "kho_loai", "label": "Hàng trả về, cách ly", "value": a["value"], "available": True, "error": False},
-		{"key": "thu_hoi", "label": "Lô đang thu hồi còn ở kho bán", "value": b.get("value"), "available": bool(b.get("available")),
-			"error": bool(b.get("error"))},
-		{"key": "het_han", "label": "Thành phẩm hết hạn ở kho bán", "value": cc.get("value"), "available": cc["available"],
-			"error": bool(cc.get("error"))}]
+	# Nhãn theo KHO (không theo "bán được"): (b), (c) tính ở mọi kho ngoài kho trả về & cách ly — gồm cả kho xưởng / BTP /
+	# NVL (nguyên liệu thu hồi ở kho BTP không phải "ở kho bán"). Phần (a) cùng tên với thẻ của màn Tồn kho.
+	parts = [{"key": "kho_loai", "label": "Kho trả về & cách ly", "value": a["value"], "available": True, "error": False},
+		{"key": "thu_hoi", "label": "Lô đang thu hồi ngoài kho trả về & cách ly", "value": b.get("value"),
+			"available": bool(b.get("available")), "error": bool(b.get("error"))},
+		{"key": "het_han", "label": "Thành phẩm hết hạn ngoài kho trả về & cách ly", "value": cc.get("value"),
+			"available": cc["available"], "error": bool(cc.get("error"))}]
 	return {"available": True, "tong": round(sum(flt(p["value"]) for p in parts if p["available"]), 2),
 		"day_du": all(p["available"] for p in parts), "parts": parts, "kho_loai": a, "thu_hoi": b, "het_han": cc}
 
@@ -459,7 +554,7 @@ def _stock_flag(field):
 def _am(c) -> dict:
 	tp, _src = c.tp()
 	neg = [r for r in c.bins() if r.qty < -EPS]
-	rt = kho.rates([(r.item_code, r.warehouse) for r in neg], c.co)
+	rt = c.rates((r.item_code, r.warehouse) for r in neg)   # thường đã có sẵn từ lần gọi của K6 (một lần mỗi lượt)
 	sp = {k: {"key": k, "label": lb, "rows": 0, "items": set(), "value_abs": 0.0} for k, lb in SPLIT_AM}
 	ds = []
 	for r in neg:
@@ -474,18 +569,18 @@ def _am(c) -> dict:
 			"rate": round(rate, 2), "co_gia_von": src is not None, "value_abs": round(v, 2)})
 	ds = drop_hidden(sorted(ds, key=lambda x: (-x["value_abs"], x["qty"], x["item_code"], x["kho"])))
 	nguon = {}
-	for rate, src in rt.values():
+	for r in neg:   # nguồn giá của đúng các dòng âm (rt có thể chứa thêm cặp của K6)
+		src = rt[(r.item_code, r.warehouse)][1]
 		nguon[src or "khong"] = nguon.get(src or "khong", 0) + 1
 
-	# Mức lô: mã TP quản lý lô, mọi kho lá của công ty.
-	info = c.tp_info()
+	# Mức lô: mã TP quản lý lô, mọi kho lá của công ty — Bin và lô cùng ảnh chụp (không lệch giả).
 	lots = c.tp_lots()
 	lo_am = [l for l in lots if l.qty < -LOT_EPS]
 	sums: dict = {}
 	for l in lots:
 		sums[(l.item_code, l.warehouse)] = sums.get((l.item_code, l.warehouse), 0.0) + flt(l.qty)
-	binq = {(r.item_code, r.warehouse): r.qty for r in c.bins()
-		if r.item_code in tp and info.get(r.item_code) and info[r.item_code].has_batch_no}
+	li = c.lot_items()
+	binq = {(r.item_code, r.warehouse): r.qty for r in c.tp_bins() if r.item_code in li}
 	rem = {p: round(flt(binq.get(p)) - sums.get(p, 0.0), 6) for p in set(binq) | set(sums)}
 	kl = [v for v in rem.values() if abs(v) > EPS]
 	return {

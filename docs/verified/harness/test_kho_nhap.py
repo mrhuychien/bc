@@ -20,6 +20,7 @@ seed(k) chỉ THÊM dữ liệu tên NTP-… lên base(k) (để gộp seed cho 
 seed(k); k.finalize().
 """
 import ast
+import datetime
 import json
 import os
 import re
@@ -369,6 +370,32 @@ if __name__ == "__main__":
 		"value": 70_000, "slips": 1} and "2025-10" not in bm, bm.get("2025-11"))
 	c("tháng không nhập = 0", pick(bm["2026-01"], "qty", "uom", "value", "slips", "so_kho_qty", "ngoai_phieu", "ngoai_entries")
 		== {"qty": 0, "uom": None, "value": 0, "slips": 0, "so_kho_qty": 0, "ngoai_phieu": 0, "ngoai_entries": 0}, bm["2026-01"])
+	# ══ XR-COMP-2 · mỗi ô thùng (từng ngày, từng tháng của bảng 12 tháng) kèm phần chưa khai quy cách thùng — thùng chỉ tính
+	# mã CÓ hệ số; mã không hệ số (C, hộp quà Tết) không được âm thầm rơi khỏi cột "Thùng" / biểu đồ thùng ══
+	ck = ("cartons", "boxes_without_carton_factor", "items_without_carton_factor", "uom_without")
+	# T10: A 248 / 20 = 12,4 · B 50 / 10 = 5 · D 30 / 12 = 2,5 → 19,9 thùng; C 30 hộp KHÔNG có hệ số → 30 Hộp, 1 mã
+	c("XR-COMP-2 tháng 10: 19,9 thùng + 30 Hộp chưa khai thùng (C), 1 mã", pick(bm["2026-10"], *ck) == {"cartons": 19.9,
+		"boxes_without_carton_factor": 30, "items_without_carton_factor": 1, "uom_without": "Hộp"}, pick(bm["2026-10"], *ck))
+	# T9 (tháng CŨ của bảng 12 tháng): A 200 / 20 = 10 · B 20 / 10 = 2 → 12,0; C 5 (PN-15) chưa khai
+	c("XR-COMP-2 tháng 9 trong bảng 12 tháng: 12 thùng + 5 Hộp chưa khai", pick(bm["2026-09"], *ck) == {"cartons": 12.0,
+		"boxes_without_carton_factor": 5, "items_without_carton_factor": 1, "uom_without": "Hộp"}, pick(bm["2026-09"], *ck))
+	# T6: D 100 / 12 + B 10 / 10 = 9,33 → 9,3 — mọi mã có hệ số → phần chưa khai 0, 0 mã, không đơn vị; tháng trống 01/2026 → 0
+	c("XR-COMP-2 tháng đủ hệ số (T6) / tháng trống (T1): phần chưa khai 0", (pick(bm["2026-06"], *ck), pick(bm["2026-01"], *ck))
+		== ({"cartons": 9.3, "boxes_without_carton_factor": 0, "items_without_carton_factor": 0, "uom_without": None},
+		{"cartons": 0, "boxes_without_carton_factor": 0, "items_without_carton_factor": 0, "uom_without": None}),
+		(pick(bm["2026-06"], *ck), pick(bm["2026-01"], *ck)))
+	# Ngày 05/10: A 98 / 20 = 4,9 + B 50 / 10 = 5 → 9,9; C 30 chưa khai · 01/10: A 50 / 20 = 2,5 · 02/10: không nhập
+	c("XR-COMP-2 theo ngày: 05/10 9,9 thùng + 30 Hộp chưa khai; 01/10 2,5 thùng; 02/10 trống", [pick(bd[x], *ck) for x in
+		("2026-10-05", "2026-10-01", "2026-10-02")] == [{"cartons": 9.9, "boxes_without_carton_factor": 30,
+		"items_without_carton_factor": 1, "uom_without": "Hộp"}, {"cartons": 2.5, "boxes_without_carton_factor": 0,
+		"items_without_carton_factor": 0, "uom_without": None}, {"cartons": 0, "boxes_without_carton_factor": 0,
+		"items_without_carton_factor": 0, "uom_without": None}], [pick(bd[x], *ck) for x in ("2026-10-05", "2026-10-01")])
+	# Bất biến: Σ phần chưa khai theo ngày = phần chưa khai của tổng tháng = ô tháng 10 (30); Σ thùng theo ngày = 19,9
+	c("XR-COMP-2 Σ theo ngày phần chưa khai = tổng tháng = ô tháng 10 (30); Σ thùng theo ngày = 19,9",
+		round(sum(r.get("boxes_without_carton_factor") or 0 for r in n["by_day"]), 3) == t["boxes_without_carton_factor"]
+		== bm["2026-10"].get("boxes_without_carton_factor") == 30 and round(sum(r["cartons"] for r in n["by_day"]), 1) == 19.9,
+		round(sum(r.get("boxes_without_carton_factor") or 0 for r in n["by_day"]), 3))
+
 	np_ = n["ngoai_phieu"]
 	c("nhập Kho TP ngoài phiếu sx tháng 10: 3 phiếu kho, A 12 / C 7 / B 6", (np_["qty"], np_["entries"],
 		[(r["item_code"], r["qty"]) for r in np_["items"]]) == (25, 3, [(A, 12), (C, 7), (B, 6)]), np_)
@@ -401,10 +428,12 @@ if __name__ == "__main__":
 	c("cửa sổ 30 ngày tới hôm nay", (v["from"], v["to"]) == ("2026-09-28", "2026-10-27"), (v["from"], v["to"]))
 	c("đã vào hộp chưa nhập: mã còn > 0, trừ phiếu đã duyệt + nháp Tết", [(r["item_code"], r["qty"], r["khac_dvt"])
 		for r in v["rows"]] == [(E, 12, False), (C, 10, False), (D, 6, False), (A, 2, False), (KG, 15, True)], v["rows"])
-	# Hộp: 12 + 10 + 6 + 2 = 30. Thùng: E 12/24 = 0,5 · D 6/12 = 0,5 · A 2/20 = 0,1 → 1,1; C 10 chưa khai thùng; Kg không cộng
-	c("tổng hộp (bỏ mã đơn vị Kg) + thùng", pick(v, "qty", "items", "items_khac_dvt", "cartons", "boxes_without_carton_factor")
-		== {"qty": 30, "items": 4, "items_khac_dvt": 1, "cartons": 1.1, "boxes_without_carton_factor": 10},
-		pick(v, "qty", "items", "items_khac_dvt", "cartons", "boxes_without_carton_factor"))
+	# Hộp: 12 + 10 + 6 + 2 = 30. Thùng: E 12/24 = 0,5 · D 6/12 = 0,5 · A 2/20 = 0,1 → 1,1; C 10 Hộp chưa khai thùng (kèm đơn vị
+	#   để thẻ ghi "10 Hộp", không phải "10"); Kg không cộng
+	c("tổng hộp (bỏ mã đơn vị Kg) + thùng + phần chưa khai kèm đơn vị", pick(v, "qty", "items", "items_khac_dvt", "cartons",
+		"boxes_without_carton_factor", "uom_without") == {"qty": 30, "items": 4, "items_khac_dvt": 1, "cartons": 1.1,
+		"boxes_without_carton_factor": 10, "uom_without": "Hộp"},
+		pick(v, "qty", "items", "items_khac_dvt", "cartons", "boxes_without_carton_factor", "uom_without"))
 
 	# ══ K12a · nợ BOM đang mở ══
 	b = d["no_bom"]
@@ -489,12 +518,52 @@ if __name__ == "__main__":
 	c("10/2025: phiếu có ds_se hỏng — số lượng vẫn tính, giá trị 0, phiếu kho của nó thành 'ngoài phiếu'",
 		pick(b9["2025-10"], "qty", "value", "so_kho_qty", "ngoai_phieu") == {"qty": 11, "value": 0, "so_kho_qty": 11, "ngoai_phieu": 11},
 		b9["2025-10"])
+	# 10/2025 (tháng cũ nhất của bảng tháng 9): A 11 / 20 = 0,55 → 0,6 (round 1 số lẻ), đủ hệ số · 26/09: C 5 → 0 thùng + 5 Hộp
+	c("XR-COMP-2 (kỳ tháng 9): 10/2025 0,6 thùng, không phần chưa khai; ngày 26/09 0 thùng + 5 Hộp chưa khai",
+		(pick(b9["2025-10"], *ck), pick({r["date"]: r for r in n9["by_day"]}["2026-09-26"], *ck)) == ({"cartons": 0.6,
+		"boxes_without_carton_factor": 0, "items_without_carton_factor": 0, "uom_without": None}, {"cartons": 0,
+		"boxes_without_carton_factor": 5, "items_without_carton_factor": 1, "uom_without": "Hộp"}), b9["2025-10"])
 	c("tháng 9: nhập giá 0 = PN-12 B 20 + PN-15 C 5", (d9["gia_von_0"]["nhap_ky"]["qty"], d9["gia_von_0"]["nhap_ky"]["entries"])
 		== (25, 2), d9["gia_von_0"]["nhap_ky"])
 	c("hàng đợi / nợ / tồn giá 0 là ảnh chụp hôm nay — như tháng 10", d9["cho_duyet"] == q and d9["no_bom"] == b
 		and d9["vao_hop"] == v and d9["gia_von_0"]["ton"] == tn)
 	for bad in ("2026-11", "2026-13", "abc", "", None, "2026-1"):
 		c(f"tháng không hợp lệ / tương lai ({bad!r}) → tháng này", run(bad)["meta"]["thang"] == "2026-10")
+
+	# ══ SEC-1 · tháng cực đoan không bao giờ thành HTTP 500 ══
+	# (a) Qua đường thật (kho.month_period kẹp từ 2000 và không quá 10 năm: mốc dưới hôm nay = 10/2016) → tháng này.
+	for bad in ("0001-01", "0001-02", "0000-01", "1900-01", "1999-12", "2016-09", "9999-12"):
+		try:
+			got = run(bad)["meta"]["thang"]
+		except Exception as e:  # noqa: BLE001 — chính lỗi cần bắt
+			got = repr(e)
+		c(f"SEC-1 tháng cực đoan {bad!r} → tháng này, không ném lỗi", got == "2026-10", got)
+	# Mốc dưới vẫn giữ: 10/2016 → 12 tháng 11/2015 → 10/2016, tháng trước 09/2016, 31 ngày (cắt ở cuối tháng, không ở hôm nay)
+	d16 = run("2016-10")
+	c("SEC-1 mốc dưới 10/2016 giữ nguyên", (d16["meta"]["thang"], d16["meta"]["months"][0], len(d16["meta"]["months"]),
+		d16["meta"]["prev"], len(d16["nhap"]["by_day"]), d16["nhap"]["total"]["qty"]) == ("2016-10", "2015-11", 12, "2016-09", 31, 0),
+		d16["meta"])
+	# (b) Chốt thứ hai TRONG kho_nhap: giả lập month_period để lọt tháng năm 1 / 12/9999 → dãy 12 tháng, tháng trước, từng ngày vẫn
+	# dựng được (trước sửa: add_months(01/0001, −11) ném ValueError 'year 0'; bước 31/12/9999 + 1 ngày tràn OverflowError).
+	# 01/0001: chỉ còn 1 tháng (không có tháng trước năm 1), tháng trước kẹp = 0001-01, 31 ngày · 02/0001: 0001-01, 0001-02,
+	# 28 ngày · 12/9999: 9999-01 → 9999-12 (12 tháng), tháng trước 9999-11, 31 ngày. Không có phiếu nào → 0.
+	from bc.api import kho as kho_mod
+	orig_mp = kho_mod.month_period
+	try:
+		for f_, t_, lbl, want in (
+				(datetime.date(1, 1, 1), datetime.date(1, 1, 31), "0001-01", (["0001-01"], "0001-01", 31, 0)),
+				(datetime.date(1, 2, 1), datetime.date(1, 2, 28), "0001-02", (["0001-01", "0001-02"], "0001-01", 28, 0)),
+				(datetime.date(9999, 12, 1), datetime.date(9999, 12, 31), "9999-12",
+					([f"9999-{m_:02d}" for m_ in range(1, 13)], "9999-11", 31, 0))):
+			kho_mod.month_period = lambda thang=None, _r=(f_, t_, lbl): _r
+			try:
+				dx = run(lbl)
+				got = (dx["meta"]["months"], dx["meta"]["prev"], len(dx["nhap"]["by_day"]), dx["nhap"]["total"]["qty"])
+			except Exception as e:  # noqa: BLE001
+				got = repr(e)
+			c(f"SEC-1 kho_nhap tự chốt khi kỳ lọt {lbl}: không add_months / không tràn ngày", got == want, got)
+	finally:
+		kho_mod.month_period = orig_mp
 
 	# ══ Quyền / ẩn mảng ══
 	frappe.session.user = "nobody@example.com"
@@ -566,6 +635,13 @@ if __name__ == "__main__":
 		and (b2["2026-08"]["so_kho_qty"], b2["2026-08"]["so_kho_uom"]) == (1.5, "Kg"), (b2["2026-10"], b2["2026-09"]))
 	# Đối chiếu (phiếu, mã): vế phiếu 358 hộp + Kg 4,5 + 3 → None; vế sổ 298 hộp + Kg 3 (SE-52) → None; lệch (PN-05, A) 60 hộp +
 	#   (PN-30, Kg) 4,5 kg → None; PN-31 khớp → 2 phiếu lệch (KHÔNG phải 365,5 / 301 / 64,5)
+	# XR-COMP-2 lẫn đơn vị: T10 phần chưa khai = C 30 Hộp + Kg 4,5 + 3 → lẫn đơn vị → None (KHÔNG 37,5), 2 mã; thùng 19,9 giữ ·
+	#   ngày 21/10: Kg 4,5 → 0 thùng + 4,5 Kg (1 mã) · 22/10: Kg 3 → 3 Kg
+	c("XR-COMP-2 lẫn đơn vị: ô tháng 10 phần chưa khai None / 2 mã; ngày 21/10 4,5 Kg, 22/10 3 Kg",
+		(pick(b2["2026-10"], *ck), pick(dd["2026-10-21"], *ck), pick(dd["2026-10-22"], *ck)) == ({"cartons": 19.9,
+		"boxes_without_carton_factor": None, "items_without_carton_factor": 2, "uom_without": None}, {"cartons": 0,
+		"boxes_without_carton_factor": 4.5, "items_without_carton_factor": 1, "uom_without": "Kg"}, {"cartons": 0,
+		"boxes_without_carton_factor": 3, "items_without_carton_factor": 1, "uom_without": "Kg"}), pick(b2["2026-10"], *ck))
 	c("lẫn đơn vị: đối chiếu không cộng Hộp + Kg, vẫn đếm 2 phiếu lệch", dm["nhap"]["doi_chieu"] == {"slip_qty": None,
 		"slip_uom": None, "se_qty": None, "se_uom": None, "lech": None, "lech_uom": None, "slips_lech": 2}, dm["nhap"]["doi_chieu"])
 	c("lẫn đơn vị: nợ BOM — số lượng / tuổi nợ None, giá trị vẫn cộng (958.000 + 2.000), xử lý ngay A + D = 80 hộp",

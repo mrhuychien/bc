@@ -172,10 +172,12 @@ def _warehouses() -> list:
 	"""Tồn kho từng kho ERPNext (kho lá, đang dùng): giá trị, số mã có tồn, 5 mã giá trị lớn nhất.
 
 	SPA khớp tên kho với tên khu trên sơ đồ 3D (vd "Kho đường" ↔ "Kho đường - HGC").
+	Alias SQL KHÔNG trùng tên method của dict (items, keys, values, get…): dòng as_dict là frappe._dict, `w.items` trả
+	method dict.items chứ không phải cột (cint → 0) — vì vậy đếm mã đặt tên `so_ma`.
 	"""
 	summary = frappe.db.sql(
 		"""SELECT b.warehouse, MAX(w.warehouse_name) AS warehouse_name,
-		          COUNT(DISTINCT CASE WHEN b.actual_qty > 0 THEN b.item_code END) AS items,
+		          COUNT(DISTINCT CASE WHEN b.actual_qty > 0 THEN b.item_code END) AS so_ma,
 		          SUM(b.stock_value) AS value
 		   FROM `tabBin` b JOIN `tabWarehouse` w ON w.name = b.warehouse
 		   WHERE w.is_group = 0 AND IFNULL(w.disabled, 0) = 0
@@ -193,9 +195,9 @@ def _warehouses() -> list:
 			"qty": flt(r.qty), "uom": r.stock_uom, "value": flt(r.value)})
 	out = []
 	for w in summary:
-		if not cint(w.items) and not flt(w.value):
+		if not cint(w.so_ma) and not flt(w.value):
 			continue
-		out.append({"name": w.warehouse, "warehouse_name": w.warehouse_name or w.warehouse, "items": cint(w.items),
+		out.append({"name": w.warehouse, "warehouse_name": w.warehouse_name or w.warehouse, "items": cint(w.so_ma),
 			"value": flt(w.value), "top": drop_hidden(tops.get(w.warehouse, []))[:5]})
 	return out
 
@@ -212,14 +214,14 @@ def _feed(day, wh, limit=14) -> list:
 			"title": r.customer_name, "sub": CHANNEL_LABELS[channel_of(r.customer_group)],
 			"amount": abs(flt(r.amount)), "doc": r.name, "doctype": "sales-invoice"})
 	for r in frappe.db.sql(
-		f"""SELECT se.name, se.posting_time, SUM(sed.transfer_qty) AS boxes, COUNT(DISTINCT sed.item_code) AS items,
+		f"""SELECT se.name, se.posting_time, SUM(sed.transfer_qty) AS boxes, COUNT(DISTINCT sed.item_code) AS so_ma,
 		          MAX(sed.item_name) AS item_name
 		    FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
 		    WHERE {production_filter()} AND se.posting_date = %(d)s
 		    GROUP BY se.name, se.posting_time ORDER BY se.posting_time DESC LIMIT %(n)s""",
 		{"sx_wh": wh, "d": day, "n": limit}, as_dict=True):
 		ev.append({"kind": "production", "time": str(r.posting_time or "")[:5],
-			"title": short_name(r.item_name) + (f" +{cint(r.items) - 1} mã" if cint(r.items) > 1 else ""),
+			"title": short_name(r.item_name) + (f" +{cint(r.so_ma) - 1} mã" if cint(r.so_ma) > 1 else ""),
 			"sub": "Nhập kho thành phẩm", "boxes": flt(r.boxes), "doc": r.name, "doctype": "stock-entry"})
 	for r in frappe.db.sql(
 		"""SELECT pr.name, pr.supplier_name, pr.net_total, pr.posting_time FROM `tabPurchase Receipt` pr

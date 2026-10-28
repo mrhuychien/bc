@@ -12,7 +12,9 @@ Một lượt get_overview(thang) trả 6 khối, mỗi khối một safe_block 
   kiểm tra "nhập Kho TP ngoài phiếu sx" = số nhập theo sổ kho (bc.api.sx.production_filter, đúng kho TP) − số theo
   phiếu, theo tháng; phần ngoài phiếu đếm chính xác = phiếu kho của production_filter không nằm trong ds_se của phiếu
   nào (kèm số phiếu kho ngoài phiếu mỗi tháng). Mọi tổng số lượng (ngày, tháng, sổ kho, ngoài phiếu, hai vế đối chiếu)
-  giữ theo mã rồi kiểm đơn vị RIÊNG từng ô: lẫn Hộp + Kg → None ở đúng ô đó, kèm đơn vị khi cùng một đơn vị.
+  giữ theo mã rồi kiểm đơn vị RIÊNG từng ô: lẫn Hộp + Kg → None ở đúng ô đó, kèm đơn vị khi cùng một đơn vị. Mỗi ô thùng
+  (tổng tháng chọn, từng ngày, từng tháng) kèm boxes_without_carton_factor / items_without_carton_factor / uom_without —
+  thùng chỉ tính mã CÓ quy cách, phần còn lại phải đi kèm, không âm thầm rơi khỏi cột / biểu đồ thùng.
 - cho_duyet (K11): phiếu nháp (docstatus 0) — số phiếu, Σ so_dem (phiếu chưa đếm thì Σ so_lap), tuổi phiếu cũ nhất
   (từ ngày tạo), phần sẽ thành nợ BOM khi duyệt (mã chưa có BOM đang dùng: is_active + is_default + docstatus 1 như
   sx get_bom_active), phiếu Tết (nguon = 'Tết', cột có từ D122 — đọc mềm).
@@ -35,10 +37,11 @@ ghi chú, lý do, remarks, tên nhân viên vào hộp — chỉ số tổng h�
 
 from __future__ import annotations
 
+import datetime
 import json
 
 import frappe
-from frappe.utils import add_days, add_months, flt, getdate
+from frappe.utils import add_days, flt, getdate
 
 from bc.api import kho
 from bc.api._common import _guard, carton_factors, drop_hidden, iso, run_cached, safe_block
@@ -70,6 +73,23 @@ def _m(v) -> float:
 def _ym(d) -> str:
 	d = getdate(d)
 	return f"{d.year:04d}-{d.month:02d}"
+
+
+MIN_K, MAX_K = 1 * 12, 9999 * 12 + 11   # chỉ số tháng (năm × 12 + tháng − 1) của 01/0001 và 12/9999
+
+
+def _mk(k: int) -> datetime.date:
+	"""Ngày 1 của tháng có chỉ số k, kẹp trong 01/0001 → 12/9999."""
+	k = min(max(k, MIN_K), MAX_K)
+	return datetime.date(k // 12, k % 12 + 1, 1)
+
+
+def _months_back(f, n: int) -> list:
+	"""n + 1 ngày đầu tháng từ (tháng của f − n) tới tháng của f, cũ trước — số học thuần trên (năm, tháng), KHÔNG qua
+	add_months / getdate: tháng gần năm 1 làm add_months(f, −11) ném ValueError 'year 0' → HTTP 500 (SEC-1). Kỳ chọn
+	month_period đã kẹp từ 2000 / 10 năm; đây là chốt thứ hai — dãy tháng chỉ ngắn lại ở biên, không bao giờ ném lỗi."""
+	k0 = f.year * 12 + f.month - 1
+	return [_mk(k) for k in range(max(k0 - n, MIN_K), k0 + 1)]
 
 
 def _se_names(ds_se) -> list:
@@ -179,12 +199,8 @@ def _nhap(p: dict) -> dict:
 	# không bao giờ cộng Hộp với Kg (một tháng lẫn đơn vị chỉ làm tháng đó thành None, các tháng khác vẫn có số).
 	months = {m: {"qty": {}, "value": 0.0, "slips": set(), "so_kho": {}, "ngoai": {}, "ngoai_se": set()}
 		for m in p["months"]}
-	days = {}
-	d = f
-	while d <= t:
-		days[d] = {"qty": {}, "value": 0.0, "slips": set()}
-		d = add_days(d, 1)
-		d = getdate(d)
+	# Cộng ngày bằng chỉ số (không bước qua t + 1 ngày: 31/12/9999 + 1 tràn ngày).
+	days = {f + datetime.timedelta(days=i): {"qty": {}, "value": 0.0, "slips": set()} for i in range((t - f).days + 1)}
 	sel_items: dict = {}       # mã → {qty, value} tháng chọn
 	slip_qty: dict = {}        # (phiếu, mã) tháng chọn → Σ so_dem
 	se_qty: dict = {}          # (phiếu, mã) tháng chọn → Σ số lượng dòng sổ thành phẩm
@@ -235,7 +251,7 @@ def _nhap(p: dict) -> dict:
 	by_day = []
 	for dd, x in days.items():
 		q, u = _sum1(info, x["qty"])
-		by_day.append({"date": iso(dd), "qty": q, "uom": u, "cartons": _cartons(x["qty"], factors)["cartons"],
+		by_day.append({"date": iso(dd), "qty": q, "uom": u, **_cartons(x["qty"], factors, info),
 			"value": _m(x["value"]), "slips": len(x["slips"])})
 	by_month = []
 	for m in p["months"]:
@@ -245,7 +261,7 @@ def _nhap(p: dict) -> dict:
 		ng, ngu = _sum1(info, x["ngoai"])
 		# Chênh sổ − phiếu chỉ khi hai vế cùng một đơn vị (vế trống = 0, không đơn vị).
 		chenh = None if q is None or sk is None or (u and sku and u != sku) else _q(sk - q)
-		by_month.append({"month": m, "qty": q, "uom": u, "cartons": _cartons(x["qty"], factors)["cartons"],
+		by_month.append({"month": m, "qty": q, "uom": u, **_cartons(x["qty"], factors, info),
 			"value": _m(x["value"]), "slips": len(x["slips"]), "so_kho_qty": sk, "so_kho_uom": sku, "chenh": chenh,
 			"ngoai_phieu": ng, "ngoai_uom": ngu, "ngoai_entries": len(x["ngoai_se"])})
 	top = drop_hidden([_item_row(info, c, qty=_q(v["qty"]), cartons=_cartons({c: v["qty"]}, factors)["cartons"],
@@ -382,7 +398,7 @@ def _vao_hop(p: dict) -> dict:
 		khac_dvt=c not in box) for c, v in con.items()])
 	rows.sort(key=lambda r: (r["khac_dvt"], -r["qty"], r["item_code"]))
 	return {"available": True, "from": iso(tu), "to": iso(den), "so_ngay": SO_NGAY_TRAN,
-		"qty": _q(sum(box.values())), "uom": BOX_UOM, **_cartons(box, factors), "items": len(box),
+		"qty": _q(sum(box.values())), "uom": BOX_UOM, **_cartons(box, factors, info), "items": len(box),
 		"items_khac_dvt": len(other),
 		"rows": rows[:LIST_MAX]}
 
@@ -562,13 +578,9 @@ def get_overview(thang=None, refresh=0):
 	today = kho.today()
 
 	def build():
-		f12 = getdate(add_months(f, -11))
-		months = []
-		d = f12
-		while d <= f:
-			months.append(_ym(d))
-			d = getdate(add_months(d, 1))
-		prev = getdate(add_months(f, -1))
+		m12 = _months_back(f, 11)
+		f12, months = m12[0], [_ym(x) for x in m12]
+		prev = _months_back(f, 1)[0]
 		p = {"f": f, "t": t, "f12": f12, "months": months, "today": today}
 		sx = kho.sx_on()
 		sx_block = (lambda name, fn: safe_block(f"kho_nhap.{name}", fn, p)) if sx else (lambda name, fn: _off(p))

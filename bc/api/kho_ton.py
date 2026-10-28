@@ -4,7 +4,11 @@ số ngày tồn kho, hàng chậm luân chuyển / tồn chết, tồn hàng T�
 
 Hai method, tải riêng để trang hiện nhanh:
 - get_overview(): khối `value` (K1), `doi` (K4), `slow` (K5), `tet_stock` (K5 phần Tết), `health` (§6). Số "bây giờ" theo
-  Bin (gồm cả phiếu ghi ngày tương lai, đúng như ERPNext / GL) — xem quy ước chung trong bc.api.kho.
+  Bin (gồm cả phiếu ghi ngày tương lai, đúng như ERPNext / GL) — xem quy ước chung trong bc.api.kho. Ba lượt quét cả lịch
+  sử — giá vốn bán W ngày (S4, _cogs), lần xuất cuối / nhập đầu (S5, _last_moves), hoá đơn chưa trừ kho (T11) — cache
+  THEO NGÀY như get_trend (khoá có hôm nay, TREND_TTL; Làm mới = refresh=1 tính lại cả ba, đặc tả ERP T9); phần dựng lại
+  mỗi cache_ttl chỉ đọc Bin. _cogs LEFT JOIN Item (như _scan): JOIN thường để MariaDB đi từ Item rồi đọc MỌI dòng sổ của
+  từng mã qua chỉ mục (item_code, warehouse, posting_datetime) — ~25 s trên sổ 1 triệu dòng, LEFT JOIN ~1,6 s.
 - get_trend(): `trend` (K2) + `nxt` (K3) dựng từ MỘT lượt quét sổ kho (SLE), cache 6 giờ, khoá theo hôm nay. Hai mục sức
   khoẻ cần quét cả sổ — future_value (phiếu ghi ngày sau hôm nay) và ledger_bin_diff — nằm ở `trend`, KHÔNG quét lại ở
   get_overview (posting_date không có chỉ mục); màn gộp chúng vào dải sức khoẻ khi trend về.
@@ -16,12 +20,24 @@ Luật (đặc tả §1–§4, các bẫy đã kiểm trong bộ thử test_kho_
   Kg); thùng qua carton_factors, kèm số hộp chưa khai quy cách thùng. "Kho thành phẩm" (kho_tp) = live._finished_stock(_wh())
   — cùng con số với màn Thời gian thực; live chỉ đọc dòng Bin có số lượng nên khu vực TP = live + dòng chỉ còn giá trị
   (role_stranded_value) khi `same` (khu vực TP gồm đúng các kho của cây _wh()). Thành phẩm (thẻ hộp/thùng) = tập thành
-  phẩm (kho.tp_items) ở kho bán được.
+  phẩm (kho.tp_items) ở kho bán được. Khu vực "Kho trả về & cách ly" (khong_ban) mang `configured`: công ty có kho lá vai
+  trò đó chưa (site không sx, không is_rejected_warehouse → chưa xác định, màn hiện "—" thay vì 0).
+  "Chưa khai quy cách thùng" — MỘT cơ sở cho thẻ thành phẩm, nhóm hàng, tồn Tết và dải sức khoẻ: mã KHÔNG có hệ số
+  thùng, tồn ròng của mã (cộng các kho của phạm vi) > 0, theo từng đơn vị kho (_in_stock_no_factor →
+  boxes_without_carton_in_stock / items_without_carton_in_stock; sức khoẻ: without_carton_by_uom). Thùng chỉ tính cho
+  đơn vị "đóng thùng" (_carton_units, MỘT luật cho mọi khối và dải sức khoẻ): đơn vị có mã thành phẩm còn hàng khai thùng,
+  hoặc đơn vị duy nhất của thành phẩm; khối ở đơn vị khác (Kg không mã nào đóng thùng) chỉ có số lượng, không "chưa khai"
+  — như kho_han.theo_dvt. boxes_without_carton_factor của khối vẫn là phần RÒNG có dấu của
+  kho.carton_total (Σ số lượng = Σ thùng × hệ số + phần ròng) — mã tồn âm là tồn âm, không phải hàng nằm chờ quy thùng.
 - K2: giá trị ngày D = Σ SLE.stock_value_difference (is_cancelled = 0, sle.company) có posting_date ≤ D; 12 cuối tháng
   đã qua + hôm nay + đầu năm tài chính + cùng kỳ năm trước. Kiểm: Σ mọi svd (cả tương lai) = Σ Bin (ledger_bin_diff).
 - K3: cùng lượt quét, thêm CASE `loai` (đặc tả §4 K3). Tồn đầu tháng = luỹ kế trước tháng, cuối tháng = đầu + Σ loai — đẳng
   thức đúng tuyệt đối vì cùng các dòng sổ. "ban" là giá vốn hàng XUẤT bán (≈ gộp: phiếu trả hàng NPP/MT/du lịch không
-  nhập kho qua hoá đơn — hàng về bằng phiếu nhập riêng, nằm ở "nhap_khac").
+  nhập kho qua hoá đơn — hàng về bằng phiếu nhập riêng, nằm ở "nhap_khac"). "kiem_ke_sx" = mọi phiếu kho mang
+  custom_kiem_ke ở MỌI kho (gồm phiếu bù tồn không lô âm về 0 ở kho khác, D191) theo posting_date; "kiem_ke_ch" = MỌI
+  Stock Reconciliation (trừ đầu kỳ / Adjustment Entry) ở mọi kho — nhãn "phiếu kiểm kho (cửa hàng & kho khác)", không
+  phải chỉ cửa hàng. Trang Kiểm kê (K10) tính kiểm kê sx theo ngày hiệu lực lần kiểm (C7) → hai số chỉ lệch do phiếu ghi
+  sổ khác tháng với ngày kiểm (phiếu bù ghi lùi, chốt sổ lùi).
 - K4: DOI = giá trị tồn ở kho bán được / (giá vốn xuất bán W ngày / W); W = kho_doi_days. Truyền thống luôn tính; Tết chỉ
   tính trong giai đoạn 'ban' (giai đoạn theo đặc tả ERP §5.2 — KHÔNG dùng sx_season()[0]); tet_season lỗi → phase None.
 - K5: mã có tồn bán được > 0 (trừ nhóm Tết): ngày chưa xuất = hôm nay − (lần xuất cuối hoặc lần nhập đầu). Xuất = bán
@@ -58,7 +74,7 @@ ROLE_BUCKETS = (
 	("cua_hang", "Cửa hàng", ("cua_hang",)),
 	("di_duong", "Hàng đi đường", ("di_duong",)),
 	("san_xuat", "Kho sản xuất", ("xuong", "btp", "nvl")),          # xưởng, bán thành phẩm, nguyên vật liệu
-	("khong_ban", "Không bán được", ("tra_ve", "cach_ly")),        # hàng trả về, cách ly
+	("khong_ban", "Kho trả về & cách ly", ("tra_ve", "cach_ly")),  # theo KHO, không theo hàng: hết hạn / thu hồi ở trang Hạn dùng
 	("khac", "Kho khác", ("khac",)),
 )
 # Tách nhóm "Khác" theo custom_sx_nhom của sx (chỉ tiền — các loại này khác đơn vị).
@@ -76,8 +92,9 @@ LOAI = (
 		"tăng, nguyên liệu giảm)"),
 	("nhap_khac", "Nhập khác, hàng trả", "Phiếu nhập khác, gồm hàng khách trả được nhập lại kho"),
 	("xuat_khac", "Xuất huỷ, mẫu, khác", "Phiếu xuất khác: huỷ hàng, hàng mẫu, biếu tặng…"),
-	("kiem_ke_sx", "Kiểm kê kho sản xuất", "Chênh lệch kiểm kê của hệ thống sản xuất (theo ngày ghi sổ)"),
-	("kiem_ke_ch", "Kiểm kê cửa hàng", "Chênh lệch kiểm kê cửa hàng / kho khác"),
+	("kiem_ke_sx", "Kiểm kê sản xuất", "Chênh lệch các lần kiểm kê của hệ thống sản xuất, ở mọi kho có phiếu (theo ngày ghi sổ)"),
+	("kiem_ke_ch", "Kiểm kê bằng phiếu kiểm kho (cửa hàng & kho khác)", "Mọi phiếu kiểm kho (Stock Reconciliation) ở mọi kho: cửa "
+		"hàng, kho thành phẩm, kho trả về… (không gồm phiếu tồn đầu khai báo)"),
 	("don_sx", "Dọn tồn (sản xuất)", "Phiếu dọn tồn âm / tồn không lô của hệ thống sản xuất"),
 	("khac", "Điều chỉnh khác", "Điều chỉnh giá trị và chứng từ kho khác"),
 )
@@ -99,8 +116,8 @@ def _qty(v) -> float:
 class _Ctx:
 	"""Số dùng chung giữa các khối của một lượt get_overview — tính lười, lỗi ở đâu chỉ khối đó tắt (safe_block)."""
 
-	def __init__(self, co, today):
-		self.co, self.today, self._m = co, today, {}
+	def __init__(self, co, today, refresh=0):
+		self.co, self.today, self.refresh, self._m = co, today, cint(refresh), {}
 
 	def _get(self, key, fn):
 		if key not in self._m:
@@ -126,6 +143,20 @@ class _Ctx:
 	@property
 	def phase(self):
 		return self._get("phase", lambda: tet_phase(self.today))
+
+	@property
+	def tp_stock(self):
+		"""{mã: …} thành phẩm có tồn ròng > 0 ở kho ngoài trả về & cách ly (cộng các kho) — cơ sở của dải sức khoẻ."""
+		return self._get("tp_stock", lambda: {c: x for c, x in _per_item([r for r in self.bins
+			if r.sellable and r.item_code in self.tp[0]]).items() if x.qty > kho.EPS})
+
+	@property
+	def tp_factors(self):
+		return self._get("tp_factors", lambda: carton_factors(self.tp_stock))
+
+	@property
+	def carton_units(self):
+		return self._get("carton_units", lambda: _carton_units(self.tp_stock, self.tp_factors))
 
 
 # ─── Giai đoạn mùa Tết (đặc tả ERP §5.2) ─────────────────────────────────────
@@ -173,15 +204,46 @@ def _per_item(rows) -> dict:
 	return out
 
 
-def _uom_block(items: dict, factors: dict) -> dict:
-	"""Số lượng + thùng của một nhóm mã: chỉ khi MỌI mã có tồn cùng một đơn vị kho (không cộng Hộp với Kg)."""
+def _in_stock_no_factor(items: dict, factors: dict) -> list:
+	"""Mã KHÔNG có hệ số thùng mà tồn ròng của mã (cộng các kho của phạm vi) > 0 — MỘT cơ sở cho mọi dòng "chưa khai quy
+	cách thùng" trên màn (thẻ thành phẩm, nhóm hàng, tồn Tết, dải sức khoẻ). Mã tồn ròng âm là tồn âm (trang Hạn dùng &
+	tồn âm), không phải hàng đang nằm chờ quy ra thùng."""
+	return [x for c, x in items.items() if not factors.get(c) and x.qty > kho.EPS]
+
+
+def _carton_units(tp_stock: dict, factors: dict) -> set:
+	"""Đơn vị kho "đóng thùng" — MỘT luật cho mọi khối (thẻ thành phẩm, nhóm hàng, tồn Tết) và dải sức khoẻ: đơn vị có ít
+	nhất một mã thành phẩm còn hàng (tp_stock) khai quy cách thùng, hoặc là đơn vị DUY NHẤT của thành phẩm còn hàng (site
+	chưa khai thùng cho mã nào → vẫn nhắc). Đơn vị khác (Kg, Gói… không mã thành phẩm nào đóng thùng; đơn vị chỉ có ở vật
+	tư) không tính thùng, không phải "chưa khai quy cách thùng" — như kho_han.theo_dvt."""
+	by_u: dict = {}
+	for c, x in tp_stock.items():
+		by_u.setdefault(x.stock_uom, []).append(c)
+	if len(by_u) == 1:
+		return set(by_u)
+	return {u for u, cs in by_u.items() if any(factors.get(c) for c in cs)}
+
+
+NO_CARTON = {"cartons": None, "boxes_without_carton_factor": None, "items_without_carton_factor": None,
+	"boxes_without_carton_in_stock": None, "items_without_carton_in_stock": None}
+
+
+def _uom_block(items: dict, factors: dict, carton_units: set) -> dict:
+	"""Số lượng + thùng của một nhóm mã: chỉ khi MỌI mã có tồn cùng một đơn vị kho (không cộng Hộp với Kg). Thùng chỉ khi
+	đơn vị đó đóng thùng (_carton_units — cùng luật dải sức khoẻ; đơn vị khác: số lượng, các trường thùng None).
+	cartons / boxes_without_carton_factor / items_without_carton_factor = kho.carton_total (RÒNG, có dấu: Σ số lượng
+	= Σ thùng × hệ số + phần ròng); boxes_without_carton_in_stock / items_without_carton_in_stock = phần màn hiện là "chưa
+	khai quy cách thùng" (_in_stock_no_factor — cùng số với dải sức khoẻ)."""
 	live = [x for x in items.values() if abs(x.qty) > kho.EPS]
 	uom = kho.one_uom(live)
 	if not uom:
-		return {"qty": None, "uom": None, "cartons": None, "boxes_without_carton_factor": None,
-			"items_without_carton_factor": None}
+		return {"qty": None, "uom": None, **NO_CARTON}
+	if uom not in carton_units:
+		return {"qty": _qty(sum(x.qty for x in live)), "uom": uom, **NO_CARTON}
 	ct = kho.carton_total({x.item_code: x.qty for x in live}, factors)
-	return {"qty": _qty(sum(x.qty for x in live)), "uom": uom, **ct}
+	miss = _in_stock_no_factor(items, factors)
+	return {"qty": _qty(sum(x.qty for x in live)), "uom": uom, **ct,
+		"boxes_without_carton_in_stock": _qty(sum(x.qty for x in miss)), "items_without_carton_in_stock": len(miss)}
 
 
 def _top(items, factors, n=TOP_N) -> list:
@@ -210,6 +272,7 @@ def _value(ctx: _Ctx) -> dict:
 		if r.qty > kho.EPS:
 			w["items"].add(r.item_code)
 	by_role = []
+	known = {w.role for w in whs.values()}  # vai trò có ít nhất một kho lá của công ty (kể cả kho đang trống)
 	for key, label, roles in ROLE_BUCKETS:
 		rows = [r for r in bins if r.role in roles]
 		v = sum(r.value for r in rows)
@@ -220,9 +283,9 @@ def _value(ctx: _Ctx) -> dict:
 				wl.append({"name": name, "label": info.label if info else name, "role": info.role if info else "khac",
 					"disabled": bool(info.disabled) if info else False, "value": _money(w["value"]), "items": len(w["items"])})
 		by_role.append({"key": key, "label": label, "value": _money(v), "pct": pct(v, total),
-			"sellable": key != "khong_ban",
-			"roles": [{"role": ro, "label": kho.ROLE_LABELS[ro], "value": _money(sum(r.value for r in rows if r.role == ro))}
-				for ro in roles],
+			"sellable": key != "khong_ban", "configured": any(ro in known for ro in roles),
+			"roles": [{"role": ro, "label": kho.ROLE_LABELS[ro], "value": _money(sum(r.value for r in rows if r.role == ro)),
+				"configured": ro in known} for ro in roles],
 			"warehouses": sorted(wl, key=lambda x: (-x["value"], x["label"]))})
 
 	# Nhóm hàng (cây).
@@ -232,7 +295,7 @@ def _value(ctx: _Ctx) -> dict:
 		its = _per_item(rows)
 		by_group.append({"key": g, "label": labels[g], "value": _money(sum(r.value for r in rows)),
 			"value_sellable": _money(sum(r.value for r in rows if r.sellable)), "items": sum(1 for x in its.values() if x.qty > kho.EPS),
-			**_uom_block(its, factors)})
+			**_uom_block(its, factors, ctx.carton_units)})
 	other_split = []
 	for key, label in OTHER_SPLIT:
 		v = sum(r.value for r in bins if r.group_key == "other" and _other_key(r.sx_nhom) == key)
@@ -242,7 +305,7 @@ def _value(ctx: _Ctx) -> dict:
 	tp_set, tp_src = ctx.tp
 	tp_items = _per_item([r for r in bins if r.sellable and r.item_code in tp_set])
 	tp = {"source": tp_src, "value": _money(sum(x.value for x in tp_items.values())),
-		"items": sum(1 for x in tp_items.values() if x.qty > kho.EPS), **_uom_block(tp_items, factors)}
+		"items": sum(1 for x in tp_items.values() if x.qty > kho.EPS), **_uom_block(tp_items, factors, ctx.carton_units)}
 
 	# Kho thành phẩm = đúng con số màn Thời gian thực (cây con của _wh()). Chỉ lấy GIÁ TRỊ của live: số hộp / thùng của live
 	# cộng mọi đơn vị trong kho (Hộp + Kg) nên không đưa ra. live bỏ dòng Bin số lượng 0 → so cùng gốc: khu vực TP = live +
@@ -278,13 +341,25 @@ def _value(ctx: _Ctx) -> dict:
 	}
 
 
+# ─── Cache theo ngày cho các lượt quét cả lịch sử ────────────────────────────
+def _daily(ctx: "_Ctx", name: str, params: dict, fn):
+	"""Kết quả một lượt quét cả sổ (S4 giá vốn bán, S5 lần xuất cuối, T11 hoá đơn chưa trừ kho) cache THEO NGÀY như
+	get_trend: khoá = tên + hôm nay + công ty + `params`, TREND_TTL; ctx.refresh (Làm mới) tính lại. Giá trị phải qua được
+	JSON (ngày → chuỗi ISO): frappe.cache thật pickle, bộ thử json."""
+	key = cache_key(f"kho_ton.{name}", {"today": iso(ctx.today), "co": ctx.co, **params})
+	return cached(key, lambda: {"v": fn()}, ttl=TREND_TTL, refresh=ctx.refresh)["v"]
+
+
 # ─── K4. Số ngày tồn kho ─────────────────────────────────────────────────────
 def _cogs(co, w_from, today) -> dict:
-	"""Giá vốn hàng xuất bán theo nhóm (S4): −Σ svd của SLE Sales Invoice / Delivery Note trong [w_from, today]."""
+	"""Giá vốn hàng xuất bán theo nhóm (S4): −Σ svd của SLE Sales Invoice / Delivery Note trong [w_from, today].
+	LEFT JOIN Item (như _scan) để sổ đi trước: JOIN thường cho MariaDB đi từ Item (chỉ mục item_group) rồi đọc MỌI dòng
+	sổ của từng mã qua chỉ mục (item_code, warehouse, posting_datetime, creation) trước khi lọc loại phiếu / ngày (đo:
+	25 s so với 1,6 s trên sổ ~1 triệu dòng). Mã đã xoá rơi vào 'other' — DOI chỉ đọc tet / traditional."""
 	rows = frappe.db.sql(
 		f"""SELECT {kho.GROUP_CASE} AS group_key, -SUM(sle.stock_value_difference) AS cogs
 		FROM `tabStock Ledger Entry` sle
-		JOIN `tabItem` i ON i.name = sle.item_code
+		LEFT JOIN `tabItem` i ON i.name = sle.item_code
 		{kho.group_join('i')}
 		WHERE sle.is_cancelled = 0 AND sle.company = %(co)s
 			AND sle.voucher_type IN ('Sales Invoice', 'Delivery Note')
@@ -301,7 +376,7 @@ def _doi(ctx: _Ctx) -> dict:
 	w = kho.kho_int("kho_doi_days")
 	today = ctx.today
 	w_from = getdate(add_days(today, -(w - 1)))
-	cogs = _cogs(ctx.co, w_from, today)
+	cogs = _daily(ctx, "cogs", {"from": iso(w_from)}, lambda: _cogs(ctx.co, w_from, today))
 	sell = {g: sum(r.value for r in ctx.bins if r.sellable and r.group_key == g) for g in GROUPS}
 	phase = ctx.phase
 	trad_v, trad_c = sell["traditional"], cogs.get("traditional", 0.0)
@@ -336,7 +411,20 @@ def _last_moves(co, codes, today) -> dict:
 		LEFT JOIN `tabStock Entry` se ON sle.voucher_type = 'Stock Entry' AND se.name = sle.voucher_no
 		WHERE sle.is_cancelled = 0 AND sle.company = %(co)s AND sle.item_code IN %(codes)s AND sle.posting_date <= %(today)s
 		GROUP BY sle.item_code""", {"co": co, "codes": codes, "today": today, **kho.adjust_params()}, as_dict=True)
-	return {r.item_code: (r.last_sale, r.last_used, r.first_in) for r in rows}
+	return {r.item_code: [iso(r.last_sale), iso(r.last_used), iso(r.first_in)] for r in rows}
+
+
+def _moves(ctx: _Ctx, codes) -> dict:
+	"""_last_moves cache theo ngày (_daily). Khoá KHÔNG theo tập mã (tập mã còn hàng đổi liên tục → cache vô ích): lượt
+	dựng nhớ tập mã đã tính; mã mới vào phạm vi sau đó (vd mới nhập hôm nay) tính riêng — ít mã, đi chỉ mục item_code."""
+	codes = list(codes)
+	got = _daily(ctx, "last_moves", {}, lambda: {"codes": sorted(codes), "moves": _last_moves(ctx.co, codes, ctx.today)})
+	have = set(got["codes"])
+	moves = dict(got["moves"])
+	miss = [c for c in codes if c not in have]
+	if miss:
+		moves.update(_last_moves(ctx.co, miss, ctx.today))
+	return moves
 
 
 def _bucket(idle: int) -> str:
@@ -373,7 +461,7 @@ def _slow(ctx: _Ctx) -> dict:
 	today = ctx.today
 	sell = _per_item([r for r in ctx.bins if r.sellable and r.group_key != "tet"])
 	scope = {c: x for c, x in sell.items() if x.qty > kho.EPS}
-	moves = _last_moves(ctx.co, scope, today)
+	moves = _moves(ctx, scope)
 	tp_set, tp_src = ctx.tp
 	rows = []
 	for code, x in scope.items():
@@ -406,7 +494,7 @@ def _tet_stock(ctx: _Ctx) -> dict:
 	factors = carton_factors(its)
 	return {"available": True, "phase": phase, "label": PHASE_LABELS.get(phase, "Tồn hàng Tết"),
 		"group": kho.group_labels()["tet"], "value": _money(sum(x.value for x in its.values())),
-		"items": sum(1 for x in its.values() if x.qty > kho.EPS), **_uom_block(its, factors),
+		"items": sum(1 for x in its.values() if x.qty > kho.EPS), **_uom_block(its, factors, ctx.carton_units),
 		"top": _top([x for x in its.values() if x.qty > kho.EPS], factors, 5)}
 
 
@@ -434,11 +522,18 @@ def _single(doctype, field):
 
 
 def _reposts(co):
+	"""Đang chờ (Queued / In Progress — bộ lập lịch đang chạy) và LỖI (Failed — bộ lập lịch không chạy lại; giá trị sổ kho /
+	Bin sau ngày đó sai tới khi kế toán bấm chạy lại, ERPNext v16 restart_reposting)."""
 	if not frappe.db.table_exists("Repost Item Valuation"):
 		return None
-	r = frappe.db.sql("""SELECT COUNT(*) AS n, MIN(posting_date) AS since FROM `tabRepost Item Valuation`
-		WHERE docstatus = 1 AND status IN ('Queued', 'In Progress') AND company = %(co)s""", {"co": co}, as_dict=True)[0]
-	return {"_merge": True, "pending_reposts": cint(r.n), "repost_since": iso(r.since)}
+	r = frappe.db.sql("""SELECT SUM(status IN ('Queued', 'In Progress')) AS n,
+			MIN(CASE WHEN status IN ('Queued', 'In Progress') THEN posting_date END) AS since,
+			SUM(status = 'Failed') AS nf, MIN(CASE WHEN status = 'Failed' THEN posting_date END) AS fsince
+		FROM `tabRepost Item Valuation`
+		WHERE docstatus = 1 AND status IN ('Queued', 'In Progress', 'Failed') AND company = %(co)s""", {"co": co},
+		as_dict=True)[0]
+	return {"_merge": True, "pending_reposts": cint(r.n), "repost_since": iso(r.since), "failed_reposts": cint(r.nf),
+		"failed_repost_since": iso(r.fsince)}
 
 
 def _pos_unconsolidated(co):
@@ -493,12 +588,26 @@ def _kho_tp_mismatch():
 
 
 def _no_carton(ctx: _Ctx):
-	tp_set, _src = ctx.tp
-	its = {c: x for c, x in _per_item([r for r in ctx.bins if r.sellable and r.item_code in tp_set]).items() if x.qty > kho.EPS}
-	f = carton_factors(its)
-	miss = [x for c, x in its.items() if not f.get(c)]
-	return {"_merge": True, "items_without_carton_factor": len(miss),
-		"boxes_without_carton_factor": _qty(sum(x.qty for x in miss))}
+	"""Mã thành phẩm còn hàng ở kho bán được chưa khai quy cách thùng — cùng cơ sở với thẻ thành phẩm
+	(_in_stock_no_factor), THEO TỪNG ĐƠN VỊ KHO (không cộng Hộp với Kg). Chỉ đơn vị đóng thùng (ctx.carton_units — CÙNG luật
+	với thẻ thành phẩm / nhóm hàng / tồn Tết: Kg, Gói… không mã nào khai thùng thì bỏ, trừ khi là đơn vị duy nhất).
+	boxes_without_carton_factor chỉ có số khi còn đúng MỘT đơn vị (uom_without_carton_factor), lẫn đơn vị → None, chi tiết
+	ở without_carton_by_uom."""
+	its, f, units = ctx.tp_stock, ctx.tp_factors, ctx.carton_units
+	by_u: dict = {}
+	for c, x in its.items():
+		by_u.setdefault(x.stock_uom, {})[c] = x
+	rows = []
+	for u, xs in sorted(by_u.items(), key=lambda kv: str(kv[0])):
+		if u not in units:
+			continue
+		miss = _in_stock_no_factor(xs, f)
+		if miss:
+			rows.append({"uom": u, "items": len(miss), "qty": _qty(sum(x.qty for x in miss))})
+	one = rows[0] if len(rows) == 1 else None
+	return {"_merge": True, "items_without_carton_factor": sum(r["items"] for r in rows),
+		"boxes_without_carton_factor": one["qty"] if one else (0.0 if not rows else None),
+		"uom_without_carton_factor": one["uom"] if one else None, "without_carton_by_uom": rows}
 
 
 def _stranded(ctx: _Ctx):
@@ -514,7 +623,7 @@ def _health(ctx: _Ctx) -> dict:
 	_soft(h, "allow_negative_stock", lambda: bool(cint(_single("Stock Settings", "allow_negative_stock"))))
 	_soft(h, "allow_negative_stock_for_batch", lambda: bool(cint(_single("Stock Settings", "allow_negative_stock_for_batch"))))
 	_soft(h, "pos_unconsolidated", lambda: _pos_unconsolidated(co))
-	_soft(h, "si_no_stock_relief", lambda: _si_no_stock_relief(co, today))
+	_soft(h, "si_no_stock_relief", lambda: _daily(ctx, "si_no_stock_relief", {}, lambda: _si_no_stock_relief(co, today)))
 	_soft(h, "tp_set_mismatch", lambda: _tp_mismatch(ctx))
 	_soft(h, "groups", lambda: {"_merge": True, "group_mode": "subtree",
 		"group_has_children": kho.groups_meta()["has_children"]})
@@ -540,6 +649,8 @@ def get_overview(refresh=0):
 
 	{available, meta: {asof, company, groups, groups_found, group_mode, settings, basis}, value, doi, slow, tet_stock, health}
 	health không có future_value / ledger_bin_diff — hai mục đó ở get_trend().trend (một lượt quét sổ, cache 6 giờ).
+	Toàn bộ cache cache_ttl (khoá hôm nay); bên trong, ba lượt quét cả lịch sử (giá vốn bán, lần xuất cuối, hoá đơn chưa
+	trừ kho) cache theo ngày (_daily, TREND_TTL) — refresh=1 tính lại tất cả.
 	"""
 	_guard("ton-kho")
 	today = kho.today()
@@ -548,7 +659,7 @@ def get_overview(refresh=0):
 		co = _company_or_none()
 		if not co:
 			return {"available": False, "meta": {"asof": iso(today), "reason": "no_company"}}
-		ctx = _Ctx(co, today)
+		ctx = _Ctx(co, today, refresh)
 		gm = safe_block("kho_ton.groups", kho.groups_meta)
 		return {
 			"available": True,

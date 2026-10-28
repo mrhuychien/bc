@@ -11,6 +11,13 @@ Bẫy K5 thêm sau review: TP chỉ sản xuất (dòng NHẬN của Manufacture
 actual_qty 0 vẫn là lần nhập đầu), mã chỉ còn giá trị (tồn bán được = 0 → ngoài phạm vi), "Hạch toán bù nợ BOM" phải ở ĐẦU
 diễn giải và là phiếu xuất NVL (Material Issue); phiếu ghi đúng HÔM NAY (điểm hôm nay gồm, future_value không), dòng sổ
 công ty khác trong cửa sổ DOI / ghi ngày tương lai / là lần bán cuối, hàng Tết nằm kho trả về (không vào tồn hàng Tết).
+Review chéo lần 2: "chưa khai quy cách thùng" một cơ sở cho thẻ thành phẩm và dải sức khoẻ (mã tồn âm không kéo số xuống,
+XC-5 / UX-9), theo từng đơn vị — không cộng Hộp / Gói / Kg, bỏ đơn vị không đóng thùng (NUM-1 / XR-COMP-1); tính lại giá vốn
+LỖI (Failed, XR-REAL-3); BC Settings kho_doi_days / kho_slow_days / kho_dead_days dùng thật + 0 / trống → mặc định
+(XR-COMP-4); giá vốn bán đi từ sổ với chỉ mục thật v16 (EXPLAIN) và ba lượt quét cả lịch sử cache theo ngày, Làm mới tính
+lại, mã mới vào phạm vi tính ngay (PERF-1); nhãn theo kho (UX-3), nhãn kiểm kê (UX-1), kho trả về chưa khai (UX-11c).
+Review lần 3: đơn vị "đóng thùng" MỘT luật cho thẻ / nhóm hàng / tồn Tết và dải sức khoẻ — khối chỉ có Kg (không mã
+thành phẩm Kg nào khai thùng) không hiện "0 thùng + … chưa khai" khi Hộp có thùng ở nơi khác (XR-COMP-1 / NUM-1 còn lại).
 
 Chạy: BC_TEST_DB=bc_test_kho_ton python3 -B test_kho_ton.py
 seed(k) chỉ THÊM dữ liệu tên TON-… lên base(k) (để gộp seed cho kiểm giao diện): reset(); bc_settings(); k = K(); base(k);
@@ -170,9 +177,12 @@ def seed(k: K):
 
 	# ── Sức khoẻ số liệu ──
 	single("Stock Settings", allow_negative_stock=1, allow_negative_stock_for_batch=0)
+	# Failed: bộ lập lịch v16 không chạy lại (chỉ Queued / In Progress) → mục riêng; nháp / huỷ / công ty khác không tính.
 	for n, ds, st, d, co in [("TON-RIV-1", 1, "Queued", "2026-10-26", "HGC"), ("TON-RIV-2", 1, "In Progress", "2026-10-20", "HGC"),
 			("TON-RIV-3", 1, "Completed", "2026-10-01", "HGC"), ("TON-RIV-4", 0, "Queued", "2026-09-01", "HGC"),
-			("TON-RIV-5", 1, "Queued", "2026-09-02", "RV")]:
+			("TON-RIV-5", 1, "Queued", "2026-09-02", "RV"), ("TON-RIV-6", 1, "Failed", "2026-09-15", "HGC"),
+			("TON-RIV-7", 1, "Failed", "2026-08-01", "RV"), ("TON-RIV-8", 0, "Failed", "2026-08-02", "HGC"),
+			("TON-RIV-9", 2, "Failed", "2026-08-03", "HGC"), ("TON-RIV-10", 1, "Skipped", "2026-08-04", "HGC")]:
 		insert("Repost Item Valuation", name=n, docstatus=ds, status=st, posting_date=d, company=co)
 	for n, ds, ci, co in [("TON-POS-1", 1, "", "HGC"), ("TON-POS-2", 1, None, "HGC"), ("TON-POS-3", 1, "TON-SI-07", "HGC"),
 			("TON-POS-4", 0, "", "HGC"), ("TON-POS-5", 1, "", "RV"), ("TON-POS-6", 2, "", "HGC")]:
@@ -227,7 +237,7 @@ def near(a, b, eps=0.005):
 
 if __name__ == "__main__":
 	c = Check()
-	main_seed()
+	km = main_seed()   # giữ K của seed: thêm sổ sau finalize phải nối số dòng sổ (SLE-…) của nó
 	from bc.api import kho_ton
 
 	d = ov()
@@ -261,6 +271,11 @@ if __name__ == "__main__":
 	kb = by(v["by_role"], "key", "khong_ban")
 	c("K1 không bán được tách trả về / cách ly", [(x["role"], x["value"]) for x in kb["roles"]] == [("tra_ve", 1_130_000), ("cach_ly", 150_000)],
 		kb["roles"])
+	# UX-3: khu vực đặt tên theo KHO (hàng hết hạn / thu hồi ở kho thường không nằm ở đây — trang Hạn dùng); UX-11c: có kho
+	# trả về / cách ly (SX Settings) → configured.
+	c("UX-3/UX-11c K1 khu vực 'Kho trả về & cách ly' (không phải 'Không bán được'), đã xác định kho từng vai trò",
+		(kb["label"], kb.get("configured"), [x.get("configured") for x in kb["roles"]]) == ("Kho trả về & cách ly", True, [True, True]),
+		(kb["label"], kb.get("configured"), kb["roles"]))
 	kc = by(v["by_role"], "key", "khac")
 	c("K1 kho ngừng dùng còn hàng nằm ở Kho khác, có cờ ngừng dùng", [(w["label"], w["value"], w["disabled"]) for w in kc["warehouses"]]
 		== [("Kho cũ", 150_000, True)], kc["warehouses"])
@@ -299,6 +314,8 @@ if __name__ == "__main__":
 	c("K1 thành phẩm (kho bán được): 1.374 hộp, 70,5 thùng + 285 hộp chưa khai, 38.330.000",
 		(tp["qty"], tp["uom"], tp["cartons"], tp["boxes_without_carton_factor"], tp["value"], tp["items"], tp["source"])
 		== (1374, "Hộp", 70.5, 285, 38_330_000, 7, "sx"), tp)
+	c("XC-5/UX-9 K1 thành phẩm: phần chưa khai quy cách thùng có hàng = TRAD2 285 hộp (1 mã) — cùng cơ sở với dải sức khoẻ",
+		(tp.get("boxes_without_carton_in_stock"), tp.get("items_without_carton_in_stock")) == (285, 1), tp)
 	tops = [(x["item_code"], x["value"]) for x in v["top"]]
 	c("K1 top giá trị: mã ẩn (NL3) bỏ khỏi danh sách nhưng vẫn trong tổng", tops == [("TON-NL1", 44_000_000), ("TON-QUA1", 12_000_000),
 		("TON-TRAD1", 10_580_000), ("TON-NL2", 8_005_000), ("TON-TET1", 8_000_000), ("TON-BTP1", 3_210_000), ("TON-TRAD3", 3_150_000),
@@ -395,6 +412,11 @@ if __name__ == "__main__":
 	c("health: nhóm Tết có nhóm con", h["group_mode"] == "subtree" and h["group_has_children"] == {"tet": True, "traditional": False}, h)
 	c("health: công ty / kho TP khớp sx", (h["company_mismatch"], h["kho_tp_mismatch"]) == (False, False), h)
 	c("health: 1 mã TP chưa khai quy cách thùng (285 hộp)", (h["items_without_carton_factor"], h["boxes_without_carton_factor"]) == (1, 285), h)
+	c("NUM-1 health: phần chưa khai quy cách thùng theo từng đơn vị kho", (h.get("uom_without_carton_factor"), h.get("without_carton_by_uom"))
+		== ("Hộp", [{"uom": "Hộp", "items": 1, "qty": 285}]), h)
+	# Failed: RIV-6 (HGC, 15/09) — RIV-7 công ty RV, RIV-8 nháp, RIV-9 huỷ, RIV-10 Skipped không tính; Queued / In Progress giữ 2 từ 20/10.
+	c("XR-REAL-3 health: 1 lượt tính lại giá vốn LỖI từ 15/09 (bộ lập lịch không chạy lại), tách khỏi 2 lượt đang chờ",
+		(h.get("failed_reposts"), h.get("failed_repost_since"), h["pending_reposts"], h["repost_since"]) == (1, "2026-09-15", 2, "2026-10-20"), h)
 	c("health: 2 dòng chỉ còn giá trị (BTP1 xưởng 10.000 + NL4 5.000)", (h["stranded_value_rows"], h["stranded_value"]) == (2, 15_000), h)
 
 	# ═══ K2. Xu hướng ═══
@@ -469,6 +491,11 @@ if __name__ == "__main__":
 		17_760_000, 16_810_000), flows("2026-10", "traditional"))
 	c("K3 nhãn đủ 12 loại", [x["key"] for x in T["meta"]["loai"]] == ["ton_dau", "mua", "ban", "nhap_tam", "bu_no_bom", "noi_bo", "nhap_khac",
 		"xuat_khac", "kiem_ke_sx", "kiem_ke_ch", "don_sx", "khac"])
+	lb = {x["key"]: x["label"] for x in T["meta"]["loai"]}
+	# UX-1 / XC-1: kiem_ke_ch = MỌI Stock Reconciliation (cửa hàng, kho TP, kho trả về…) — không gọi là "cửa hàng"; kiem_ke_sx = mọi
+	# phiếu của lần kiểm kê sx ở mọi kho (gồm phiếu bù tồn âm ở kho khác) — không gọi là "kho sản xuất".
+	c("UX-1 K3 nhãn: 'Kiểm kê bằng phiếu kiểm kho (cửa hàng & kho khác)' / 'Kiểm kê sản xuất'",
+		(lb["kiem_ke_ch"], lb["kiem_ke_sx"]) == ("Kiểm kê bằng phiếu kiểm kho (cửa hàng & kho khác)", "Kiểm kê sản xuất"), lb)
 
 	# ═══ Riêng tư + import cấm ═══
 	dump = json.dumps([d, T], ensure_ascii=False, default=str)
@@ -490,6 +517,146 @@ if __name__ == "__main__":
 			first = n.body[1] if isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant) else n.body[0]
 			guards.append((n.name, ast.unparse(first)))
 	c("mọi method whitelisted mở đầu _guard('ton-kho')", guards == [("get_overview", "_guard('ton-kho')"), ("get_trend", "_guard('ton-kho')")], guards)
+
+	# ═══ Thùng chưa khai: MỘT cơ sở cho thẻ thành phẩm và dải sức khoẻ (XC-5 / UX-9), theo từng đơn vị (NUM-1 / XR-COMP-1) ═══
+	# Sổ đã finalize → Bin ghi thẳng (chỉ K1 / sức khoẻ đọc Bin); sx nhớ items_tp theo request → xoá nhớ sau khi thêm mã.
+	kx = km
+	kx.item("TON-XN1", "Bánh âm XN1", G_TRAD, custom_sx_nhom="TP")       # Hộp, chưa khai thùng, tồn ÂM ở cửa hàng
+	kx.item("TON-XN2", "Bánh âm XN2", G_TRAD, custom_sx_nhom="TP")       # Hộp, chưa khai thùng, tồn ÂM ở kho TP
+	insert("Bin", name="BIN-TON-XN1", item_code="TON-XN1", warehouse=CH1, actual_qty=-6, stock_value=-60_000, valuation_rate=10_000,
+		company="HGC")
+	insert("Bin", name="BIN-TON-XN2", item_code="TON-XN2", warehouse=TP, actual_qty=-2, stock_value=-20_000, valuation_rate=10_000,
+		company="HGC")
+	frappe.local.__dict__.pop("sx_nho", None)
+	dx = ov()
+	tx, hx = dx["value"]["tp"], dx["health"]
+	# Thẻ TP (kho bán được): 1.374 − 6 − 2 = 1.366 hộp; thùng 70,5 (XN không hệ số); phần RÒNG chưa khai = TRAD2 285 − 6 − 2 = 277
+	# (3 mã khác 0) — Σ hộp = Σ thùng × hệ số + 277 như kho.carton_total. Phần màn hiện "chưa khai quy cách thùng" = mã không hệ
+	# số có tồn > 0: chỉ TRAD2 285 hộp (1 mã) — đúng số dải sức khoẻ (trước sửa: thẻ 277 / sức khoẻ 285, hai số cho một việc).
+	c("XC-5/UX-9 mã TP chưa khai thùng tồn ÂM: thẻ TP ròng 1.366 hộp / 70,5 thùng / ròng 277 (3 mã); 'chưa khai quy cách thùng' 285 hộp"
+		" (1 mã) = dải sức khoẻ",
+		(tx["qty"], tx["cartons"], tx["boxes_without_carton_factor"], tx["items_without_carton_factor"],
+		tx.get("boxes_without_carton_in_stock"), tx.get("items_without_carton_in_stock"))
+		== (1366, 70.5, 277, 3, 285, 1) and (hx["boxes_without_carton_factor"], hx["items_without_carton_factor"]) == (285, 1),
+		(tx, {k_: hx.get(k_) for k_ in ("items_without_carton_factor", "boxes_without_carton_factor", "without_carton_by_uom")}))
+	kx.item("TON-XK1", "Bột TP XK1", G_GUI, uom="Kg", custom_sx_nhom="TP")     # Kg: không mã Kg nào đóng thùng
+	kx.item("TON-XG1", "Chè gói XG1", G_GUI, uom="Gói", custom_sx_nhom="TP")   # Gói chưa khai thùng
+	kx.item("TON-XG2", "Chè gói XG2", G_GUI, uom="Gói", carton=50, custom_sx_nhom="TP")  # Gói CÓ thùng 50 → đơn vị Gói đóng thùng
+	for n, it, wh, q, val in (("BIN-TON-XK1", "TON-XK1", TP, 12.5, 1_250_000), ("BIN-TON-XG1", "TON-XG1", TP, 208, 208_000),
+			("BIN-TON-XG2", "TON-XG2", CH2, 100, 100_000)):
+		insert("Bin", name=n, item_code=it, warehouse=wh, actual_qty=q, stock_value=val, valuation_rate=val / q, company="HGC")
+	frappe.local.__dict__.pop("sx_nho", None)
+	dm = ov()
+	tm_, hm = dm["value"]["tp"], dm["health"]
+	# TP lẫn Hộp / Kg / Gói → thẻ chỉ tiền: 38.330.000 − 80.000 + 1.250.000 + 208.000 + 100.000 = 39.808.000; 7 + 3 = 10 mã còn hàng.
+	c("NUM-1 thẻ TP lẫn đơn vị: không số lượng / thùng / chưa khai (không cộng Hộp với Kg), 10 mã, 39.808.000",
+		(tm_["qty"], tm_["cartons"], tm_["boxes_without_carton_factor"], tm_.get("boxes_without_carton_in_stock"), tm_["items"], tm_["value"])
+		== (None, None, None, None, 10, 39_808_000), tm_)
+	# Sức khoẻ: Hộp (có mã khai thùng) → TRAD2 285; Gói (XG2 có thùng) → XG1 208; Kg không mã nào đóng thùng → bỏ (không phải thiếu
+	# quy cách). Hai đơn vị → không có một tổng (None). Trước sửa: 3 mã, 285 + 12,5 + 208 = 505,5 "hộp".
+	c("NUM-1/XR-COMP-1 health: 2 mã chưa khai thùng — Gói 208 + Hộp 285 tách đơn vị, bỏ Kg, không tổng chung",
+		(hm["items_without_carton_factor"], hm["boxes_without_carton_factor"], hm.get("uom_without_carton_factor"), hm.get("without_carton_by_uom"))
+		== (2, None, None, [{"uom": "Gói", "items": 1, "qty": 208}, {"uom": "Hộp", "items": 1, "qty": 285}]),
+		{k_: hm.get(k_) for k_ in ("items_without_carton_factor", "boxes_without_carton_factor", "without_carton_by_uom")})
+	xs = ("TON-XN1", "TON-XN2", "TON-XK1", "TON-XG1", "TON-XG2")
+	frappe.db.sql("DELETE FROM `tabBin` WHERE item_code IN %(x)s", {"x": xs})
+	frappe.db.sql("DELETE FROM `tabUOM Conversion Detail` WHERE parent IN %(x)s", {"x": xs})
+	frappe.db.sql("DELETE FROM `tabItem` WHERE name IN %(x)s", {"x": xs})
+	frappe.local.__dict__.pop("sx_nho", None)
+	t0 = ov()["value"]["tp"]
+	c("dọn mã thử thùng: thẻ TP trở lại 1.374 hộp / 285 chưa khai", (t0["qty"], t0.get("boxes_without_carton_in_stock")) == (1374, 285), t0)
+
+	# ═══ XR-COMP-4: BC Settings kho_doi_days / kho_slow_days / kho_dead_days được dùng thật ═══
+	single("BC Settings", kho_doi_days=30, kho_slow_days=10, kho_dead_days=60)
+	ds_ = ov()
+	o_, s_ = ds_["doi"], ds_["slow"]
+	# W = 30 → cửa sổ 28/09–27/10. Giá vốn truyền thống: SI 20/10 600.000 − trả POS 30.000 + DN 26/10 400.000 + SI 26/10 80.000
+	# = 1.050.000 (SI 30/07 ra ngoài; bán huỷ 02/10, RV 10/10 không tính) → 16.680.000 × 30 / 1.050.000 = 476,57 → 476,6 ngày.
+	# Tết: SI 05/10 2.500.000 (chuẩn bị mùa → không tính ngày).
+	c("XR-COMP-4 kho_doi_days = 30: cửa sổ 28/09 → 27/10, giá vốn truyền thống 1.050.000 → 476,6 ngày; Tết 2.500.000",
+		(o_["window_days"], o_["from"], o_["to"], o_["traditional"]["cogs"], o_["traditional"]["days"], o_["tet"]["cogs"])
+		== (30, "2026-09-28", "2026-10-27", 1_050_000, 476.6, 2_500_000), o_)
+	# Ngày chưa xuất (như trên): TRAD1 1, RM1 0 → bình thường; NL2 17, BTP1 30 → chậm (> 10); TRAD2 90, NL1 91, BB1 148, TPK 180,
+	# FG1 240, SR1 391, NL3 412, TRAD3 483 → chết (> 60). Chậm (gồm chết) = 81.095.000 − 10.480.000 − 850.000 = 69.765.000 (10 mã)
+	# → 69.765.000 / 101.100.000 = 69,006% → 69,0; chết = 2,85 + 3,15 + 1,65 + 0,2 + 44 + 4 + 2,2 + 0,5 = 58.550.000 (8 mã) → 57,91% → 57,9.
+	tot_ = s_["total"]
+	c("XR-COMP-4 kho_slow_days = 10 / kho_dead_days = 60: chậm 10 mã 69.765.000 (69,0%), chết 8 mã 58.550.000 (57,9%); meta.settings",
+		(s_["slow_days"], s_["dead_days"], tot_["slow_items"], tot_["slow_value"], tot_["slow_pct"], tot_["dead_items"], tot_["dead_value"],
+		tot_["dead_pct"], ds_["meta"]["settings"]) == (10, 60, 10, 69_765_000, 69.0, 8, 58_550_000, 57.9,
+		{"kho_doi_days": 30, "kho_slow_days": 10, "kho_dead_days": 60, "kho_can_date_ngay": 60}), (s_["slow_days"], s_["dead_days"], tot_))
+	single("BC Settings", kho_doi_days=0, kho_slow_days=None, kho_dead_days=-5)   # 0 / trống / âm → mặc định 90 / 90 / 180
+	dd_ = ov()
+	c("XR-COMP-4 0 / trống / âm → mặc định: cửa sổ 90 ngày (30/07), chậm 7 mã, chết 4 mã",
+		(dd_["doi"]["window_days"], dd_["doi"]["from"], dd_["slow"]["slow_days"], dd_["slow"]["dead_days"], dd_["slow"]["total"]["slow_items"],
+		dd_["slow"]["total"]["dead_items"]) == (90, "2026-07-30", 90, 180, 7, 4), dd_["doi"])
+	single("BC Settings", kho_doi_days=None, kho_dead_days=None)
+
+	# ═══ PERF-1: giá vốn bán đi từ SỔ (không từ Item); ba lượt quét cả lịch sử cache theo ngày, Làm mới tính lại ═══
+	# Chỉ mục THẬT của v16 (stock_ledger_entry.py on_doctype_update + search_index trong JSON; Item.item_group): có chúng thì JOIN
+	# thường làm MariaDB đi từ Item rồi đọc MỌI dòng sổ của từng mã — thấy được ngay trên sổ nhỏ này (đo trên 1 triệu dòng: 25 s).
+	for ddl in ("CREATE INDEX item_warehouse ON `tabStock Ledger Entry` (item_code, warehouse, posting_datetime, creation)",
+			"CREATE INDEX voucher_no_voucher_type ON `tabStock Ledger Entry` (voucher_no, voucher_type)",
+			"CREATE INDEX voucher_type ON `tabStock Ledger Entry` (voucher_type)",
+			"CREATE INDEX item_group ON `tabItem` (item_group)"):
+		frappe.db.sql(ddl)
+	frappe.db.sql("ANALYZE TABLE `tabStock Ledger Entry`, `tabItem`")
+	seen = []
+	real_sql = frappe.db.sql
+
+	def spy(q, *a, **kw):
+		seen.append((q, a[0] if a else kw.get("values")))
+		return real_sql(q, *a, **kw)
+
+	def run_spied(fn):
+		seen.clear()
+		frappe.db.sql = spy
+		try:
+			return fn()
+		finally:
+			frappe.db.__dict__.pop("sql", None)
+
+	def heavy():
+		return [q for q, _ in seen if "tabStock Ledger Entry" in q or "tabSales Invoice" in q]
+
+	run_spied(ov)
+	cq = [(q, v_) for q, v_ in seen if "AS cogs" in q]
+	plan = frappe.db.sql("EXPLAIN " + cq[0][0], cq[0][1], as_dict=True) if cq else []
+	c("PERF-1 giá vốn bán (S4): kế hoạch đi từ sổ kho, Item tra theo khoá chính (không đi từ Item rồi đọc mọi dòng sổ của mã)",
+		bool(plan) and plan[0].table == "sle" and next((r.type for r in plan if r.table == "i"), None) == "eq_ref",
+		[(r.table, r.type, r.key) for r in plan])
+	c("PERF-1 Làm mới (refresh=1) quét lại cả ba: giá vốn bán, lần xuất cuối, hoá đơn chưa trừ kho", len(heavy()) >= 3,
+		[q[:60] for q in heavy()])
+	run_spied(lambda: kho_ton.get_overview())   # cache_ttl = 0 trong bộ thử → dựng lại như khi cache overview hết hạn
+	c("PERF-1 dựng lại overview trong ngày (cache cache_ttl hết hạn, không Làm mới): không quét lại sổ kho / hoá đơn", not heavy(),
+		[q[:60] for q in heavy()])
+	kp = km
+	kp.sale("TON-TRAD3", TP, 1, 15_000, "2026-10-27", name="TON-SI-PERF")   # TRAD3 (chưa từng bán) bán HÔM NAY — chỉ sổ
+	dp = kho_ton.get_overview()
+	t3 = by(dp["slow"]["tp"]["top"], "item_code", "TON-TRAD3")
+	c("PERF-1 trong ngày không Làm mới: giá vốn / lần xuất cuối giữ bản cache (2.050.000; TRAD3 vẫn chưa từng xuất 483 ngày)",
+		dp["doi"]["traditional"]["cogs"] == 2_050_000 and t3 is not None and (t3["never"], t3["idle_days"]) == (True, 483),
+		(dp["doi"]["traditional"], t3))
+	dr = ov()
+	# Làm mới: giá vốn 2.050.000 + 15.000 = 2.065.000 → 16.680.000 × 90 / 2.065.000 = 726,97 → 727,0 ngày; TRAD3 bán hôm nay → 0 ngày,
+	# bình thường → ra khỏi danh sách chậm.
+	c("PERF-1 Làm mới tính lại: giá vốn 2.065.000 → 727,0 ngày; TRAD3 xuất hôm nay rời danh sách chậm",
+		(dr["doi"]["traditional"]["cogs"], dr["doi"]["traditional"]["days"]) == (2_065_000, 727.0)
+		and not by(dr["slow"]["tp"]["top"], "item_code", "TON-TRAD3"), (dr["doi"]["traditional"], dr["slow"]["tp"]["top"]))
+	# Mã MỚI vào phạm vi sau lượt cache (nhập từ 01/01, Bin vừa có): tính riêng ngay, không chờ hết ngày → 299 ngày, tồn chết.
+	kp.item("TON-PERF-OLD", "Bánh PERF cũ", G_TRAD)
+	kp.receipt("TON-PERF-OLD", NVL, 10, 10_000, "2026-01-01", name="TON-PR-PERF")
+	insert("Bin", name="BIN-TON-PERF-OLD", item_code="TON-PERF-OLD", warehouse=NVL, actual_qty=10, stock_value=10_000, valuation_rate=1_000,
+		company="HGC")
+	po = by(kho_ton.get_overview()["slow"]["total"]["top"], "item_code", "TON-PERF-OLD")
+	c("PERF-1 mã mới vào phạm vi giữa ngày: lần nhập đầu 01/01 tính ngay (299 ngày, tồn chết)",
+		po is not None and (po["first_in"], po["idle_days"], po["status"]) == ("2026-01-01", 299, "dead"), po)
+	for v_no in ("TON-SI-PERF", "TON-PR-PERF"):
+		frappe.db.sql("DELETE FROM `tabStock Ledger Entry` WHERE voucher_no = %s", (v_no,))
+	frappe.db.sql("DELETE FROM `tabSales Invoice` WHERE name = 'TON-SI-PERF'")
+	frappe.db.sql("DELETE FROM `tabPurchase Receipt` WHERE name = 'TON-PR-PERF'")
+	frappe.db.sql("DELETE FROM `tabBin` WHERE name = 'BIN-TON-PERF-OLD'")
+	frappe.db.sql("DELETE FROM `tabItem` WHERE name = 'TON-PERF-OLD'")
+	ov()   # Làm mới: cache theo ngày về sổ sạch cho các phần sau
 
 	# ═══ Quyền ═══
 	frappe.session.user = "nobody@example.com"
@@ -599,6 +766,9 @@ if __name__ == "__main__":
 		c("không sx: tổng như cũ, không có kho 'không bán được', sản xuất gộp vào kho khác",
 			(v7["totals"]["value"], v7["totals"]["value_unsellable"], role7["tp"], role7["khong_ban"], role7["san_xuat"], role7["khac"])
 			== (102_380_000, 0, 34_260_000, 0, 0, 62_770_000 + 1_280_000 + 150_000), role7)
+		kb7 = by(v7["by_role"], "key", "khong_ban")
+		c("UX-11c không sx: chưa xác định kho trả về / cách ly (configured False) — màn hiện '—', không phải 0",
+			(kb7.get("configured"), [x.get("configured") for x in kb7["roles"]]) == (False, [False, False]), kb7)
 		c("không sx: tập TP theo cây nhóm (TPK sang vật tư), không cột custom_sx_nhom → nhóm khác một dòng",
 			(v7["tp"]["source"], v7["sx_nhom"], [x["value"] for x in v7["other_split"] if x["value"]]) == ("nhom", False, [64_570_000]), v7["tp"])
 		s7 = d7["slow"]
@@ -629,4 +799,56 @@ if __name__ == "__main__":
 		and d8["slow"]["total"]["items"] == 0 and d8["slow"]["total"]["slow_pct"] is None
 		and d8["doi"]["traditional"]["days"] is None and d8["tet_stock"]["qty"] is None and T8["trend"]["points"][-1]["value"] == 0
 		and len(T8["nxt"]["months"]) == 13, (d8["value"].get("totals"), d8["slow"].get("total")))
+
+	# ═══ Đơn vị "đóng thùng": MỘT luật cho thẻ / nhóm hàng / tồn Tết và dải sức khoẻ (XR-COMP-1 / NUM-1, phần còn lại) ═══
+	# Trên base trống (k0): Hộp có mã khai thùng (YA 20 hộp / thùng), Kg không mã thành phẩm nào khai thùng. Trước sửa: dải
+	# sức khoẻ bỏ Kg (luật cả tập thành phẩm) nhưng thẻ tồn Tết / dòng nhóm (khối CHỈ có Kg → "đơn vị duy nhất" xét theo
+	# từng khối) vẫn hiện "0 thùng + 208 kg chưa khai quy cách thùng" — cùng một mã, hai kết luận trên một màn.
+	k0.item("TON-YA", "Bánh YA", G_TRAD, carton=20, custom_sx_nhom="TP")          # Hộp, 20 hộp / thùng
+	k0.item("TON-YH", "Bánh YH", G_TRAD, custom_sx_nhom="TP")                     # Hộp, chưa khai thùng
+	k0.item("TON-YK", "Kẹo cân YK", G_TET, uom="Kg", custom_sx_nhom="TP")         # Kg, thành phẩm, không đóng thùng
+	k0.item("TON-YC", "Hộp giấy YC", G_BB, uom="Cái", custom_sx_nhom="Bao Bi")    # Cái, bao bì (nhóm khác) — đơn vị không có ở thành phẩm
+	for n, it, wh, q, val in (("BIN-TON-YA", "TON-YA", TP, 40, 400_000), ("BIN-TON-YH1", "TON-YH", TP, 6, 60_000),
+			("BIN-TON-YH2", "TON-YH", DI_DUONG, 4, 40_000), ("BIN-TON-YK1", "TON-YK", TP, 180, 1_800_000),
+			("BIN-TON-YK2", "TON-YK", CH1, 28, 280_000), ("BIN-TON-YC", "TON-YC", NVL, 50, 50_000)):
+		insert("Bin", name=n, item_code=it, warehouse=wh, actual_qty=q, stock_value=val, valuation_rate=val / q, company="HGC")
+	frappe.local.__dict__.pop("sx_nho", None)
+	dy = ov()
+	vy, hy, ty = dy["value"], dy["health"], dy["tet_stock"]
+	gy = {x["key"]: x for x in vy["by_group"]}
+	ck = ("cartons", "boxes_without_carton_factor", "items_without_carton_factor", "boxes_without_carton_in_stock",
+		"items_without_carton_in_stock")
+	# Thành phẩm còn hàng ở kho bán được: YA 40 hộp (có thùng), YH 6 + 4 (đi đường) = 10 hộp, YK 180 + 28 (cửa hàng) = 208 kg.
+	# Hai đơn vị; Hộp có YA khai thùng → đóng thùng; Kg không mã nào khai → không. Sức khoẻ: 1 mã (YH), 10 hộp.
+	c("đơn vị đóng thùng — sức khoẻ: 1 mã chưa khai thùng, 10 hộp; bỏ Kg",
+		(hy["items_without_carton_factor"], hy["boxes_without_carton_factor"], hy.get("uom_without_carton_factor"),
+		hy.get("without_carton_by_uom")) == (1, 10, "Hộp", [{"uom": "Hộp", "items": 1, "qty": 10}]),
+		{k_: hy.get(k_) for k_ in ("items_without_carton_factor", "boxes_without_carton_factor", "without_carton_by_uom")})
+	# Tồn Tết (kho bán được) = YK 208 kg, 1.800.000 + 280.000 = 2.080.000 → số lượng có, KHÔNG thùng / "chưa khai" (Kg không
+	# đóng thùng — như sức khoẻ). Trước sửa: thùng 0,0 + 208 kg chưa khai.
+	c("XR-COMP-1/NUM-1 tồn Tết chỉ Kg (Hộp đóng thùng ở nhóm khác): 208 kg, 2.080.000, không thùng / không 'chưa khai' — như sức khoẻ",
+		(ty["qty"], ty["uom"], ty["value"], ty["items"]) == (208, "Kg", 2_080_000, 1) and all(ty[x] is None for x in ck),
+		{x: ty.get(x) for x in ("qty", "uom", "value", "items") + ck})
+	# Nhóm Tết (mọi kho) = cùng 208 kg → không thùng. Nhóm khác = YC 50 cái bao bì: không mã thành phẩm nào tính theo cái →
+	# không đóng thùng → không thùng (trước sửa: khối chỉ một đơn vị → "0 thùng + 50 cái chưa khai quy cách thùng").
+	c("XR-COMP-1 nhóm Tết 208 kg + nhóm khác 50 cái (bao bì): số lượng có, không thùng / không 'chưa khai'",
+		(gy["tet"]["qty"], gy["tet"]["uom"], gy["other"]["qty"], gy["other"]["uom"]) == (208, "Kg", 50, "Cái")
+		and all(gy[g][x] is None for g in ("tet", "other") for x in ck), {g: {x: gy[g].get(x) for x in ("qty", "uom") + ck}
+		for g in ("tet", "other")})
+	# Nhóm truyền thống (Hộp, đóng thùng) giữ nguyên: 40 + 10 = 50 hộp, 40 / 20 = 2,0 thùng, YH 10 hộp chưa khai (1 mã), 500.000.
+	tr_y = gy["traditional"]
+	c("nhóm truyền thống (Hộp đóng thùng) vẫn tính: 50 hộp, 2,0 thùng, 10 hộp chưa khai (1 mã), 500.000",
+		(tr_y["qty"], tr_y["uom"], tr_y["cartons"], tr_y["boxes_without_carton_in_stock"], tr_y["items_without_carton_in_stock"],
+		tr_y["value"]) == (50, "Hộp", 2.0, 10, 1, 500_000), tr_y)
+	# Còn MỘT đơn vị thành phẩm (bỏ YA, YH): Kg là đơn vị duy nhất → vẫn nhắc (site chưa khai thùng cho mã nào) ở CẢ sức khoẻ,
+	# thẻ thành phẩm và tồn Tết: 208 kg, 1 mã; thùng 0,0.
+	frappe.db.sql("DELETE FROM `tabBin` WHERE item_code IN %(x)s", {"x": ("TON-YA", "TON-YH")})
+	frappe.local.__dict__.pop("sx_nho", None)
+	dz = ov()
+	hz, tz, pz = dz["health"], dz["tet_stock"], dz["value"]["tp"]
+	c("đơn vị duy nhất (Kg) vẫn nhắc ở cả sức khoẻ, thẻ thành phẩm và tồn Tết: 208 kg, 1 mã, 0,0 thùng",
+		(hz["items_without_carton_factor"], hz["boxes_without_carton_factor"], hz.get("uom_without_carton_factor"))
+		== (1, 208, "Kg") and (tz["cartons"], tz["boxes_without_carton_in_stock"], tz["items_without_carton_in_stock"])
+		== (0.0, 208, 1) and (pz["qty"], pz["uom"], pz["cartons"], pz["boxes_without_carton_in_stock"],
+		pz["items_without_carton_in_stock"]) == (208, "Kg", 0.0, 208, 1), (hz, tz, pz))
 	c.done()

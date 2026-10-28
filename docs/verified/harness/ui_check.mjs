@@ -35,6 +35,53 @@ const SCEN = {
         check('Thời gian thực: KPI sản xuất có số', /Sản xuất hôm nay/.test(t), t.slice(0, 300));
         const main = await page.textContent('.bc-main');
         check('Thời gian thực: ghi chú trước VAT', main.includes('trước VAT'));
+        // XC-2: "Số mã có tồn" từng kho phải là số mã thật (alias SQL `items` trùng dict.items từng làm mọi kho = 0).
+        // Giả lập sơ đồ 3D (iframe cùng origin): báo sẵn sàng với một khu "Kho <tên>" mỗi kho, đọc khung số view gửi xuống.
+        const api = (m) => page.evaluate((x) => fetch(`/api/method/${x}`, { method: 'POST', body: new URLSearchParams({}) })
+            .then((r) => r.json()).then((j) => j.message), m);
+        const snap = await api('bc.api.live.get_snapshot');
+        const whs = snap?.warehouses || [];
+        const ov = await api('bc.api.kho_ton.get_overview');
+        const ton = {};
+        for (const r of ov?.value?.by_role || []) for (const w of r.warehouses || []) ton[w.name] = w.items;
+        // Danh sách kho rỗng thì mọi phép so ở dưới đều "đạt" mà không so gì. Seed có sổ kho (màn Tồn kho thấy kho có mã,
+        // hoặc BC_UI_KHO=1 khi chạy trên seed_ui_kho.py) mà live trả 0 kho → TRƯỢT; seed không có sổ kho → ghi rõ CHƯA KIỂM.
+        const tonCoMa = Object.values(ton).filter((n) => n > 0).length;
+        if (!whs.length) {
+            if (process.env.BC_UI_KHO === '1' || tonCoMa) {
+                check(`Thời gian thực: có danh sách kho (màn Tồn kho thấy ${tonCoMa} kho có mã)`, false,
+                    `live.get_snapshot trả 0 kho${process.env.BC_UI_KHO === '1' ? ' trên seed Kho (BC_UI_KHO=1)' : ''}`);
+            } else {
+                console.log('  – CHƯA KIỂM XC-2 "Số mã có tồn": seed này không có kho nào có tồn (chạy lại trên seed_ui_kho.py với BC_UI_KHO=1)');
+            }
+        } else check(`Thời gian thực: số mã có tồn từng kho ≥ số mã trong danh sách tồn, > 0 khi có mã (${whs.filter((w) => (w.top || []).length).length}/${whs.length} kho có mã)`,
+            whs.every((w) => w.items >= (w.top || []).length && (!(w.top || []).length || w.items > 0)),
+            JSON.stringify(whs.map((w) => [w.name, w.items, (w.top || []).length])));
+        if (whs.length) {
+            await page.locator('#lv-3d').scrollIntoViewIfNeeded();
+            await page.waitForFunction(() => (document.getElementById('lv-3d')?.contentWindow?.location?.pathname || '').startsWith('/bc_xuong'),
+                null, { timeout: 15000 });
+            const fr = await (await page.$('#lv-3d')).contentFrame();
+            const zones = whs.map((w, i) => ({ id: `xc2-${i}`, title: /^kho\b/i.test(w.warehouse_name) ? w.warehouse_name : `Kho ${w.warehouse_name}` }));
+            const msg = await fr.evaluate((zs) => new Promise((resolve) => {
+                window.addEventListener('message', (e) => { if (e.data?.type === 'bc-live') resolve(e.data); });
+                parent.postMessage({ type: 'bc-3d-ready', zones: zs }, location.origin);
+                setTimeout(() => resolve(null), 8000);
+            }), zones);
+            const byName = Object.fromEntries(whs.map((w) => [w.name, w]));
+            const tiles = Object.values(msg?.zones || {}).map((z) => ({ name: (z.note || '').replace('Kho ERPNext: ', ''),
+                shown: (z.tiles || []).find((t) => t.label === 'Số mã có tồn')?.value }));
+            const exp = await page.evaluate(async (vals) => {
+                const f = await import('/assets/bc/bc/lib/format.js');
+                return vals.map((v) => (v === undefined ? null : f.fmtNum(v)));
+            }, tiles.map((t) => byName[t.name]?.items));
+            check(`Thời gian thực: khung số ${tiles.length} kho trên sơ đồ hiện "Số mã có tồn" đúng payload`,
+                tiles.length === whs.length && tiles.every((t, i) => t.shown !== undefined && t.shown === exp[i]),
+                JSON.stringify(tiles.map((t, i) => [t.name, t.shown, exp[i]])).slice(0, 400));
+            const both = whs.filter((w) => w.name in ton);
+            check(`Thời gian thực: số mã có tồn từng kho = màn Tồn kho (${both.length} kho chung)`, both.length > 0 && both.every((w) => w.items === ton[w.name]),
+                JSON.stringify(both.filter((w) => w.items !== ton[w.name]).map((w) => [w.name, w.items, ton[w.name]])));
+        }
     },
     '/cong-no': async (page) => {
         await page.waitForSelector('#cn-kpis .bc-stat', { timeout: 15000 });

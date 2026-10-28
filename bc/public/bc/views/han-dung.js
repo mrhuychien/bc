@@ -1,6 +1,9 @@
-// #/han-dung — Hạn dùng & tồn âm: thành phẩm ở kho bán được theo hạn dùng (hết hạn / cận date / chưa rõ hạn, khớp
-// với tồn kho), hàng không bán được (trả về, cách ly, lô thu hồi, hết hạn) và tồn âm. Một lượt gọi
-// bc.api.kho_han.get_overview — số tồn hiện tại; khối nào không tính được thì báo riêng khối đó.
+// #/han-dung — Hạn dùng & tồn âm: thành phẩm ngoài kho trả về & cách ly theo hạn dùng (hết hạn / cận date / chưa rõ
+// hạn, khớp với tồn kho), hàng không bán được (kho trả về & cách ly, lô thu hồi, hết hạn) và tồn âm. Một lượt gọi
+// bc.api.kho_han.get_overview — số tồn hiện tại (số theo lô: ảnh chụp ≤ 1 giờ, meta.lo_luc); khối nào không tính được
+// thì báo riêng khối đó. Nhãn theo KHO ("ngoài kho trả về & cách ly"), không nói "kho bán" — các kho đó gồm cả kho xưởng,
+// bán thành phẩm, nguyên liệu (cùng cách gọi với màn Tồn kho). Điện thoại: cột đầu các bảng ghi thêm lô · kho (cột Lô / Kho
+// nằm ngoài màn hình — không thì các dòng cùng mã trông như trùng).
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
@@ -77,9 +80,17 @@ function partVal(p) {
 
 function cartons(v, fmt = CT) { return v === null || v === undefined ? '<span class="bc-muted">—</span>' : fmt.format(v); }
 
+/** Màn hẹp (dưới mốc desktop 900px của shell): cột Lô / Kho bị đẩy khỏi màn → gộp vào dòng phụ của cột đầu. */
+function narrow() { return typeof window !== 'undefined' && !window.matchMedia('(min-width: 900px)').matches; }
+
+/** Cột Sản phẩm: tên rút gọn + dòng phụ. Màn rộng: mã hàng. Màn hẹp: "lô · kho" (dòng phụ xuống dòng được, không bị cắt). */
 function itemCell(r) {
-    return `<b>${escapeHtml(r.short_name || r.item_code)}</b><div class="bc-muted bc-text-sm">${escapeHtml(r.item_code)}</div>`;
+    const sub = narrow() ? [r.lo, r.kho].filter(Boolean).join(' · ') || r.item_code : r.item_code;
+    return `<b>${escapeHtml(r.short_name || r.item_code)}</b><div class="bc-muted bc-text-sm hd-sub"${narrow() ? ' style="white-space:normal"' : ''}>${escapeHtml(sub)}</div>`;
 }
+
+/** "2026-10-27 14:05:33.1" → "14:05". */
+function hhmm(s) { return escapeHtml(String(s || '').slice(11, 16)); }
 
 function conNgay(n) {
     if (n === null || n === undefined) return '—';
@@ -132,7 +143,7 @@ function barRow(icon, label, x, uom, cls, badge) {
     </div>`;
 }
 
-/** Phép cộng đối chiếu, từng đơn vị: nhóm hạn dùng (dương) + lô thu hồi − phần âm = tồn kho thành phẩm ở kho bán được. */
+/** Phép cộng đối chiếu, từng đơn vị: nhóm hạn dùng (dương) + lô thu hồi − phần âm = tồn kho thành phẩm ngoài kho trả về & cách ly. */
 function doiChieuHtml(h) {
     const dc = h.doi_chieu;
     const rows = dc.theo_dvt || [];
@@ -146,7 +157,7 @@ function doiChieuHtml(h) {
         if (x.am) s += ` − ${q1(Math.abs(x.am), x.uom)} phần âm`;
         return `${s} = <b>${q1(x.ton_kho, x.uom)}</b>`;
     }).join('; ') || '0';
-    return `<div class="bc-note" id="hd-doichieu">✔ <b>Khớp tồn kho</b>: ${eq} thành phẩm ở kho bán được
+    return `<div class="bc-note" id="hd-doichieu">✔ <b>Khớp tồn kho</b>: ${eq} thành phẩm ngoài kho trả về & cách ly
         (giá trị theo sổ ${money(dc.ton_kho_value)}).</div>`;
 }
 
@@ -154,7 +165,7 @@ function bucketsHtml(h) {
     if (!h.available) return off('tồn thành phẩm theo hạn dùng');
     const t = h.tong;
     if (!t.rows && !h.phan_am.rows && !h.thu_hoi.rows) {
-        return emptyState({ icon: '📦', title: 'Không có tồn thành phẩm ở kho bán được' });
+        return emptyState({ icon: '📦', title: 'Không có tồn thành phẩm ngoài kho trả về & cách ly' });
     }
     const rows = h.buckets.map((b) => barRow(MUC[b.key][0], b.label, b, h.uom, MUC[b.key][1], MUC[b.key][2]));
     rows.push(barRow(MUC.chua_ro[0], 'Chưa rõ hạn dùng', h.chua_ro, h.uom, '', MUC.chua_ro[2]));
@@ -187,6 +198,18 @@ function lotsHtml(h) {
 
 function chuaRoHtml(h) {
     if (!h.available) return off('tồn chưa rõ hạn dùng');
+    // Phần dương (các nhóm hạn dùng) rỗng thì không có gì để nói "đã rõ hạn" — không trấn an giả. "Không có tồn thành phẩm"
+    // chỉ khi lô thu hồi và phần âm cũng rỗng (cùng điều kiện với khối hạn dùng ở trên); còn một trong hai thì dòng đối chiếu
+    // ngay trên vẫn ghi số thành phẩm → nói rõ còn gì.
+    if (!h.tong.rows) {
+        if (!h.phan_am.rows && !h.thu_hoi.rows) return emptyState({ icon: '📦', title: 'Không có tồn thành phẩm' });
+        const con = [
+            h.thu_hoi.rows ? `lô đang thu hồi ${qtyText(h.thu_hoi, h.uom)} (xem Tồn không bán được)` : '',
+            h.phan_am.rows ? `phần âm ${qtyText(h.phan_am, h.uom)} (sổ ghi xuất nhiều hơn nhập — xem Tồn âm)` : '',
+        ].filter(Boolean);
+        return `${emptyState({ icon: '📦', title: 'Không có thành phẩm cần xét hạn dùng' })}
+            <div class="bc-note" id="hd-chuaro-con">Thành phẩm ngoài kho trả về & cách ly chỉ còn ${con.join(' và ')}.</div>`;
+    }
     const cr = h.chua_ro;
     const parts = kpiGrid(cr.parts.map((p) => ({ label: p.label, value: money(p.value), sub: qtyText(p, h.uom) })), 4);
     const warn = cr.uoc_tinh_qua_han ? `<div class="bc-alert">${fmtNum(cr.uoc_tinh_qua_han)} lô chưa ghi hạn dùng mà hạn ước tính đã qua — cần kiểm tra bao bì và ghi hạn.</div>` : '';
@@ -218,7 +241,10 @@ function khongBanHtml(k) {
     const thieu = k.parts.filter((p) => !p.available);
     const chuaDu = thieu.length ? `<div class="bc-note">Tổng chưa gồm: ${thieu.map((p) => `${escapeHtml(p.label)} (${p.error ? 'chưa tính được' : 'chưa có dữ liệu'})`).join(', ')}.</div>` : '';
     const roles = a.roles.map((r) => `${escapeHtml(r.label)} ${money(r.value)} (${fmtNum(r.items)} mã)`).join(' · ');
-    const thuHoi = b.available ? (b.ds && b.ds.length ? `<div class="bc-card-sub bc-mt-3">Lô đang thu hồi còn ở kho bán</div>
+    const dinhNghia = `<div class="bc-note" id="hd-kb-def">Tồn không bán được gồm 3 phần không trùng nhau: hàng đang nằm ở kho trả về
+        & cách ly; lô đang thu hồi và thành phẩm đã hết hạn ở các kho còn lại (kể cả kho xưởng, bán thành phẩm, nguyên liệu).
+        Phần đầu cùng số với thẻ "Kho trả về & cách ly" ở màn Tồn kho.</div>`;
+    const thuHoi = b.available ? (b.ds && b.ds.length ? `<div class="bc-card-sub bc-mt-3">Lô đang thu hồi ngoài kho trả về & cách ly</div>
         ${dataTable({ rows: b.ds, sortKey: 'value', pageSize: 5,
             columns: [
                 { key: 'short_name', label: 'Sản phẩm', align: 'left', render: itemCell },
@@ -227,7 +253,7 @@ function khongBanHtml(k) {
                 { key: 'lo', label: 'Lô', align: 'left' },
                 { key: 'kho', label: 'Kho', align: 'left' },
             ] })}` : '') : b.error ? off('lô đang thu hồi') : '<div class="bc-note">Hệ thống chưa có đánh dấu lô thu hồi — phần này chưa tính.</div>';
-    return `${head}${chuaDu}
+    return `${head}${chuaDu}${dinhNghia}
         <div class="bc-note">${roles}${am.length ? ` — đã trừ ${fmtNum(am.reduce((s, r) => s + r.am_rows, 0))} dòng âm (xem Tồn âm).` : ''}</div>
         <div class="bc-mt-3">${dataTable({ rows: a.ds, sortKey: 'value', pageSize: 8, emptyMessage: 'Không có hàng ở kho trả về / cách ly',
             columns: [
@@ -285,7 +311,9 @@ async function load(isCurrent) {
             SECTIONS.slice(1).forEach((id) => fill(id, ''));
             return;
         }
-        fill('hd-asof', `Tồn đến hôm nay ${escapeHtml(fmtDate(d.meta.as_of))} (gồm phiếu ghi ngày sau). Cận date = còn 0–${fmtNum(d.meta.can_date_ngay)} ngày.`);
+        const lo = d.meta.lo_luc && d.meta.lo_ttl_giay ? ` Số theo lô (hạn dùng, lô thu hồi, lô âm) tính lúc ${hhmm(d.meta.lo_luc)}
+            — tự tính lại sau mỗi giờ, bấm Làm mới để tính ngay.` : '';
+        fill('hd-asof', `Tồn đến hôm nay ${escapeHtml(fmtDate(d.meta.as_of))} (gồm phiếu ghi ngày sau). Cận date = còn 0–${fmtNum(d.meta.can_date_ngay)} ngày.${lo}`);
         fill('hd-kpis', kpisHtml(d));
         fill('hd-buckets', bucketsHtml(d.han));
         fill('hd-lots', lotsHtml(d.han));
@@ -308,7 +336,7 @@ export async function render({ container, isCurrent }) {
         </div>
         <div class="bc-note" id="hd-asof"></div>
         <div id="hd-kpis">${skeletonGrid(5, 128, 'bc-grid-5')}</div>
-        <div class="bc-section-title">Thành phẩm ở kho bán được theo hạn dùng</div>
+        <div class="bc-section-title">Thành phẩm theo hạn dùng (ngoài kho trả về & cách ly)</div>
         <div class="bc-card"><div id="hd-buckets">${skeleton(240)}</div></div>
         <div class="bc-section-title">Lô hết hạn và cận date</div>
         <div class="bc-card"><div id="hd-lots">${skeleton(200)}</div></div>
@@ -319,6 +347,7 @@ export async function render({ container, isCurrent }) {
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Tồn âm</div></div><div id="hd-am">${skeleton(200)}</div></div>
         </div>
         <div class="bc-note bc-mt-3">ⓘ Giá trị theo giá vốn, chưa VAT. Giá trị theo lô là ước tính (số lượng × giá vốn bình quân của mã tại kho).
-            Kho bán được = mọi kho trừ hàng trả về và kho cách ly. Lô hết hạn đúng hôm nay vẫn tính là còn hạn.</div>`;
+            Hạn dùng, lô thu hồi, hàng hết hạn tính ở mọi kho ngoài kho trả về & cách ly — gồm cả kho xưởng, bán thành phẩm,
+            nguyên liệu, không chỉ kho đang bán. Lô hết hạn đúng hôm nay vẫn tính là còn hạn.</div>`;
     await load(isCurrent);
 }

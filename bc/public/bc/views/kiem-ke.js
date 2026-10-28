@@ -1,5 +1,6 @@
-// #/kiem-ke — Kiểm kê & điều chỉnh: lần kiểm kê gần nhất từng kho (ảnh chụp hôm nay), phiếu đang đếm, độ chính xác tồn,
-// chênh lệch kiểm kê (sản xuất + cửa hàng), dọn tồn, xuất huỷ / xuất khác trong tháng. Một lượt gọi
+// #/kiem-ke — Kiểm kê & điều chỉnh: lần kiểm kê gần nhất từng kho + phiếu đang đếm (tình hình HÔM NAY), độ chính xác tồn
+// (lần kiểm gần nhất tính đến cuối tháng chọn), chênh lệch kiểm kê (sản xuất — gồm phần ở kho khác khi bật lô — và phiếu
+// kiểm kho ở cửa hàng & kho khác), dọn tồn, xuất huỷ / xuất khác trong tháng. Một lượt gọi
 // bc.api.kho_kk.get_overview(thang); khối nào thiếu số (site chưa cài app Sản xuất…) thì báo riêng khối đó.
 
 import * as api from '../lib/api.js';
@@ -28,12 +29,22 @@ function num(v, digits = 0) {
     return digits ? (Math.round(v * 10 ** digits) / 10 ** digits).toLocaleString('vi-VN') : fmtNum(v);
 }
 function note(text) { return `<div class="bc-muted bc-text-sm">${escapeHtml(text)}</div>`; }
-/** Khối không có số: lỗi riêng khối / chưa cài app Sản xuất / thiếu dữ liệu nguồn. */
-function off(b, what) {
-    if (b && b.error) return note(`Không tải được ${what}.`);
+/** Dòng phụ trong ô bảng: XUỐNG DÒNG được (ô đầu bảng hẹp, cắt chữ thì mất số — "60k" thành "60") + title đủ chữ.
+ *  min-width giữ cột đầu đủ rộng (không co về một từ khi các cột số chiếm hết chỗ trên điện thoại).
+ *  `text` là chữ thô (escape ở đây). */
+function sub(text) {
+    return `<div class="bc-muted bc-text-sm" style="white-space:normal;min-width:min(38vw,9rem)" title="${escapeHtml(text)}">${escapeHtml(text)}</div>`;
+}
+/** Nhãn ô đầu bảng xuống dòng được (`html` đã escape). */
+function wrap(html) { return `<span style="white-space:normal">${html}</span>`; }
+/** Khối không có số: lỗi riêng khối / chưa cài app Sản xuất / thiếu dữ liệu nguồn. `as` = cách hiện câu: note (cả khối) hoặc
+ *  sub (trong ô đầu bảng — ô đó nowrap + cắt chữ, câu giải thích phải xuống dòng, không cụt trên điện thoại). */
+function off(b, what, as = note) {
+    if (b && b.error) return as(`Không tải được ${what}.`);
+    if (b?.reason === 'khong_sx' && what === 'số') return as('Không áp dụng: site chưa cài app Sản xuất.');
     const why = { khong_sx: 'site chưa cài app Sản xuất', thieu_cot: 'phiếu kho chưa ghi liên kết với lần kiểm kê',
         thieu_bang: 'hệ thống chưa có phiếu kiểm kho', khong_nguon: 'chưa có số kiểm kê' }[b?.reason] || 'chưa có số liệu';
-    return note(`Chưa có ${what}: ${why}.`);
+    return as(`Chưa có ${what}: ${why}.`);
 }
 
 function monthOptions(cur) {
@@ -58,38 +69,59 @@ function dayBadge(r) {
 }
 
 // ─── Thẻ số ──────────────────────────────────────────────────────────────────
+/** Nhãn các khoản của tổng còn THIẾU số thật (lỗi / thiếu cột…) — khoản "không áp dụng" (site không có app Sản xuất)
+ *  không tính là thiếu. */
+function thieuLabels(t) {
+    const miss = new Set(t.thieu || []);
+    return (t.parts || []).filter((p) => !p.available && miss.has(p.key)).map((p) => p.label);
+}
+
 function kpisHtml(d) {
     const t = d.tong, s = d.kk_sx, ch = d.kk_ch, x = d.xuat_khac, ira = d.ira;
     const parts = Object.fromEntries((t.parts || []).map((p) => [p.key, p.gia_tri]));
     const sum = (...v) => (v.every((a) => a === null || a === undefined) ? null : v.reduce((a, b) => a + (b || 0), 0));
+    const thieu = t.available ? thieuLabels(t) : [];
+    // Thiếu một khoản thì KHÔNG đưa một con số như thể đủ: giá trị "—", số các khoản đã có + tên đúng khoản còn thiếu
+    // (nhãn ở ô trái của dòng — xuống dòng được, không bị cắt trên điện thoại).
+    const tong = !t.available
+        ? statCard({ label: 'Tổng điều chỉnh trong tháng', icon: '⚖️', value: '—', rows: [['', 'Chưa có số']] })
+        : thieu.length
+            ? statCard({ label: 'Tổng điều chỉnh trong tháng', icon: '⚖️', tone: 'warning', value: muted,
+                rows: [['Các khoản đã có', signed(t.gia_tri)], [`Chưa gồm: ${thieu.join('; ')}`, '']] })
+            : statCard({ label: 'Tổng điều chỉnh trong tháng', icon: '⚖️', tone: t.gia_tri < 0 ? 'danger' : 'success',
+                value: signed(t.gia_tri), rows: [['Kiểm kê', signed(sum(parts.kk_sx, parts.kk_ch))],
+                    ['Dọn tồn, xuất huỷ', signed(sum(parts.don_sx, parts.xuat_khac))]] });
     return `<div class="bc-grid bc-grid-5">
-        ${t.available ? statCard({ label: 'Tổng điều chỉnh trong tháng', icon: '⚖️', tone: t.gia_tri < 0 ? 'danger' : 'success',
-            value: signed(t.gia_tri), rows: [['Kiểm kê', signed(sum(parts.kk_sx, parts.kk_ch))],
-                ['Dọn tồn, xuất huỷ', signed(sum(parts.don_sx, parts.xuat_khac))],
-                ...(t.day_du ? [] : [['', 'Thiếu số kiểm kê sản xuất']])] })
-            : statCard({ label: 'Tổng điều chỉnh trong tháng', icon: '⚖️', value: '—', rows: [['', 'Chưa có số']] })}
-        ${s.available ? statCard({ label: 'Kiểm kê kho sản xuất', icon: '🏭', tone: s.gt_rong < 0 ? 'danger' : '',
-            value: signed(s.gt_rong), rows: [['Thừa', signed(s.gt_thua)], ['Thiếu', signed(s.gt_thieu)], ['Số lần kiểm', fmtNum(s.so_lan)]] })
-            : statCard({ label: 'Kiểm kê kho sản xuất', icon: '🏭', value: '—', rows: [['', s.reason === 'khong_sx' ? 'Chưa cài app Sản xuất' : 'Chưa có số']] })}
-        ${ch.available ? statCard({ label: 'Kiểm kê cửa hàng', icon: '🏪', tone: ch.gt_rong < 0 ? 'warning' : '',
-            value: signed(ch.gt_rong), rows: [['Thừa', signed(ch.gt_thua)], ['Thiếu', signed(ch.gt_thieu)], ['Đổi giá', signed(ch.gt_doi_gia)]] })
-            : statCard({ label: 'Kiểm kê cửa hàng', icon: '🏪', value: '—', rows: [['', 'Chưa có số']] })}
+        ${tong}
+        ${s.available ? statCard({ label: 'Kiểm kê sản xuất', icon: '🏭', tone: s.gt_rong < 0 ? 'danger' : '',
+            value: signed(s.gt_rong), rows: [['Thừa', signed(s.gt_thua)], ['Thiếu', signed(s.gt_thieu)],
+                ...(s.gt_kho_khac ? [['Ở kho khác khi bật lô', signed(s.gt_kho_khac)]] : []), ['Số lần kiểm', fmtNum(s.so_lan)]] })
+            : statCard({ label: 'Kiểm kê sản xuất', icon: '🏭', value: '—', rows: [['', s.reason === 'khong_sx' ? 'Chưa cài app Sản xuất' : 'Chưa có số']] })}
+        ${ch.available ? statCard({ label: 'Phiếu kiểm kho (cửa hàng & kho khác)', icon: '🏪', tone: ch.gt_rong < 0 ? 'warning' : '',
+            value: signed(ch.gt_rong), rows: [['Cửa hàng', signed(ch.cua_hang?.gt_rong)], ['Kho khác', signed(ch.kho_khac?.gt_rong)],
+                ['Số phiếu', fmtNum(ch.so_phieu)]] })
+            : statCard({ label: 'Phiếu kiểm kho (cửa hàng & kho khác)', icon: '🏪', value: '—', rows: [['', 'Chưa có số']] })}
         ${x.available ? statCard({ label: 'Xuất huỷ, xuất mẫu, xuất khác', icon: '🗑️', tone: x.gia_tri ? 'warning' : '',
             value: money(x.gia_tri), rows: [['Số phiếu', fmtNum(x.so_phieu)],
                 ...(x.rows.length ? [[x.rows[0].label, money(x.rows[0].gia_tri)]] : [])] })
             : statCard({ label: 'Xuất huỷ, xuất mẫu, xuất khác', icon: '🗑️', value: '—', rows: [['', 'Chưa có số']] })}
         ${ira.available ? statCard({ label: 'Độ chính xác tồn', icon: '🎯', tone: ira.ty_le !== null && ira.ty_le < 80 ? 'warning' : 'success',
-            value: fmtPct(ira.ty_le), rows: [['Mã khớp sổ', `${fmtNum(ira.so_ma_khop)}/${fmtNum(ira.so_ma)}`], ['Kho Sản xuất', fmtNum(ira.rows.length)]] })
+            value: fmtPct(ira.ty_le), rows: [['Mã khớp sổ', `${fmtNum(ira.so_ma_khop)}/${fmtNum(ira.so_ma)}`],
+                ['Lần kiểm mới nhất', ira.ngay_moi_nhat ? escapeHtml(fmtDate(ira.ngay_moi_nhat)) : '—'], ['Kho Sản xuất', fmtNum(ira.rows.length)]] })
             : statCard({ label: 'Độ chính xác tồn', icon: '🎯', value: '—', rows: [['', ira.reason === 'khong_sx' ? 'Chưa cài app Sản xuất' : 'Chưa có số']] })}
     </div>`;
 }
 
 // ─── K9. Kiểm kê gần nhất theo kho ──────────────────────────────────────────
-function khoHtml(k, ira, nguong) {
+function khoHtml(k, ira, nguong, asOf) {
     if (!k.available) return off(k, 'bảng kiểm kê theo kho');
-    const tile = Object.fromEntries((ira.available ? ira.rows : []).map((r) => [r.phieu, r]));
+    // Cột độ chính xác: lần kiểm gần nhất HÔM NAY của từng kho (bảng này luôn là hôm nay, kể cả khi chọn tháng cũ).
+    const now = (ira.available && ira.ty_le_hien_tai) || {};
+    const acc = (r) => (r.phieu && Object.prototype.hasOwnProperty.call(now, r.phieu) ? fmtPct(now[r.phieu]) : muted);
     const t = k.tong;
-    return `${kpiGrid([
+    return `<div class="bc-muted bc-text-sm" style="margin-bottom:.5rem" id="kk-kho-asof">Tình hình hiện tại, đến hôm nay
+            ${escapeHtml(fmtDate(asOf))} — không đổi theo tháng chọn (trừ cột "Lần trong tháng").</div>
+        ${kpiGrid([
         { label: 'Kho cần kiểm', value: fmtNum(t.so_kho) },
         { label: 'Chưa kiểm kê lần nào', value: fmtNum(t.chua_kiem), cls: t.chua_kiem ? 'bc-txt-danger' : '' },
         { label: `Quá ${fmtNum(nguong.canh_bao)} ngày chưa kiểm`, value: fmtNum(t.qua_30), cls: t.qua_30 ? 'bc-txt-warning' : '' },
@@ -97,13 +129,13 @@ function khoHtml(k, ira, nguong) {
     ], 4)}
         <div class="bc-mt-3">${dataTable({ rows: k.rows, pageSize: 12, emptyMessage: 'Không có kho nào đang giữ hàng',
             columns: [
-                { key: 'label', label: 'Kho', align: 'left', render: (r) => `${escapeHtml(r.label)}${r.disabled ? ' <span class="bc-badge bc-badge-muted">ngừng dùng</span>' : ''}
-                    <div class="bc-muted bc-text-sm">${escapeHtml(r.role_label)}${r.loai ? ` · ${escapeHtml(LOAI_TXT[r.loai] || r.loai)}` : ''}</div>` },
+                { key: 'label', label: 'Kho', align: 'left', render: (r) => `${wrap(escapeHtml(r.label))}${r.disabled ? ' <span class="bc-badge bc-badge-muted">ngừng dùng</span>' : ''}
+                    ${sub(`${r.role_label}${r.loai ? ` · ${LOAI_TXT[r.loai] || r.loai}` : ''}`)}` },
                 { key: 'so_ngay', label: 'Cách đây', sortValue: (r) => (r.so_ngay === null ? 1e9 : r.so_ngay), render: dayBadge },
                 { key: 'ngay', label: 'Ngày kiểm', render: (r) => (r.ngay ? escapeHtml(fmtDate(r.ngay)) : muted) },
                 { key: 'nguon', label: 'Cách kiểm', align: 'left', sortable: false, render: cachKiem },
                 { key: 'so_lan_trong_ky', label: 'Lần trong tháng', render: (r) => fmtNum(r.so_lan_trong_ky) },
-                { key: 'ira', label: 'Độ chính xác', sortable: false, render: (r) => (r.phieu && tile[r.phieu] ? fmtPct(tile[r.phieu].ty_le) : muted) },
+                { key: 'ira', label: 'Độ chính xác', sortable: false, render: acc },
                 { key: 'dang_dem', label: 'Đang đếm', sortable: false,
                     render: (r) => (r.dang_dem ? '<span class="bc-badge bc-badge-primary">Đang đếm</span>' : '') },
             ] })}</div>
@@ -133,7 +165,7 @@ function dangHtml(dd, hc) {
     return `${dataTable({ rows: dd.rows, emptyMessage: 'Không có phiếu nào đang đếm', scrollButtons: false,
         columns: [
             { key: 'phieu', label: 'Phiếu', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.phieu)}<div class="bc-muted bc-text-sm">${escapeHtml(r.label)} · ${escapeHtml(LOAI_TXT[r.loai] || r.loai || '')}</div>` },
+                render: (r) => `${escapeHtml(r.phieu)}${sub(`${r.label} · ${LOAI_TXT[r.loai] || r.loai || ''}`)}` },
             { key: 'tuoi', label: 'Mở từ', sortable: false,
                 render: (r) => `<span class="bc-badge ${r.cu ? 'bc-badge-warning' : 'bc-badge-muted'}">${fmtNum(r.tuoi)} ngày</span>
                     <div class="bc-muted bc-text-sm">${escapeHtml(fmtDate(r.bat_dau))}</div>` },
@@ -146,7 +178,7 @@ function dangHtml(dd, hc) {
 
 function iraHtml(ira) {
     if (!ira.available) return off(ira, 'độ chính xác tồn');
-    if (!ira.rows.length) return emptyState({ icon: '🎯', title: 'Chưa có lần kiểm Sản xuất nào đã chốt' });
+    if (!ira.rows.length) return emptyState({ icon: '🎯', title: `Chưa có lần kiểm Sản xuất nào đã chốt đến ${fmtDate(ira.den_ngay)}` });
     return `<div class="bc-rank-list" id="kk-ira-list">${ira.rows.map((r, i) => `<div class="bc-rank-row">
             <div class="bc-rank-no">${i + 1}</div>
             <div style="min-width:0">
@@ -156,7 +188,8 @@ function iraHtml(ira) {
                 <div class="bc-muted bc-text-sm">${escapeHtml(r.phieu)} · ${escapeHtml(fmtDate(r.ngay))} · ${fmtNum(r.so_ma_khop)}/${fmtNum(r.so_ma)} mã khớp</div>
             </div>
             <div class="bc-right"></div></div>`).join('')}</div>
-        <div class="bc-note">Mã khớp = số đếm bằng số sổ của mã đó (cộng mọi lô). Không tính lô đang thu hồi.</div>`;
+        <div class="bc-note">Lần kiểm Sản xuất gần nhất của từng kho tính đến ${escapeHtml(fmtDate(ira.den_ngay))} (cuối tháng chọn).
+            Mã khớp = số đếm bằng số sổ của mã đó (cộng mọi lô). Không tính lô đang thu hồi.</div>`;
 }
 
 // ─── K10. Điều chỉnh trong tháng ────────────────────────────────────────────
@@ -164,23 +197,27 @@ function dcHtml(d) {
     const t = d.tong;
     if (!t.available) return off(t, 'tổng điều chỉnh');
     const detail = {
-        kk_sx: (b) => `Thừa ${fmtMoney(b.gt_thua)} · thiếu ${fmtMoney(b.gt_thieu)} · ${fmtNum(b.so_lan)} lần kiểm`,
-        kk_ch: (b) => `Thừa ${fmtMoney(b.gt_thua)} · thiếu ${fmtMoney(b.gt_thieu)} · đổi giá ${fmtMoney(b.gt_doi_gia)} · ${fmtNum(b.so_phieu)} phiếu`,
+        kk_sx: (b) => `Thừa ${fmtMoney(b.gt_thua)} · thiếu ${fmtMoney(b.gt_thieu)}${b.gt_kho_khac
+            ? ` · ở kho khác khi bật lô ${fmtMoney(b.gt_kho_khac)}` : ''} · ${fmtNum(b.so_lan)} lần kiểm`,
+        kk_ch: (b) => `Cửa hàng ${fmtMoney(b.cua_hang?.gt_rong)} · kho khác ${fmtMoney(b.kho_khac?.gt_rong)} · ${fmtNum(b.so_phieu)} phiếu`,
         don_sx: (b) => `${fmtNum(b.so_phieu)} phiếu`,
         xuat_khac: (b) => `${fmtNum(b.so_phieu)} phiếu`,
     };
     const rows = t.parts.map((p) => ({ ...p, detail: p.available ? detail[p.key](d[p.key]) : null, why: d[p.key] }));
+    const thieu = thieuLabels(t);
     return `${dataTable({ rows, scrollButtons: false,
-        totalRow: { label: `<b>Tổng điều chỉnh</b>${t.day_du ? '' : '<div class="bc-muted bc-text-sm">chưa đủ các khoản</div>'}`,
+        totalRow: { label: `<b>Tổng điều chỉnh</b>${thieu.length ? sub(`chưa gồm: ${thieu.join('; ')}`) : ''}`,
             gia_tri: `<b>${signed(t.gia_tri)}</b>` },
         columns: [
             { key: 'label', label: 'Khoản', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.label)}${r.available ? `<div class="bc-muted bc-text-sm">${escapeHtml(r.detail)}</div>` : off(r.why, 'số')}` },
+                render: (r) => `${wrap(escapeHtml(r.label))}${r.available ? sub(r.detail)
+                    : off({ ...(r.why || {}), reason: r.reason || r.why?.reason }, 'số', sub)}` },
             { key: 'gia_tri', label: 'Giá trị', sortable: false, render: (r) => (r.available ? signed(r.gia_tri) : muted) },
         ] })}
-        <div class="bc-note">Tăng (+) là hàng nhiều hơn sổ, giảm (−) là hàng mất / thiếu / huỷ. Tổng = kiểm kê sản xuất + kiểm kê cửa hàng
-            + dọn tồn − xuất huỷ / xuất khác. Kiểm kê sản xuất tính vào tháng của ngày chốt sổ (gồm phần bù chứng từ ghi lùi
-            sau kiểm kê), các khoản khác theo ngày phiếu.</div>`;
+        <div class="bc-note">Tăng (+) là hàng nhiều hơn sổ, giảm (−) là hàng mất / thiếu / huỷ. Tổng = kiểm kê sản xuất + phiếu kiểm kho
+            + dọn tồn − xuất huỷ / xuất khác. Kiểm kê sản xuất tính vào tháng của ngày chốt sổ, gồm phần bù chứng từ ghi lùi
+            sau kiểm kê và phần ở kho khác khi lần kiểm bật quản lý lô (bù tồn âm về 0), nên khớp dòng "Kiểm kê sản xuất" của
+            trang Tồn kho trừ phiếu ghi sổ khác tháng; các khoản khác theo ngày phiếu.</div>`;
 }
 
 function sxHtml(s) {
@@ -202,27 +239,34 @@ function sxHtml(s) {
     return `${dataTable({ rows: s.rows, emptyMessage: 'Không có lần kiểm Sản xuất nào trong tháng', scrollButtons: false,
         columns: [
             { key: 'phieu', label: 'Lần kiểm', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.phieu)}<div class="bc-muted bc-text-sm">${escapeHtml(r.label)} · ${escapeHtml(fmtDate(r.ngay))}</div>${r.gt_bu
-                    ? `<div class="bc-muted bc-text-sm">gồm bù sau kiểm kê ${escapeHtml(fmtMoney(r.gt_bu))}</div>` : ''}${r.gt_chenh_gia
-                    ? `<div class="bc-muted bc-text-sm">chênh giá ${escapeHtml(fmtMoney(r.gt_chenh_gia))}</div>` : ''}` },
+                render: (r) => `${escapeHtml(r.phieu)}${sub(`${r.label} · ${fmtDate(r.ngay)}`)}${r.gt_bu
+                    ? sub(`gồm bù sau kiểm kê ${fmtMoney(r.gt_bu)}`) : ''}${r.gt_chenh_gia
+                    ? sub(`chênh giá ${fmtMoney(r.gt_chenh_gia)}`) : ''}${r.gt_kho_khac || r.kho_khac?.length
+                    ? sub(`ở kho khác khi bật lô ${fmtMoney(r.gt_kho_khac)}${r.kho_khac?.length
+                        ? `: ${r.kho_khac.map((w) => `${w.label} ${fmtMoney(w.gia_tri)}`).join(' · ')}` : ''}`) : ''}` },
             { key: 'gt_thua', label: 'Thừa', sortable: false, render: (r) => `${signed(r.gt_thua)}${q(r.thua)}` },
             { key: 'gt_thieu', label: 'Thiếu', sortable: false, render: (r) => `${signed(r.gt_thieu)}${q(r.thieu)}` },
             { key: 'gt_rong', label: 'Ròng', sortable: false, render: (r) => `<b>${signed(r.gt_rong)}</b>` },
         ] })}
-        ${warn.length ? `<div class="bc-alert bc-mt-3">${warn.map(escapeHtml).join('<br>')}</div>` : ''}`;
+        ${warn.length ? `<div class="bc-alert bc-mt-3">${warn.map(escapeHtml).join('<br>')}</div>` : ''}
+        ${s.gt_kho_khac ? `<div class="bc-note">Thừa / thiếu là số đếm tại kho được kiểm. "Ở kho khác khi bật lô": lần kiểm chuyển mã sang
+            quản lý lô thì Sản xuất đưa tồn chưa có lô ở cửa hàng / xưởng vào lô (gần như không đổi giá trị) và nhập bù kho đang âm
+            về 0 — phần này làm đổi giá trị kho thật nên tính trong Ròng (${escapeHtml(fmtMoney(s.gt_kho_khac))}).</div>` : ''}`;
 }
 
 function chHtml(ch) {
-    if (!ch.available) return off(ch, 'kiểm kê cửa hàng');
+    if (!ch.available) return off(ch, 'số liệu phiếu kiểm kho');  // khối gồm mọi kho (UX-1) — không gọi là "kiểm kê cửa hàng"
     return `${dataTable({ rows: ch.rows, emptyMessage: 'Không có phiếu kiểm kho nào trong tháng', scrollButtons: false,
         columns: [
             { key: 'label', label: 'Kho', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.label)}<div class="bc-muted bc-text-sm">${escapeHtml(r.role_label)} · ${fmtNum(r.so_phieu)} phiếu</div>${r.gt_doi_gia
-                    ? `<div class="bc-muted bc-text-sm">đổi giá ${escapeHtml(fmtMoney(r.gt_doi_gia))}</div>` : ''}` },
+                render: (r) => `${wrap(escapeHtml(r.label))}${sub(`${r.role_label} · ${fmtNum(r.so_phieu)} phiếu`)}${r.gt_doi_gia
+                    ? sub(`đổi giá ${fmtMoney(r.gt_doi_gia)}`) : ''}` },
             { key: 'gt_thua', label: 'Thừa', sortable: false, render: (r) => signed(r.gt_thua) },
             { key: 'gt_thieu', label: 'Thiếu', sortable: false, render: (r) => signed(r.gt_thieu) },
             { key: 'gt_rong', label: 'Ròng', sortable: false, render: (r) => `<b>${signed(r.gt_rong)}</b>` },
         ] })}
+        ${ch.cua_hang && ch.kho_khac ? `<div class="bc-note" id="kk-ch-tach">Cửa hàng ${signed(ch.cua_hang.gt_rong)} (${fmtNum(ch.cua_hang.so_kho)} kho)
+            · kho khác ${signed(ch.kho_khac.gt_rong)} (${fmtNum(ch.kho_khac.so_kho)} kho: kho thành phẩm, trả về…).</div>` : ''}
         ${ch.so_dong_doi_gia ? `<div class="bc-note">${fmtNum(ch.so_dong_doi_gia)} dòng kiểm chỉ đổi giá vốn, không lệch số lượng.</div>` : ''}`;
 }
 
@@ -232,7 +276,7 @@ function xkHtml(x) {
         totalRow: x.rows.length > 1 ? { label: '<b>Tổng</b>', gia_tri: `<b>${money(x.gia_tri)}</b>`, so_phieu: `<b>${fmtNum(x.so_phieu)}</b>` } : null,
         columns: [
             { key: 'label', label: 'Loại phiếu', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.label)}<div class="bc-muted bc-text-sm">${r.kho.map((w) => `${escapeHtml(w.label)} ${fmtMoney(w.gia_tri)}`).join(' · ')}</div>` },
+                render: (r) => `${wrap(escapeHtml(r.label))}${sub(r.kho.map((w) => `${w.label} ${fmtMoney(w.gia_tri)}`).join(' · '))}` },
             { key: 'so_phieu', label: 'Phiếu', sortable: false, render: (r) => fmtNum(r.so_phieu) },
             { key: 'gia_tri', label: 'Giá trị', sortable: false, render: (r) => money(r.gia_tri) },
         ] })}
@@ -244,7 +288,7 @@ function donHtml(dn) {
     const rows = dn.rows.filter((r) => r.hien && r.so_phieu);
     return `${dataTable({ rows, emptyMessage: 'Không có phiếu dọn tồn trong tháng', scrollButtons: false,
         columns: [
-            { key: 'label', label: 'Loại dọn tồn', align: 'left', sortable: false, render: (r) => escapeHtml(r.label) },
+            { key: 'label', label: 'Loại dọn tồn', align: 'left', sortable: false, render: (r) => wrap(escapeHtml(r.label)) },
             { key: 'so_phieu', label: 'Phiếu', sortable: false, render: (r) => fmtNum(r.so_phieu) },
             { key: 'gia_tri', label: 'Giá trị', sortable: false, render: (r) => signed(r.gia_tri) },
         ] })}
@@ -257,7 +301,7 @@ function topHtml(tl) {
     return `${dataTable({ rows: tl.rows, emptyMessage: 'Không có mã nào lệch số lượng trong tháng',
         columns: [
             { key: 'short_name', label: 'Mã hàng · kho', align: 'left', sortable: false,
-                render: (r) => `${escapeHtml(r.short_name)}<div class="bc-muted bc-text-sm">${escapeHtml(r.item_code)} · ${escapeHtml(r.kho_label)}</div>
+                render: (r) => `${wrap(escapeHtml(r.short_name))}${sub(`${r.item_code} · ${r.kho_label}`)}
                     <div class="bc-text-sm"><span class="bc-badge ${r.nguon === 'sx' ? 'bc-badge-primary' : 'bc-badge-muted'}">${r.nguon === 'sx' ? 'Sản xuất đếm' : 'Phiếu kiểm kho'}</span></div>` },
             { key: 'qty', label: 'Lệch', sortable: false,
                 render: (r) => `${num(r.qty, 3)} ${escapeHtml(r.uom || '')}${r.cartons !== null && r.cartons !== undefined ? `<div class="bc-muted bc-text-sm">${num(r.cartons, 2)} thùng</div>` : ''}` },
@@ -274,7 +318,7 @@ function ve0Html(v) {
         ${dataTable({ rows: v.rows, emptyMessage: 'Các mã này đang được ẩn khỏi danh sách', scrollButtons: false,
             columns: [
                 { key: 'short_name', label: 'Mã hàng', align: 'left', sortable: false,
-                    render: (r) => `${escapeHtml(r.short_name)}<div class="bc-muted bc-text-sm">${escapeHtml(r.item_code)} · ${escapeHtml(r.phieu)}</div>` },
+                    render: (r) => `${wrap(escapeHtml(r.short_name))}${sub(`${r.item_code} · ${r.phieu}`)}` },
                 { key: 'so_luong', label: 'Sổ trước chốt', sortable: false, render: (r) => `${num(r.so_luong, 3)} ${escapeHtml(r.uom || '')}` },
                 { key: 'gia_tri', label: 'Giá trị', sortable: false, render: (r) => signed(r.gia_tri) },
             ] })}`;
@@ -308,7 +352,7 @@ async function load(isCurrent, thang = state.thang, chon = false) {
         if (chon) state.thang = d.meta.thang;
         bindPicker(d.meta.thang, `<span class="bc-text-sm">Từ ${escapeHtml(fmtDate(d.meta.from))} đến ${escapeHtml(fmtDate(d.meta.to))}</span>`, isCurrent);
         fill('kk-kpis', kpisHtml(d));
-        fill('kk-kho', khoHtml(d.kho, d.ira, d.meta.nguong));
+        fill('kk-kho', khoHtml(d.kho, d.ira, d.meta.nguong, d.meta.as_of));
         fill('kk-dang', dangHtml(d.dang_dem, d.huy_chot));
         fill('kk-ira', iraHtml(d.ira));
         fill('kk-dc', dcHtml(d));
@@ -338,14 +382,14 @@ export async function render({ container, isCurrent }) {
         <div class="bc-section-title">Kiểm kê gần nhất theo kho</div>
         <div class="bc-card"><div id="kk-kho">${skeleton(240)}</div></div>
         <div class="bc-grid bc-grid-even bc-mt-3">
-            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Phiếu đang đếm</div></div><div id="kk-dang">${skeleton(160)}</div></div>
+            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Phiếu đang đếm (hiện tại)</div></div><div id="kk-dang">${skeleton(160)}</div></div>
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Độ chính xác tồn</div></div><div id="kk-ira">${skeleton(160)}</div></div>
         </div>
         <div class="bc-section-title">Điều chỉnh kho trong tháng</div>
         <div class="bc-card"><div id="kk-dc">${skeleton(180)}</div></div>
         <div class="bc-grid bc-grid-even bc-mt-3">
-            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Kiểm kê kho Sản xuất</div></div><div id="kk-sx">${skeleton(160)}</div></div>
-            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Kiểm kê cửa hàng và kho khác</div></div><div id="kk-ch">${skeleton(160)}</div></div>
+            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Kiểm kê Sản xuất</div></div><div id="kk-sx">${skeleton(160)}</div></div>
+            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Phiếu kiểm kho: cửa hàng và kho khác</div></div><div id="kk-ch">${skeleton(160)}</div></div>
         </div>
         <div class="bc-grid bc-grid-even bc-mt-3">
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Xuất huỷ, xuất mẫu, xuất khác</div></div><div id="kk-xk">${skeleton(160)}</div></div>
@@ -354,7 +398,8 @@ export async function render({ container, isCurrent }) {
         <div class="bc-section-title">Mã chênh lệch kiểm kê lớn nhất trong tháng</div>
         <div class="bc-card"><div id="kk-top">${skeleton(200)}</div></div>
         <div class="bc-card bc-mt-3"><div class="bc-card-head"><div class="bc-card-title">Mã bị đưa về 0 vì không đếm</div></div><div id="kk-ve0">${skeleton(100)}</div></div>
-        <div class="bc-note bc-mt-3">ⓘ Giá trị theo giá vốn trên sổ kho, chưa VAT. Bảng kho và độ chính xác là tình hình hôm nay; các khoản
-            điều chỉnh theo tháng chọn. Không hiện người đếm, người chốt hay ghi chú trên phiếu.</div>`;
+        <div class="bc-note bc-mt-3">ⓘ Giá trị theo giá vốn trên sổ kho, chưa VAT. Bảng kho và phiếu đang đếm là tình hình hôm nay; độ
+            chính xác tồn theo lần kiểm gần nhất tính đến cuối tháng chọn; các khoản điều chỉnh theo tháng chọn. Không hiện người đếm,
+            người chốt hay ghi chú trên phiếu.</div>`;
     await load(isCurrent);
 }

@@ -2,6 +2,13 @@
 // Desktop 1366px + điện thoại 390px: không lỗi JS / HTTP, không cuộn ngang trang, banner + các khối dựng xong, số trên
 // màn = số API (gọi lại API ngay trong trang, định dạng bằng CHÍNH lib/format.js của trang) — không cố định số seed
 // (chạy được trên seed gộp của cả nhóm Kho). Đổi tháng → tải lại đúng tháng; nút Làm mới gọi lại API với refresh=1.
+// Sau review chéo: thẻ "Kiểm kê sản xuất" có dòng "Ở kho khác khi bật lô" (XC-1); thẻ phiếu kiểm kho không gọi kho khác là
+// cửa hàng, tách Cửa hàng / Kho khác (UX-1); tổng thiếu khoản nào nói đúng khoản đó, không hiện số như đủ, dòng ghi chú
+// không bị cắt (UX-2 — payload giả lập lỗi / không sx, dựng theo đúng luật _tong của máy chủ); bảng kho ghi "hiện tại / đến
+// hôm nay", độ chính xác ghi ngày lần kiểm và theo tháng chọn, cột độ chính xác bảng kho là của hôm nay (UX-5); ô đầu các
+// bảng không bị cắt chữ (UX-7) — kể cả khi khối không có số (không app Sản xuất, thiếu cột liên kết, thiếu bảng / lỗi phiếu
+// kiểm kho: lời giải thích trong bảng điều chỉnh xuống dòng, không cụt); khối phiếu kiểm kho không có số cũng không gọi là
+// "kiểm kê cửa hàng" (UX-1).
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -25,9 +32,21 @@ async function apiFmt(page, thang) {
         const m = (v) => (v === null || v === undefined ? '—' : f.fmtMoney(v));
         const fm = {};
         if (d.available) {
-            fm.tong = d.tong.available ? m(d.tong.gia_tri) : '—';
+            // Tổng thiếu khoản thật (không tính khoản "không áp dụng") → thẻ không đưa con số như thể đủ.
+            fm.thieu = d.tong.available ? d.tong.parts.filter((p) => !p.available && (d.tong.thieu || []).includes(p.key)).map((p) => p.label) : [];
+            fm.tong = d.tong.available && !fm.thieu.length ? m(d.tong.gia_tri) : '—';
+            fm.tongPartial = d.tong.available ? m(d.tong.gia_tri) : '—';
             fm.sx = d.kk_sx.available ? m(d.kk_sx.gt_rong) : '—';
+            fm.sxKhac = d.kk_sx.available && d.kk_sx.gt_kho_khac ? m(d.kk_sx.gt_kho_khac) : null;
             fm.ch = d.kk_ch.available ? m(d.kk_ch.gt_rong) : '—';
+            fm.chCua = d.kk_ch.available ? m(d.kk_ch.cua_hang?.gt_rong) : '—';
+            fm.chKhac = d.kk_ch.available ? m(d.kk_ch.kho_khac?.gt_rong) : '—';
+            fm.iraNgay = d.ira.available ? f.fmtDate(d.ira.ngay_moi_nhat) : '—';
+            fm.asOf = f.fmtDate(d.meta.as_of);
+            // Cột độ chính xác của bảng kho (trang 1) = tỷ lệ HÔM NAY của lần kiểm trên dòng đó.
+            const now = (d.ira.available && d.ira.ty_le_hien_tai) || {};
+            if (d.kho.available) fm.khoIra = d.kho.rows.slice(0, 12).map((x) => (x.phieu && Object.prototype.hasOwnProperty.call(now, x.phieu)
+                ? f.fmtPct(now[x.phieu]) : '—'));
             fm.xk = d.xuat_khac.available ? m(d.xuat_khac.gia_tri) : '—';
             fm.ira = d.ira.available ? f.fmtPct(d.ira.ty_le) : '—';
             if (d.kho.available) fm.chua = f.fmtNum(d.kho.tong.chua_kiem);
@@ -58,19 +77,60 @@ async function apiFmt(page, thang) {
 
 async function cards(page) {
     return page.$$eval('#kk-kpis .bc-stat', (els) => els.map((e) => ({
-        label: e.querySelector('.bc-stat-label').textContent.trim(), value: e.querySelector('.bc-stat-value').textContent.trim() })));
+        label: e.querySelector('.bc-stat-label').textContent.trim(), value: e.querySelector('.bc-stat-value').textContent.trim(),
+        rows: [...e.querySelectorAll('.bc-stat-row')].map((r) => [r.children[0]?.textContent.replace(/\s+/g, ' ').trim(),
+            r.children[1]?.textContent.replace(/\s+/g, ' ').trim()]) })));
+}
+
+/** Ô đầu các bảng của trang (nhãn + dòng phụ): không ô nào bị cắt chữ (nội dung rộng hơn ô). */
+async function clipped(page) {
+    return page.$$eval('.bc-main .bc-table tbody td:first-child', (tds) => tds.filter((td) => td.scrollWidth > td.clientWidth + 1)
+        .map((td) => `${td.closest('[id^="kk-"]')?.id}: ${td.textContent.replace(/\s+/g, ' ').trim().slice(0, 60)} (${td.scrollWidth}>${td.clientWidth})`));
+}
+
+/** Các dòng của thẻ số nằm trọn trong thẻ (thẻ overflow:hidden — tràn là bị cắt). */
+async function cardRowsInside(page, labelPart) {
+    return page.$$eval('#kk-kpis .bc-stat', (els, lp) => {
+        const c = els.find((e) => e.querySelector('.bc-stat-label').textContent.includes(lp));
+        if (!c) return ['không thấy thẻ'];
+        const right = c.getBoundingClientRect().right;
+        return [...c.querySelectorAll('.bc-stat-row > *')].filter((x) => x.getBoundingClientRect().right > right + 0.5
+            || x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent.trim().slice(0, 60));
+    }, labelPart);
 }
 
 async function checkMonth(page, r, tag) {
     const d = r.d;
     const cs = await cards(page);
     const card = (s) => cs.find((c) => c.label.includes(s))?.value;
+    const row = (s, l) => cs.find((c) => c.label.includes(s))?.rows.find((x) => x[0] === l)?.[1];
     check(`${tag}5 thẻ số`, cs.length === 5, JSON.stringify(cs));
     check(`${tag}thẻ tổng điều chỉnh = API (${r.fm.tong})`, card('Tổng điều chỉnh') === r.fm.tong, card('Tổng điều chỉnh'));
-    check(`${tag}thẻ kiểm kê sản xuất = API (${r.fm.sx})`, card('kho sản xuất') === r.fm.sx, card('kho sản xuất'));
-    check(`${tag}thẻ kiểm kê cửa hàng = API (${r.fm.ch})`, card('cửa hàng') === r.fm.ch, card('cửa hàng'));
+    check(`${tag}thẻ kiểm kê sản xuất = API (${r.fm.sx})`, card('Kiểm kê sản xuất') === r.fm.sx, card('Kiểm kê sản xuất'));
+    if (r.fm.sxKhac) {
+        check(`${tag}thẻ kiểm kê sản xuất: dòng "Ở kho khác khi bật lô" = API (${r.fm.sxKhac})`,
+            row('Kiểm kê sản xuất', 'Ở kho khác khi bật lô') === r.fm.sxKhac, JSON.stringify(cs.find((c) => c.label.includes('Kiểm kê sản xuất'))?.rows));
+    }
+    // UX-1: phiếu kiểm kho ở mọi kho — nhãn không gọi là "cửa hàng", tách Cửa hàng / Kho khác.
+    check(`${tag}thẻ phiếu kiểm kho (cửa hàng & kho khác) = API (${r.fm.ch}), không thẻ nào tên "Kiểm kê cửa hàng"`,
+        card('Phiếu kiểm kho') === r.fm.ch && !cs.some((c) => /Kiểm kê cửa hàng/i.test(c.label)), JSON.stringify(cs.map((c) => c.label)));
+    if (d.kk_ch.available) {
+        check(`${tag}thẻ phiếu kiểm kho: Cửa hàng ${r.fm.chCua} · Kho khác ${r.fm.chKhac} = API`,
+            row('Phiếu kiểm kho', 'Cửa hàng') === r.fm.chCua && row('Phiếu kiểm kho', 'Kho khác') === r.fm.chKhac,
+            JSON.stringify(cs.find((c) => c.label.includes('Phiếu kiểm kho'))?.rows));
+    }
     check(`${tag}thẻ xuất huỷ / khác = API (${r.fm.xk})`, card('Xuất huỷ') === r.fm.xk, card('Xuất huỷ'));
-    check(`${tag}thẻ độ chính xác = API (${r.fm.ira})`, card('Độ chính xác') === r.fm.ira, card('Độ chính xác'));
+    check(`${tag}thẻ độ chính xác = API (${r.fm.ira}), ghi ngày lần kiểm mới nhất ${r.fm.iraNgay}`, card('Độ chính xác') === r.fm.ira
+        && (!d.ira.available || row('Độ chính xác', 'Lần kiểm mới nhất') === r.fm.iraNgay),
+        JSON.stringify(cs.find((c) => c.label.includes('Độ chính xác'))));
+    const cut = await clipped(page);
+    check(`${tag}ô đầu các bảng không bị cắt chữ (nhãn, dòng kho / số phiếu xuống dòng)`, !cut.length, JSON.stringify(cut).slice(0, 400));
+    if (d.kk_sx.available && d.kk_sx.rows.some((x) => x.kho_khac?.length)) {
+        const sxt = flat(await page.textContent('#kk-sx'));
+        const want = d.kk_sx.rows.flatMap((x) => x.kho_khac || []).map((w) => w.label);
+        check(`${tag}kiểm kê sản xuất: dòng "ở kho khác khi bật lô" ghi đủ kho (${want.join(', ')})`,
+            sxt.includes('ở kho khác khi bật lô') && want.every((l) => sxt.includes(l)), sxt.slice(0, 300));
+    }
     // Bảng điều chỉnh: 4 khoản + dòng tổng, giá trị = API
     if (d.tong.available) {
         const vals = await page.$$eval('#kk-dc tbody tr', (trs) => trs.map((tr) => tr.children[1]?.textContent.trim()));
@@ -133,6 +193,12 @@ async function scenario(page) {
         && await page.$eval('#kk-thang', (e) => e.value) === d.meta.thang, filt);
     await checkMonth(page, r, '');
 
+    // UX-5: phần "hôm nay" ghi rõ — bảng kho, phiếu đang đếm
+    const khoNote = flat(await page.textContent('#kk-kho'));
+    check(`bảng kho ghi "hiện tại, đến hôm nay ${r.fm.asOf}"`, khoNote.includes('Tình hình hiện tại') && khoNote.includes(`đến hôm nay ${r.fm.asOf}`),
+        khoNote.slice(0, 160));
+    const dangTitle = flat(await page.$eval('#kk-dang', (e) => e.closest('.bc-card').querySelector('.bc-card-title').textContent));
+    check('thẻ phiếu đang đếm ghi "hiện tại"', dangTitle.includes('hiện tại'), dangTitle);
     // K9: bảng kho
     if (d.kho.available) {
         const kt = flat(await page.textContent('#kk-kho'));
@@ -193,6 +259,12 @@ async function scenario(page) {
     check(`đổi sang tháng ${mm}/${y}: kỳ hiển thị đúng`, rp.d.meta.thang === prev && await page.$eval('#kk-thang', (e) => e.value) === prev);
     await checkMonth(page, rp, `tháng ${mm}: `);
     check('ô chọn tháng vẫn giữ focus sau khi tải', await page.evaluate(() => document.activeElement?.id === 'kk-thang'));
+    if (rp.d.kho.available && rp.d.kho.rows.length) {
+        // Bảng kho luôn là hôm nay: cột độ chính xác lấy tỷ lệ hôm nay của lần kiểm trên dòng, KHÔNG phải tỷ lệ của tháng chọn.
+        const col = await page.$$eval('#kk-kho tbody tr', (trs) => trs.map((tr) => tr.children[5]?.textContent.trim()));
+        check(`tháng ${mm}: cột độ chính xác bảng kho = tỷ lệ hôm nay (${rp.fm.khoIra.filter((x) => x !== '—').join(' · ')})`,
+            JSON.stringify(col) === JSON.stringify(rp.fm.khoIra), JSON.stringify(col));
+    }
 
     // Nút Làm mới của khung: gọi lại API (refresh=1) cho đúng tháng đang chọn
     const wait = page.waitForResponse((x) => x.url().includes('kho_kk.get_overview') && (x.request().postData() || '').includes('refresh=1'),
@@ -203,6 +275,101 @@ async function scenario(page) {
         null, { timeout: 20000 });
     check('Làm mới: gọi lại API (refresh=1) cho tháng đang chọn, dựng lại đủ 5 thẻ', resp.status() === 200
         && (resp.request().postData() || '').includes(`thang=${prev}`), resp.request().postData());
+
+    // UX-2: tổng thiếu đúng khoản nào thì nói khoản đó (payload thật của máy chủ, chỉ tắt khối theo đúng luật _tong).
+    // Sau MỖI lần giả lập: ô đầu các bảng không bị cắt (UX-7) — lời giải thích "không có số" trong bảng điều chỉnh là chữ dài
+    // nhất của ô (vd. "Không áp dụng: site chưa cài app Sản xuất." 279px trong ô 230px ở 390px trước khi sửa).
+    const lx = await degraded(page, 'loi_xuat_khac', { xuat_khac: { available: false, error: true } });
+    if (lx) {
+        const c0 = (await cards(page)).find((c) => c.label.includes('Tổng điều chỉnh'));
+        const txt = JSON.stringify(c0?.rows || []);
+        check(`xuất khác lỗi: thẻ tổng không đưa số như đủ (—), "Các khoản đã có ${lx.partial}", "Chưa gồm: ${lx.label}"`,
+            c0?.value === '—' && c0.rows.some((x) => x[0] === 'Các khoản đã có' && x[1] === lx.partial)
+            && c0.rows.some((x) => x[0] === `Chưa gồm: ${lx.label}`) && !/kiểm kê sản xuất/i.test(txt), JSON.stringify(c0));
+        const inside = await cardRowsInside(page, 'Tổng điều chỉnh');
+        check('xuất khác lỗi: dòng ghi chú của thẻ tổng không bị cắt', !inside.length, JSON.stringify(inside));
+        const dc = flat(await page.textContent('#kk-dc'));
+        check('xuất khác lỗi: bảng điều chỉnh ghi "chưa gồm" đúng khoản', dc.includes(`chưa gồm: ${lx.label}`), dc.slice(-300));
+        await notClipped(page, 'xuất khác lỗi');
+    }
+    const ns = await degraded(page, 'khong_sx', { kk_sx: { available: false, reason: 'khong_sx' }, don_sx: { available: false, reason: 'khong_sx' } });
+    if (ns) {
+        const c0 = (await cards(page)).find((c) => c.label.includes('Tổng điều chỉnh'));
+        check(`không app Sản xuất: thẻ tổng là số (${ns.total}), không báo thiếu`, c0?.value === ns.total
+            && !/Thiếu số|Chưa gồm/.test(JSON.stringify(c0.rows)), JSON.stringify(c0));
+        const dc = flat(await page.textContent('#kk-dc'));
+        check('không app Sản xuất: dòng kiểm kê / dọn tồn sản xuất ghi "Không áp dụng", tổng không "chưa gồm"',
+            dc.includes('Không áp dụng') && !dc.includes('chưa gồm'), dc.slice(0, 300));
+        await notClipped(page, 'không app Sản xuất');
+    }
+    // sx cũ chưa có cột Stock Entry.custom_kiem_ke (kk_sx 'thieu_cot' — chữ dài nhất: "phiếu kho chưa ghi liên kết với lần kiểm
+    // kê") + lỗi riêng khối phiếu kiểm kho.
+    const tc = await degraded(page, 'thieu_cot + lỗi phiếu kiểm kho', { kk_sx: { available: false, reason: 'thieu_cot' },
+        kk_ch: { available: false, error: true } });
+    if (tc) {
+        const dc = flat(await page.textContent('#kk-dc'));
+        check(`thiếu cột liên kết: bảng điều chỉnh ghi lý do + "chưa gồm: ${tc.label}"`,
+            dc.includes('phiếu kho chưa ghi liên kết với lần kiểm kê') && dc.includes(`chưa gồm: ${tc.label}`), dc.slice(0, 400));
+        await notClipped(page, 'thiếu cột liên kết');
+        const inside = await cardRowsInside(page, 'Tổng điều chỉnh');
+        check('thiếu cột liên kết: dòng "Chưa gồm" của thẻ tổng không bị cắt', !inside.length, JSON.stringify(inside));
+        await chKhongCuaHang(page, 'lỗi phiếu kiểm kho', 'Không tải được');
+    }
+    // Site chưa có bảng phiếu kiểm kho (kk_ch 'thieu_bang').
+    const tb = await degraded(page, 'thiếu bảng phiếu kiểm kho', { kk_ch: { available: false, reason: 'thieu_bang' } });
+    if (tb) {
+        await notClipped(page, 'thiếu bảng phiếu kiểm kho');
+        await chKhongCuaHang(page, 'thiếu bảng phiếu kiểm kho', 'hệ thống chưa có phiếu kiểm kho');
+    }
+    await page.unroute('**/bc.api.kho_kk.get_overview');
+}
+
+/** Sau một lần giả lập: không ô đầu bảng nào bị cắt chữ (UX-7). */
+async function notClipped(page, tag) {
+    const cut = await clipped(page);
+    check(`${tag}: ô đầu các bảng không bị cắt chữ (lời giải thích "không có số" xuống dòng)`, !cut.length, JSON.stringify(cut).slice(0, 400));
+}
+
+/** Khối phiếu kiểm kho không có số: lời nhắn gọi đúng tên khối ("phiếu kiểm kho" — mọi kho), không gọi "kiểm kê cửa hàng"
+ *  (UX-1: khối gồm cả kho khác); cả trang không còn chữ "kiểm kê cửa hàng". */
+async function chKhongCuaHang(page, tag, why) {
+    const ch = flat(await page.textContent('#kk-ch'));
+    const main = flat(await page.textContent('.bc-main'));
+    check(`${tag}: khối phiếu kiểm kho báo "${why}" và gọi đúng tên "phiếu kiểm kho", không "kiểm kê cửa hàng"`,
+        ch.includes(why) && /phiếu kiểm kho/i.test(ch) && !/kiểm kê cửa hàng/i.test(ch) && !/kiểm kê cửa hàng/i.test(main), ch.slice(0, 200));
+}
+
+/** Tải lại trang với payload THẬT của máy chủ nhưng tắt khối như máy chủ làm khi lỗi / không có app Sản xuất / thiếu cột,
+ *  thiếu bảng (`off` = {khối: {available:false, error|reason}}) — tổng tính lại theo đúng luật kho_kk._tong (khoản tắt vì
+ *  'khong_sx' không áp dụng; lý do khác là thiếu). */
+async function degraded(page, kind, off) {
+    await page.unroute('**/bc.api.kho_kk.get_overview');
+    let info = null;
+    await page.route('**/bc.api.kho_kk.get_overview', async (route) => {
+        const resp = await route.fetch();
+        const j = await resp.json();
+        const d = j.message;
+        if (d && d.available && d.tong?.available) {
+            Object.assign(d, off);
+            for (const p of d.tong.parts) {
+                if (off[p.key]) Object.assign(p, { available: false, gia_tri: null, reason: off[p.key].error ? 'loi' : off[p.key].reason });
+            }
+            const have = d.tong.parts.filter((p) => p.available);
+            d.tong.gia_tri = Math.round(have.reduce((a, p) => a + p.gia_tri, 0) * 100) / 100;
+            d.tong.thieu = d.tong.parts.filter((p) => !p.available && p.reason !== 'khong_sx').map((p) => p.key);
+            d.tong.khong_ap_dung = d.tong.parts.filter((p) => !p.available && p.reason === 'khong_sx').map((p) => p.key);
+            d.tong.day_du = !d.tong.thieu.length;
+            info = { label: d.tong.parts.filter((p) => !p.available && p.reason !== 'khong_sx').map((p) => p.label).join('; '),
+                gia_tri: d.tong.gia_tri };
+        }
+        await route.fulfill({ response: resp, json: j });
+    });
+    await page.reload();
+    await page.waitForFunction(() => document.querySelectorAll('#kk-kpis .bc-stat').length === 5
+        && !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+    if (!info) { check(`giả lập ${kind}: có payload`, false); return null; }
+    const f = await page.evaluate(async (v) => (await import('/assets/bc/bc/lib/format.js')).fmtMoney(v), info.gia_tri);
+    return { label: info.label, partial: f, total: f };
 }
 
 const browser = await chromium.launch();

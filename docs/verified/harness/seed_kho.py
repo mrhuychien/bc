@@ -3,7 +3,8 @@
 Nguyên tắc: chỉ ghi sổ (SLE + chứng từ); Bin tính lại từ sổ bằng finalize() theo đúng ngữ nghĩa ERPNext:
 - chạy theo (posting_datetime, creation) từng (mã, kho), dòng is_cancelled = 1 bỏ qua;
 - dòng Stock Reconciliation KHÔNG lô có actual_qty = 0 và đặt thẳng qty_after_transaction (ERPNext v16
-  stock_reconciliation.py: `actual_qty: 0`); mọi dòng khác cộng actual_qty;
+  stock_reconciliation.py: `actual_qty: 0`); dòng kiểm kê CÓ lô ghi HAI chân như ERPNext (xuất −current_qty, nhập +qty —
+  xem recon()); mọi dòng khác cộng actual_qty;
 - giá trị chạy = Σ stock_value_difference; valuation_rate = giá trị / số lượng khi số lượng > 0, không thì giữ đơn giá trước;
 - Bin.actual_qty / stock_value / valuation_rate = trạng thái sau dòng CUỐI (kể cả phiếu ghi ngày tương lai).
 Lô: bundle=True ghi Serial and Batch Bundle + Serial and Batch Entry (v15+), bundle=False ghi SLE.batch_no (dữ liệu cũ).
@@ -135,20 +136,42 @@ class K:
 		return name
 
 	def recon(self, date, rows, purpose="Stock Reconciliation", docstatus=1, name=None, time="18:00:00"):
-		"""Stock Reconciliation. row: item_code, warehouse, qty (đếm), current_qty (sổ), value_diff (svd), batch (lô →
-		dòng sổ có actual_qty = qty − current_qty như ERPNext; không lô → actual_qty 0, tồn sau = qty)."""
+		"""Stock Reconciliation. row: item_code, warehouse, qty (đếm), current_qty (sổ), value_diff (Σ svd của dòng), rate
+		(đơn giá mới, tuỳ chọn), current_rate (đơn giá trước khi đếm, tuỳ chọn), batch.
+		- Không lô: MỘT dòng sổ actual_qty 0, tồn sau = qty (ERPNext v16 get_sle_for_items: `actual_qty: 0`).
+		- Có lô: HAI dòng sổ như ERPNext v16 get_sle_for_serialized_items (stock_reconciliation.py): chân XUẤT −current_qty
+		  trên bundle Outward (lô đang có; không có khi current_qty = 0) rồi chân NHẬP +qty trên bundle Inward (không có
+		  khi qty = 0; qty = current_qty = 0 thì KHÔNG ghi dòng sổ nào, value_diff phải 0). svd chia sao cho tổng hai chân
+		  = value_diff (chỉ một chân thì chân đó nhận cả value_diff): chân xuất = −current_qty × đơn giá cũ (current_rate; thiếu
+		  thì suy từ rate: value_diff − qty × rate; thiếu cả hai thì đơn giá = value_diff / (qty − current_qty)), chân nhập
+		  = value_diff − chân xuất. Dòng đổi giá có lô (qty = current_qty) cần rate hoặc current_rate."""
 		name = name or f"MAT-RECO-{next(_seq):05d}"
 		insert("Stock Reconciliation", name=name, docstatus=docstatus, purpose=purpose, posting_date=date,
 			posting_time=time, company=self.company)
 		for i, r in enumerate(rows, 1):
-			insert("Stock Reconciliation Item", parent=name, parenttype="Stock Reconciliation", parentfield="items", idx=i,
-				docstatus=docstatus, item_code=r["item_code"], warehouse=r["warehouse"], qty=r["qty"],
+			det = insert("Stock Reconciliation Item", parent=name, parenttype="Stock Reconciliation", parentfield="items",
+				idx=i, docstatus=docstatus, item_code=r["item_code"], warehouse=r["warehouse"], qty=r["qty"],
 				current_qty=r.get("current_qty", 0), valuation_rate=r.get("rate", 0), batch_no=r.get("batch"))
 			if docstatus != 1:
 				continue
 			if r.get("batch"):
-				self.sle(r["item_code"], r["warehouse"], r["qty"] - r.get("current_qty", 0), r["value_diff"], date,
-					"Stock Reconciliation", name, time, batch=r["batch"])
+				q, cur, vd = r["qty"], r.get("current_qty", 0), r["value_diff"]
+				if not cur:
+					v_out = 0            # không có chân xuất → chân nhập nhận cả value_diff
+				elif not q:
+					v_out = vd           # không có chân nhập → chân xuất nhận cả value_diff
+				elif r.get("current_rate") is not None:
+					v_out = -cur * r["current_rate"]
+				elif r.get("rate"):
+					v_out = vd - q * r["rate"]
+				else:
+					v_out = -cur * (vd / (q - cur) if q != cur else 0)
+				# qty = current_qty = 0 → không chân nào (ERPNext không ghi dòng sổ cho dòng phiếu này).
+				legs = ([(-cur, v_out)] if cur else []) + ([(q, vd - v_out)] if q else [])
+				assert legs or not vd, f"recon {name} dòng {i}: qty = current_qty = 0 mà value_diff = {vd} ≠ 0"
+				for lq, lv in legs:
+					self.sle(r["item_code"], r["warehouse"], lq, lv, date, "Stock Reconciliation", name, time,
+						batch=r["batch"], voucher_detail_no=det)
 			else:
 				self.sle(r["item_code"], r["warehouse"], 0, r["value_diff"], date, "Stock Reconciliation", name, time,
 					sr_qty=r["qty"])
