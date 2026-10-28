@@ -101,6 +101,53 @@ ghi chú tự do; biển số xe được hiện.
 - **Giấy tờ** hết hạn / sắp hết (HĐ, khám SK, ATTP — ATTP khớp cả option lưu sai chữ trên site) và
   **việc tồn** của Phòng nhân sự (gọi hàm thuần `canh_bao.tinh` của ns, đếm theo người).
 
+## Kho (`#/ton-kho`, `#/han-dung`, `#/kiem-ke`, `#/nhap-tp`)
+
+Bốn màn, mỗi màn một mảng ẩn / hiện được. Chung cho cả nhóm (`bc.api.kho`):
+
+- **Số "bây giờ" = Bin** (như ERPNext / sổ cái, gồm cả phiếu ghi ngày sau hôm nay); giá trị tại một ngày và mọi dòng
+  chảy (nhập, xuất bán, kiểm kê, điều chỉnh) = Σ chênh lệch giá trị trên sổ kho (dòng chưa huỷ). Giá trị theo **giá vốn,
+  chưa VAT**. Không bao giờ cộng số lượng sổ kho làm số tồn (phiếu kiểm kê không lô ghi số lượng 0).
+- Công ty = công ty mặc định của Kế toán (như Công nợ); kho thuộc công ty theo danh mục kho. **Vai trò kho**: kho thành
+  phẩm (BC Settings / SX Settings), cửa hàng (kho của POS Profile đang dùng), hàng đi đường (loại Transit), xưởng / bán
+  thành phẩm / nguyên vật liệu (SX Settings), **kho trả về & cách ly** (SX Settings hoặc cờ kho hàng lỗi) — kho nhóm cấu
+  hình được bung ra các kho con; kho ngừng dùng còn hàng vẫn tính.
+- **Thành phẩm** = danh sách thành phẩm của app sx (gồm mã ngừng dùng); site không có sx → mọi mã trong cây nhóm Tết và
+  truyền thống. Nhóm hàng theo **cây** (nhóm con của "Hàng Tết" vẫn là Tết — các màn Kinh doanh so đúng tên nhóm, chỉ lệch
+  khi nhóm có nhóm con; dải sức khoẻ báo).
+- Số lượng theo đơn vị kho; **không cộng Hộp với Kg**; thùng theo quy cách "Thùng" của mã, mọi tổng thùng kèm phần hộp
+  chưa khai quy cách. **Giá vốn dự phòng** (tồn âm, mã chưa có giá): giá kho đó → giá kho khác cùng công ty → lần ghi sổ
+  gần nhất → giá vốn trên mã → "chưa có giá vốn"; không dùng giá mua.
+- Đọc mềm app sx; không gọi method whitelisted nào của app khác, không dùng hàm có ghi dữ liệu của sx (bộ thử chặn
+  import). BC Settings mục **Kho**: số ngày tính số ngày tồn (90), chậm luân chuyển (90), tồn chết (180), cận date (60).
+
+**Tồn kho** — giá trị tồn hiện tại theo khu vực kho và nhóm hàng (thành phẩm hộp / thùng ngoài kho trả về & cách ly; dòng
+"Kho thành phẩm" cùng số với màn Thời gian thực), xu hướng 12 tháng + **nhập–xuất–tồn theo tháng** (tồn đầu + nhập mua,
+xuất bán (giá vốn hàng xuất, gần như gộp — hàng trả MT/NPP không qua kho), kiểm kê sản xuất, phiếu kiểm kho cửa hàng &
+kho khác, dọn tồn, nhập tạm, bù nợ BOM, nhập / xuất khác, nội bộ = tồn cuối — khớp từng đồng), **số ngày tồn kho**
+(truyền thống luôn; Tết chỉ trong mùa bán), **hàng chậm luân chuyển / tồn chết** (theo ngày xuất bán hoặc dùng sản xuất
+cuối, gồm xuất bù nợ BOM; Tết tách riêng theo giai đoạn mùa), **sức khoẻ số liệu** (định giá lại đang chạy / lỗi, phiếu
+ghi ngày tương lai, sổ lệch Bin, cho phép âm, hoá đơn POS chưa gộp, hoá đơn chưa trừ kho, …). Phần quét cả sổ cache theo
+ngày (Làm mới tính lại).
+
+**Hạn dùng & tồn âm** — thành phẩm theo hạn dùng: hết hạn (lô hết hạn hôm nay vẫn còn hạn), cận date ≤ N ngày, chưa rõ
+hạn (lô không ghi HSD, lô tồn cũ, phần chưa gắn lô, mã chưa quản lý lô), phần âm — các phần cộng lại **đúng bằng** tồn
+thành phẩm theo sổ; giá trị theo lô là ước tính (số lượng × giá vốn bình quân kho). **Tồn không bán được** = kho trả về &
+cách ly + lô đang thu hồi còn ngoài kho đó + hàng hết hạn. **Tồn âm** theo mã (giá trị theo giá vốn dự phòng) và theo lô.
+Số theo lô chụp cùng lúc với Bin, giữ ≤ 1 giờ (ghi giờ chụp).
+
+**Kiểm kê & điều chỉnh** (chọn tháng) — lần kiểm kê gần nhất từng kho (phiếu kiểm kê sx; cửa hàng / kho khác theo phiếu
+kiểm kho ERPNext; kho sx lấy lần mới hơn của hai nguồn), phiếu đang đếm, phiếu huỷ chốt, độ chính xác tồn của lần kiểm
+gần nhất; chênh lệch trong tháng: kiểm kê sản xuất (theo ngày hiệu lực của lần kiểm, gồm phiếu bù ghi lùi và phần ghi ở
+**kho khác** khi bật quản lý lô — sx nhập bù tồn âm về 0 là điều chỉnh thật), phiếu kiểm kho cửa hàng & kho khác (thừa /
+thiếu / đổi giá), dọn tồn của sx, **xuất huỷ / xuất mẫu / xuất khác** (không gồm xuất bù nợ BOM). Kiểm kê sản xuất ở đây
+khớp dòng tương ứng của nhập–xuất–tồn trừ phần ghi lùi ngày.
+
+**Nhập TP & giá vốn** (chọn tháng) — thành phẩm nhập kho theo phiếu nhập đã duyệt (từng ngày, 12 tháng, hộp + thùng +
+giá trị theo sổ), đối chiếu phiếu ↔ phiếu kho, hàng nhập Kho TP ngoài phiếu sx; **tình hình hôm nay**: phiếu chờ duyệt
+(phần sẽ thành nợ BOM), đã vào hộp chưa nhập kho, **nợ BOM đang mở** (giá tạm lúc nhập, tuổi, mã đã có BOM xử lý được
+ngay), nguyên liệu còn treo trên sổ (ước tính), thành phẩm đang tồn giá vốn 0.
+
 ## Kiểm thử
 
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
@@ -217,7 +264,9 @@ grand_total), `_KEYWORDS` (map kênh), `PLAN_COLUMNS` (cột kế hoạch trên 
 
 ```
 bc/api/        _common.py (guard, settings, fy_range, tet_season, cache, kênh),
-               common.py, kd.py, tet.py, sx.py, live.py, cn.py (công nợ), attp.py, _provinces.py
+               common.py, kd.py, tet.py, sx.py, live.py, cn.py (công nợ), attp.py, vc.py (vận chuyển),
+               ns.py (nhân sự), kho.py (nền nhóm Kho) + kho_ton.py, kho_han.py, kho_kk.py, kho_nhap.py,
+               sections.py (ẩn / hiện mảng), hidden.py, share.py, _provinces.py
 bc/www/        bc.py (guard + BC_CONTEXT), bc.html (import map + shell)
 bc/public/bc/  shell.js, shell.css, lib/, components/, views/
 bc/scripts/    dump_report_sql.py, compare_tet_reports.py
