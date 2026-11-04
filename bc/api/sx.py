@@ -14,8 +14,11 @@ SQL (bỏ frappe.client.get_list phía client).
 
 from __future__ import annotations
 
+import datetime
+import json
+
 import frappe
-from frappe.utils import add_days, add_months, cint, flt, get_last_day, getdate
+from frappe.utils import add_months, cint, flt, get_last_day, getdate
 
 from bc.api._common import (
 	OPENING_FILTER,
@@ -28,7 +31,6 @@ from bc.api._common import (
 	plan_column,
 	plans_of,
 	run_cached,
-	setting_int,
 	short_name,
 	sx_default_range,
 	tet_group,
@@ -50,9 +52,11 @@ from bc.api._common import (
 PRODUCTION_PURPOSES = ("Manufacture", "Material Receipt")
 ADJUSTMENT_REMARKS = ("Dọn tồn không lô sau bật lô", "Dọn âm lịch sử lô (D207)", "Dọn tồn âm thành phẩm")
 SX_WAREHOUSE_DEFAULT = "Thành phẩm - HGC"
-# Nhập lại sau kiểm kê (xem nhap_lai_sau_kiem_ke): chỉ xét phiếu nhập trong N ngày sau lần kiểm kê.
+# Nhập lại sau kiểm kê (xem nhap_lai_sau_kiem_ke): chỉ xét phiếu nhập TẠO trong N ngày sau giờ chốt kiểm kê.
 NHAP_LAI_NGAY = 60
 EPS_HOP = 0.001
+THU_HOI_VIEC = "đang thu hồi"                           # sx_kiem_ke.VIEC["thu_hoi"]: lô thu hồi — không kiểm, giữ số
+BU_D216 = "Bù chứng từ ghi lùi sau kiểm kê (D216)"      # = sx.api.sau_kiem_ke.NHAN (phiếu bù, không phải phiếu kiểm kê)
 
 
 def _kho_xuong() -> str | None:
@@ -96,56 +100,66 @@ def production_filter(bo_nhap_lai: bool = False) -> str:
 def nhap_lai_sau_kiem_ke() -> list:
 	"""Phiếu nhập Kho TP chỉ NHẬP LẠI đúng số mà một lần kiểm kê sx vừa đưa về 0 — không phải sản xuất mới.
 
-	Chuyện có thật (10/2026, kiểm kê bật quản lý lô KK-2026-002): mã có tồn mà không đếm bị đưa về 0 (sx D188), rồi hàng
-	vẫn nằm trong kho được nhập lại vào lô theo hạn dùng (thường bằng phiếu Nhập TP / "Nhập tạm") đúng bằng số đó. Sổ
-	kho đúng (về 0 rồi nhập lại), nhưng cộng sản lượng thì cùng một số hàng được tính HAI lần: lần vào Kho TP trước
-	kiểm kê và lần nhập lại.
+	Chuyện có thật (10/2026, kiểm kê bật quản lý lô KK-2026-002): mã có tồn mà KHÔNG ĐẾM bị đưa về 0 (sx D188), rồi
+	hàng vẫn nằm trong kho được nhập lại vào lô theo hạn dùng (phiếu Nhập TP: "Nhập tạm" / Manufacture) đúng bằng số đó.
+	Sổ kho đúng (về 0 rồi nhập lại), nhưng cộng sản lượng thì cùng một số hàng được tính HAI lần.
 
 	Nhận diện (mỗi lần kiểm kê × mã, không ghi cứng mã nào):
-	- lần kiểm kê SX Kiem Ke đã chốt (docstatus 1) ở đúng Kho TP (_wh()); biên bản SX Kiem Ke Lo của mã: số trước > 0,
-	  số sau = 0 (đưa về 0); và sổ kho xác nhận: các phiếu kho của lần kiểm kê (custom_kiem_ke) xuất ròng ĐÚNG số đó ở
-	  Kho TP — số đưa về 0 = Z;
-	- phiếu nhập lại = phiếu kho SẢN XUẤT (production_filter, vào Kho TP) SỚM NHẤT ghi sổ SAU thời điểm kiểm kê (thoi_diem,
-	  không có thì chot_luc), trong NHAP_LAI_NGAY ngày, có tổng số của mã trong phiếu ĐÚNG bằng Z (±0,001) — phiếu
-	  số khác Z trước / sau nó vẫn là sản xuất.
-	  Mỗi phiếu chỉ ghép với một lần kiểm kê; phiếu số khác Z không bị bỏ (sản xuất thật).
-	[{item_code, kiem_ke, ngay_kiem, so, phieu, ngay_nhap, dong: [tên Stock Entry Detail]}] — cache như các số khác."""
+	- lần kiểm kê SX Kiem Ke đã chốt (docstatus 1) ở đúng Kho TP (_wh()); mã KHÔNG có dòng đếm nào (bấm "Không còn"
+	  = có dòng đếm 0 → hàng hết thật, không xét); biên bản SX Kiem Ke Lo của mã (bỏ lô đang thu hồi — "không kiểm",
+	  số giữ nguyên): số trước > 0, số sau = 0 → Z = số trước; sổ kho xác nhận: phiếu kho CỦA lần kiểm kê
+	  (custom_kiem_ke, không gồm phiếu bù chứng từ ghi lùi D216) xuất ròng đúng Z ở Kho TP;
+	- phiếu nhập lại = NHÓM phiếu kho sản xuất (production_filter, vào Kho TP) của MỘT phiếu Nhập TP (sx ghi một phiếu
+	  kho cho mỗi lô hạn dùng — ds_se của phiếu); phiếu kho ngoài phiếu Nhập TP (nhập trên Desk) là một nhóm riêng.
+	  Nhóm TẠO SAU giờ chốt kiểm kê (creation — ngày ghi sổ của phiếu sx là ngày lập phiếu, giờ là lúc duyệt, có thể
+	  trước giờ chốt dù tạo sau), trong NHAP_LAI_NGAY ngày, có tổng số của mã ĐÚNG bằng Z (±0,001); lấy nhóm tạo SỚM
+	  NHẤT. Mỗi nhóm chỉ ghép với một lần kiểm kê; nhóm số khác Z là sản xuất thật.
+	[{item_code, kiem_ke, ngay_kiem, so, phieu, ngay_nhap, dong: [tên Stock Entry Detail]}] — `phieu` = phiếu Nhập TP
+	(hoặc phiếu kho). Tính lại mỗi request (nhớ trong frappe.local): Làm mới luôn thấy phiếu nhập / kiểm kê mới."""
 	wh = _wh()
-	ttl = setting_int("cache_ttl", 300)
-	key = f"bc:sx.nhap_lai:{wh}"
-	if ttl > 0:
-		hit = frappe.cache().get_value(key)
-		if hit is not None:
-			return hit
-	out = _nhap_lai(wh)
-	if ttl > 0:
-		frappe.cache().set_value(key, out, expires_in_sec=ttl)
-	return out
+	memo = getattr(frappe.local, "bc_nhap_lai", None)
+	if memo is None:
+		memo = {}
+		try:
+			frappe.local.bc_nhap_lai = memo
+		except Exception:  # local không gán được (môi trường lạ) → tính mỗi lần
+			pass
+	if wh not in memo:
+		memo[wh] = _nhap_lai(wh)
+	return memo[wh]
 
 
 def _nhap_lai(wh: str) -> list:
+	from bc.api.kho import in_tuple
+
 	if not (frappe.db.table_exists("SX Kiem Ke") and frappe.db.table_exists("SX Kiem Ke Lo")
 			and frappe.db.has_column("Stock Entry", "custom_kiem_ke")):
 		return []
+	khong_dem = ("AND NOT EXISTS (SELECT 1 FROM `tabSX Kiem Ke Dong` d WHERE d.parent = kk.name AND d.item = l.item)"
+		if frappe.db.table_exists("SX Kiem Ke Dong") else "")
 	ve0 = frappe.db.sql(
-		"""SELECT kk.name AS kk, COALESCE(kk.thoi_diem, kk.chot_luc) AS luc, l.item,
-			SUM(l.so_truoc) AS truoc, SUM(l.so_sau) AS sau
+		f"""SELECT kk.name AS kk, kk.chot_luc AS luc, l.item, SUM(l.so_truoc) AS truoc, SUM(l.so_sau) AS sau
 		FROM `tabSX Kiem Ke` kk
 		JOIN `tabSX Kiem Ke Lo` l ON l.parent = kk.name AND l.parenttype = 'SX Kiem Ke'
-		WHERE kk.docstatus = 1 AND kk.kho = %(wh)s AND COALESCE(kk.thoi_diem, kk.chot_luc) IS NOT NULL
-		GROUP BY kk.name, l.item
-		HAVING ROUND(SUM(l.so_truoc), 3) > 0 AND ROUND(SUM(l.so_sau), 3) = 0""", {"wh": wh}, as_dict=True)
+		WHERE kk.docstatus = 1 AND kk.kho = %(wh)s AND kk.chot_luc IS NOT NULL
+			AND LOCATE(%(thu_hoi)s, IFNULL(l.viec, '')) != 1 {khong_dem}
+		GROUP BY kk.name, kk.chot_luc, l.item
+		HAVING ROUND(SUM(l.so_truoc), 3) > 0 AND ROUND(SUM(l.so_sau), 3) = 0""",
+		{"wh": wh, "thu_hoi": THU_HOI_VIEC}, as_dict=True)
 	if not ve0:
 		return []
-	# Sổ kho xác nhận: phiếu kho của lần kiểm kê xuất ròng đúng số trước ở Kho TP (biên bản lệch sổ → không đoán).
+	# Sổ kho xác nhận: phiếu kho của CHÍNH lần kiểm kê xuất ròng đúng số trước ở Kho TP (biên bản lệch sổ → không đoán).
+	# Phiếu bù chứng từ ghi lùi (D216) cũng mang custom_kiem_ke nhưng là chứng từ khác (bán / xuất trước lúc đếm) → bỏ.
 	xuat = {(r.kk, r.item_code): -flt(r.q) for r in frappe.db.sql(
 		"""SELECT se.custom_kiem_ke AS kk, sle.item_code, SUM(sle.actual_qty) AS q
 		FROM `tabStock Ledger Entry` sle
 		JOIN `tabStock Entry` se ON sle.voucher_type = 'Stock Entry' AND se.name = sle.voucher_no
 		WHERE sle.is_cancelled = 0 AND sle.warehouse = %(wh)s AND se.docstatus = 1
 			AND se.custom_kiem_ke IN %(kks)s AND sle.item_code IN %(items)s
+			AND LOCATE(%(bu)s, IFNULL(se.remarks, '')) != 1
 		GROUP BY se.custom_kiem_ke, sle.item_code""",
-		{"wh": wh, "kks": tuple({r.kk for r in ve0}), "items": tuple({r.item for r in ve0})}, as_dict=True)}
+		{"wh": wh, "kks": in_tuple(r.kk for r in ve0), "items": in_tuple(r.item for r in ve0), "bu": BU_D216},
+		as_dict=True)}
 	can = []
 	for r in ve0:
 		z = round(flt(r.truoc), 3)
@@ -153,32 +167,52 @@ def _nhap_lai(wh: str) -> list:
 			can.append({"kk": r.kk, "luc": r.luc, "item": r.item, "z": z})
 	if not can:
 		return []
-	tu = getdate(min(x["luc"] for x in can))
-	den = getdate(add_days(max(getdate(x["luc"]) for x in can), NHAP_LAI_NGAY))
+	tu = min(x["luc"] for x in can)
+	den = max(x["luc"] for x in can) + datetime.timedelta(days=NHAP_LAI_NGAY)
 	dong = frappe.db.sql(
-		f"""SELECT se.name AS phieu, sed.name AS dong, sed.item_code, sed.transfer_qty AS so,
-			TIMESTAMP(se.posting_date, se.posting_time) AS luc, se.posting_date
+		f"""SELECT se.name AS se, sed.name AS dong, sed.item_code, sed.transfer_qty AS so, se.creation, se.posting_date
 		FROM `tabStock Entry Detail` sed
 		JOIN `tabStock Entry` se ON se.name = sed.parent
-		WHERE {production_filter()} AND sed.item_code IN %(items)s AND se.posting_date BETWEEN %(tu)s AND %(den)s
-		ORDER BY TIMESTAMP(se.posting_date, se.posting_time), se.name, sed.idx""",
-		{"sx_wh": wh, "items": tuple({x["item"] for x in can}), "tu": tu, "den": den}, as_dict=True)
-	phieu: dict = {}  # (phiếu, mã) → {so, luc, ngay, dong}
+		WHERE {production_filter()} AND sed.item_code IN %(items)s AND se.creation > %(tu)s AND se.creation <= %(den)s
+		ORDER BY se.creation, se.name, sed.idx""",
+		{"sx_wh": wh, "items": in_tuple(x["item"] for x in can), "tu": tu, "den": den}, as_dict=True)
+	phieu_cua = _phieu_nhap_tp({d.se for d in dong})
+	nhom: dict = {}  # (phiếu Nhập TP | phiếu kho, mã) → {so, tao, ngay, dong}
 	for d in dong:
-		p = phieu.setdefault((d.phieu, d.item_code), {"so": 0.0, "luc": d.luc, "ngay": d.posting_date, "dong": []})
-		p["so"] += flt(d.so)
-		p["dong"].append(d.dong)
-	thu_tu = sorted(phieu.items(), key=lambda kv: (kv[1]["luc"], kv[0][0]))
+		g = nhom.setdefault((phieu_cua.get(d.se, d.se), d.item_code),
+			{"so": 0.0, "tao": d.creation, "ngay": d.posting_date, "dong": []})
+		g["so"] += flt(d.so)
+		g["tao"] = min(g["tao"], d.creation)
+		g["ngay"] = max(getdate(g["ngay"]), getdate(d.posting_date))
+		g["dong"].append(d.dong)
+	thu_tu = sorted(nhom.items(), key=lambda kv: (kv[1]["tao"], kv[0][0]))
 	dung, out = set(), []
 	for x in sorted(can, key=lambda x: (x["luc"], x["kk"], x["item"])):
-		han = getdate(add_days(getdate(x["luc"]), NHAP_LAI_NGAY))
-		for (ph, item), p in thu_tu:  # phiếu SỚM NHẤT sau kiểm kê có số đúng bằng Z; phiếu số khác là sản xuất thật
-			if (item == x["item"] and (ph, item) not in dung and p["luc"] > x["luc"] and getdate(p["ngay"]) <= han
-					and abs(round(p["so"], 3) - x["z"]) <= EPS_HOP):
+		han = x["luc"] + datetime.timedelta(days=NHAP_LAI_NGAY)
+		for (ph, item), g in thu_tu:  # nhóm TẠO SỚM NHẤT sau giờ chốt có số đúng bằng Z; nhóm số khác là sản xuất thật
+			if (item == x["item"] and (ph, item) not in dung and x["luc"] < g["tao"] <= han
+					and abs(round(g["so"], 3) - x["z"]) <= EPS_HOP):
 				dung.add((ph, item))
 				out.append({"item_code": item, "kiem_ke": x["kk"], "ngay_kiem": iso(x["luc"]), "so": x["z"],
-					"phieu": ph, "ngay_nhap": iso(p["ngay"]), "dong": p["dong"]})
+					"phieu": ph, "ngay_nhap": iso(g["ngay"]), "dong": g["dong"]})
 				break
+	return out
+
+
+def _phieu_nhap_tp(ses: set) -> dict:
+	"""{phiếu kho: phiếu Nhập TP} theo ds_se của phiếu Nhap TP đã duyệt (sx ghi mỗi lô một phiếu kho) — đọc mềm."""
+	if not ses or not (frappe.db.table_exists("SX Phieu Nhap TP") and frappe.db.has_column("SX Phieu Nhap TP", "ds_se")):
+		return {}
+	out = {}
+	for name, ds in frappe.db.sql("""SELECT name, ds_se FROM `tabSX Phieu Nhap TP`
+			WHERE docstatus = 1 AND IFNULL(ds_se, '') != ''"""):
+		try:
+			ct = json.loads(ds)
+		except (TypeError, ValueError):
+			continue
+		for x in ct if isinstance(ct, list) else []:
+			if isinstance(x, dict) and x.get("dt") == "Stock Entry" and x.get("name") in ses:
+				out[x["name"]] = name
 	return out
 
 

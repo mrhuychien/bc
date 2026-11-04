@@ -31,6 +31,7 @@ def reset(only=None):
 	frappe.db.conn = None
 	frappe.cache().store.clear()
 	frappe.local.__dict__.pop("sx_nho", None)  # nhớ-theo-request của sx (items_tp…): site thật hết request là mất
+	frappe.local.__dict__.pop("bc_nhap_lai", None)  # nhớ-theo-request của bc.api.sx.nhap_lai_sau_kiem_ke
 
 
 def insert(doctype, name=None, **fields):

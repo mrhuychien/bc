@@ -33,12 +33,15 @@ qua desk API.
   kho bằng phiếu chuyển này mà không ghi sản xuất vào Xưởng. Trước đây chỉ đếm Material Receipt → thiếu hàng
   có BOM và hàng chuyển từ Xưởng, thừa phiếu kiểm kê. Kho thành phẩm: BC Settings → `SX Settings.kho_tp` →
   "Thành phẩm - HGC".
-  **Bỏ phiếu NHẬP LẠI sau kiểm kê** (`sx.nhap_lai_sau_kiem_ke`): lần kiểm kê sx đã chốt ở Kho TP đưa một mã về 0
-  (biên bản: số trước > 0, số sau = 0; sổ kho xác nhận xuất đúng số đó) rồi hàng được nhập lại vào lô theo hạn dùng
-  đúng bằng số đó → phiếu nhập Kho TP SỚM NHẤT sau lúc kiểm kê, trong 60 ngày, có số của mã đúng bằng số bị đưa về 0
-  là nhập lại, không phải sản xuất (10/2026, KK-2026-002: ĐTL, HDT, BCT, CVTT, CĐTT, CLV, SR900 — không bỏ thì cùng
-  số hàng tính hai lần). Áp cho SX Hàng Tết (theo mã, theo ngày, chi tiết ngày) và Thời gian thực; thẻ sản phẩm ghi rõ
-  phần không tính. Kho › Nhập TP (đối chiếu sổ kho ↔ phiếu nhập) vẫn theo sổ.
+  **Bỏ phiếu NHẬP LẠI sau kiểm kê** (`sx.nhap_lai_sau_kiem_ke`): lần kiểm kê sx đã chốt ở Kho TP đưa một mã KHÔNG
+  ĐẾM về 0 (không dòng đếm nào — bấm "Không còn" là hàng hết thật; biên bản: số trước > 0, số sau = 0, bỏ lô đang thu
+  hồi; sổ kho xác nhận phiếu của lần kiểm kê xuất đúng số đó, không tính phiếu bù D216) rồi hàng được nhập lại vào lô
+  theo hạn dùng đúng bằng số đó → nhóm phiếu kho của MỘT phiếu Nhập TP (sx ghi mỗi lô một phiếu kho) hoặc một phiếu kho
+  nhập trên Desk, TẠO sau giờ chốt (không theo giờ ghi sổ — phiếu sx ghi ngày lập phiếu), trong 60 ngày, có số của mã
+  đúng bằng số bị đưa về 0, nhóm tạo sớm nhất, là nhập lại, không phải sản xuất (10/2026, KK-2026-002: ĐTL, HDT, BCT,
+  CVTT, CĐTT, CLV, SR900 — không bỏ thì cùng số hàng tính hai lần). Áp cho SX Hàng Tết (theo mã, theo ngày, chi tiết
+  ngày) và Thời gian thực; thẻ sản phẩm ghi rõ phần không tính. Kho › Nhập TP (đối chiếu sổ kho ↔ phiếu nhập) vẫn
+  theo sổ.
 
 ## Công nợ (`#/cong-no`, `#/phai-tra`)
 
