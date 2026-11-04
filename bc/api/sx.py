@@ -3,7 +3,8 @@
 xuất theo ngày").
 
 Nguồn: phiếu SẢN XUẤT nhập kho thành phẩm (production_filter(): Manufacture dòng thành phẩm +
-Material Receipt không phải điều chỉnh kho), dòng nhập vào kho thành phẩm (BC Settings.sx_warehouse →
+Material Receipt không phải điều chỉnh kho; bỏ phiếu NHẬP LẠI sau kiểm kê — nhap_lai_sau_kiem_ke), dòng nhập vào kho
+thành phẩm (BC Settings.sx_warehouse →
 SX Settings.kho_tp → "Thành phẩm - HGC"); số lượng theo đơn vị kho (transfer_qty = hộp), thùng = hộp /
 hệ số UOM "Thùng" của Item. Xuất bán = Sales Invoice (stock_qty, không tính trả).
 Tồn kho = Bin.actual_qty hiện tại CHỈ kho thành phẩm (sx_warehouse, gồm kho con nếu là nhóm). Ảnh + nhóm hàng join Item ngay trong
@@ -14,7 +15,7 @@ SQL (bỏ frappe.client.get_list phía client).
 from __future__ import annotations
 
 import frappe
-from frappe.utils import add_months, cint, flt, get_last_day, getdate
+from frappe.utils import add_days, add_months, cint, flt, get_last_day, getdate
 
 from bc.api._common import (
 	OPENING_FILTER,
@@ -27,6 +28,7 @@ from bc.api._common import (
 	plan_column,
 	plans_of,
 	run_cached,
+	setting_int,
 	short_name,
 	sx_default_range,
 	tet_group,
@@ -48,6 +50,9 @@ from bc.api._common import (
 PRODUCTION_PURPOSES = ("Manufacture", "Material Receipt")
 ADJUSTMENT_REMARKS = ("Dọn tồn không lô sau bật lô", "Dọn âm lịch sử lô (D207)", "Dọn tồn âm thành phẩm")
 SX_WAREHOUSE_DEFAULT = "Thành phẩm - HGC"
+# Nhập lại sau kiểm kê (xem nhap_lai_sau_kiem_ke): chỉ xét phiếu nhập trong N ngày sau lần kiểm kê.
+NHAP_LAI_NGAY = 60
+EPS_HOP = 0.001
 
 
 def _kho_xuong() -> str | None:
@@ -65,8 +70,11 @@ def production_purposes() -> list:
 	return [*PRODUCTION_PURPOSES, "Material Transfer"] if _kho_xuong() else list(PRODUCTION_PURPOSES)
 
 
-def production_filter() -> str:
-	"""Điều kiện WHERE cho dòng thành phẩm sản xuất — alias `se`/`sed`, PHẢI truyền %(sx_wh)s (xem _wh())."""
+def production_filter(bo_nhap_lai: bool = False) -> str:
+	"""Điều kiện WHERE cho dòng thành phẩm sản xuất — alias `se`/`sed`, PHẢI truyền %(sx_wh)s (xem _wh()).
+
+	bo_nhap_lai=True: bỏ thêm các dòng NHẬP LẠI sau kiểm kê (nhap_lai_sau_kiem_ke) — dùng cho mọi số SẢN LƯỢNG
+	(SX Hàng Tết, Thời gian thực). Đối chiếu sổ kho ↔ phiếu nhập (Kho › Nhập TP) giữ nguyên số theo sổ (mặc định)."""
 	# LOCATE(...) != 1 thay vì NOT LIKE 'x%': chuỗi không chứa % nên không vướng pyformat của frappe.db.sql.
 	not_adjust = " AND ".join(f"LOCATE({frappe.db.escape(p)}, IFNULL(se.remarks, '')) != 1" for p in ADJUSTMENT_REMARKS)
 	if frappe.db.has_column("Stock Entry", "custom_kiem_ke"):  # field của app sx — site không cài sx thì không có
@@ -75,9 +83,103 @@ def production_filter() -> str:
 	transfer = (f"""
 		OR (se.purpose = 'Material Transfer' AND sed.s_warehouse = {frappe.db.escape(xuong)} AND {not_adjust})"""
 		if xuong and xuong != _wh() else "")
+	bo = ""
+	if bo_nhap_lai:
+		dong = [d for x in nhap_lai_sau_kiem_ke() for d in x["dong"]]
+		if dong:  # tên dòng Stock Entry Detail (hash do Frappe sinh) — escape như kho_xuong ở trên
+			bo = f"\n\t\tAND sed.name NOT IN ({', '.join(frappe.db.escape(d) for d in dong)})"
 	return f"""se.docstatus = 1 AND sed.t_warehouse = %(sx_wh)s AND (
 		(se.purpose = 'Manufacture' AND sed.is_finished_item = 1)
-		OR (se.purpose = 'Material Receipt' AND {not_adjust}){transfer})"""
+		OR (se.purpose = 'Material Receipt' AND {not_adjust}){transfer}){bo}"""
+
+
+def nhap_lai_sau_kiem_ke() -> list:
+	"""Phiếu nhập Kho TP chỉ NHẬP LẠI đúng số mà một lần kiểm kê sx vừa đưa về 0 — không phải sản xuất mới.
+
+	Chuyện có thật (10/2026, kiểm kê bật quản lý lô KK-2026-002): mã có tồn mà không đếm bị đưa về 0 (sx D188), rồi hàng
+	vẫn nằm trong kho được nhập lại vào lô theo hạn dùng (thường bằng phiếu Nhập TP / "Nhập tạm") đúng bằng số đó. Sổ
+	kho đúng (về 0 rồi nhập lại), nhưng cộng sản lượng thì cùng một số hàng được tính HAI lần: lần vào Kho TP trước
+	kiểm kê và lần nhập lại.
+
+	Nhận diện (mỗi lần kiểm kê × mã, không ghi cứng mã nào):
+	- lần kiểm kê SX Kiem Ke đã chốt (docstatus 1) ở đúng Kho TP (_wh()); biên bản SX Kiem Ke Lo của mã: số trước > 0,
+	  số sau = 0 (đưa về 0); và sổ kho xác nhận: các phiếu kho của lần kiểm kê (custom_kiem_ke) xuất ròng ĐÚNG số đó ở
+	  Kho TP — số đưa về 0 = Z;
+	- phiếu nhập lại = phiếu kho SẢN XUẤT (production_filter, vào Kho TP) SỚM NHẤT ghi sổ SAU thời điểm kiểm kê (thoi_diem,
+	  không có thì chot_luc), trong NHAP_LAI_NGAY ngày, có tổng số của mã trong phiếu ĐÚNG bằng Z (±0,001) — phiếu
+	  số khác Z trước / sau nó vẫn là sản xuất.
+	  Mỗi phiếu chỉ ghép với một lần kiểm kê; phiếu số khác Z không bị bỏ (sản xuất thật).
+	[{item_code, kiem_ke, ngay_kiem, so, phieu, ngay_nhap, dong: [tên Stock Entry Detail]}] — cache như các số khác."""
+	wh = _wh()
+	ttl = setting_int("cache_ttl", 300)
+	key = f"bc:sx.nhap_lai:{wh}"
+	if ttl > 0:
+		hit = frappe.cache().get_value(key)
+		if hit is not None:
+			return hit
+	out = _nhap_lai(wh)
+	if ttl > 0:
+		frappe.cache().set_value(key, out, expires_in_sec=ttl)
+	return out
+
+
+def _nhap_lai(wh: str) -> list:
+	if not (frappe.db.table_exists("SX Kiem Ke") and frappe.db.table_exists("SX Kiem Ke Lo")
+			and frappe.db.has_column("Stock Entry", "custom_kiem_ke")):
+		return []
+	ve0 = frappe.db.sql(
+		"""SELECT kk.name AS kk, COALESCE(kk.thoi_diem, kk.chot_luc) AS luc, l.item,
+			SUM(l.so_truoc) AS truoc, SUM(l.so_sau) AS sau
+		FROM `tabSX Kiem Ke` kk
+		JOIN `tabSX Kiem Ke Lo` l ON l.parent = kk.name AND l.parenttype = 'SX Kiem Ke'
+		WHERE kk.docstatus = 1 AND kk.kho = %(wh)s AND COALESCE(kk.thoi_diem, kk.chot_luc) IS NOT NULL
+		GROUP BY kk.name, l.item
+		HAVING ROUND(SUM(l.so_truoc), 3) > 0 AND ROUND(SUM(l.so_sau), 3) = 0""", {"wh": wh}, as_dict=True)
+	if not ve0:
+		return []
+	# Sổ kho xác nhận: phiếu kho của lần kiểm kê xuất ròng đúng số trước ở Kho TP (biên bản lệch sổ → không đoán).
+	xuat = {(r.kk, r.item_code): -flt(r.q) for r in frappe.db.sql(
+		"""SELECT se.custom_kiem_ke AS kk, sle.item_code, SUM(sle.actual_qty) AS q
+		FROM `tabStock Ledger Entry` sle
+		JOIN `tabStock Entry` se ON sle.voucher_type = 'Stock Entry' AND se.name = sle.voucher_no
+		WHERE sle.is_cancelled = 0 AND sle.warehouse = %(wh)s AND se.docstatus = 1
+			AND se.custom_kiem_ke IN %(kks)s AND sle.item_code IN %(items)s
+		GROUP BY se.custom_kiem_ke, sle.item_code""",
+		{"wh": wh, "kks": tuple({r.kk for r in ve0}), "items": tuple({r.item for r in ve0})}, as_dict=True)}
+	can = []
+	for r in ve0:
+		z = round(flt(r.truoc), 3)
+		if abs(xuat.get((r.kk, r.item), 0.0) - z) <= EPS_HOP:
+			can.append({"kk": r.kk, "luc": r.luc, "item": r.item, "z": z})
+	if not can:
+		return []
+	tu = getdate(min(x["luc"] for x in can))
+	den = getdate(add_days(max(getdate(x["luc"]) for x in can), NHAP_LAI_NGAY))
+	dong = frappe.db.sql(
+		f"""SELECT se.name AS phieu, sed.name AS dong, sed.item_code, sed.transfer_qty AS so,
+			TIMESTAMP(se.posting_date, se.posting_time) AS luc, se.posting_date
+		FROM `tabStock Entry Detail` sed
+		JOIN `tabStock Entry` se ON se.name = sed.parent
+		WHERE {production_filter()} AND sed.item_code IN %(items)s AND se.posting_date BETWEEN %(tu)s AND %(den)s
+		ORDER BY TIMESTAMP(se.posting_date, se.posting_time), se.name, sed.idx""",
+		{"sx_wh": wh, "items": tuple({x["item"] for x in can}), "tu": tu, "den": den}, as_dict=True)
+	phieu: dict = {}  # (phiếu, mã) → {so, luc, ngay, dong}
+	for d in dong:
+		p = phieu.setdefault((d.phieu, d.item_code), {"so": 0.0, "luc": d.luc, "ngay": d.posting_date, "dong": []})
+		p["so"] += flt(d.so)
+		p["dong"].append(d.dong)
+	thu_tu = sorted(phieu.items(), key=lambda kv: (kv[1]["luc"], kv[0][0]))
+	dung, out = set(), []
+	for x in sorted(can, key=lambda x: (x["luc"], x["kk"], x["item"])):
+		han = getdate(add_days(getdate(x["luc"]), NHAP_LAI_NGAY))
+		for (ph, item), p in thu_tu:  # phiếu SỚM NHẤT sau kiểm kê có số đúng bằng Z; phiếu số khác là sản xuất thật
+			if (item == x["item"] and (ph, item) not in dung and p["luc"] > x["luc"] and getdate(p["ngay"]) <= han
+					and abs(round(p["so"], 3) - x["z"]) <= EPS_HOP):
+				dung.add((ph, item))
+				out.append({"item_code": item, "kiem_ke": x["kk"], "ngay_kiem": iso(x["luc"]), "so": x["z"],
+					"phieu": ph, "ngay_nhap": iso(p["ngay"]), "dong": p["dong"]})
+				break
+	return out
 
 
 def _wh() -> str:
@@ -134,9 +236,15 @@ def get_items(from_date=None, to_date=None, refresh=0):
 			SELECT sed.item_code, SUM(sed.transfer_qty) AS qty
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {production_filter()} AND se.posting_date BETWEEN %(f)s AND %(t)s
+			WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date BETWEEN %(f)s AND %(t)s
 			GROUP BY sed.item_code
 			""", p, as_dict=True)}
+		# Phiếu nhập lại sau kiểm kê (không phải sản xuất) đã bỏ khỏi `produced` — trả ra để màn ghi rõ.
+		nhap_lai: dict = {}
+		for x in nhap_lai_sau_kiem_ke():
+			if f <= getdate(x["ngay_nhap"]) <= t:
+				nhap_lai.setdefault(x["item_code"], []).append({k: x[k] for k in ("kiem_ke", "ngay_kiem", "so", "phieu",
+					"ngay_nhap")})
 		outgoing = {r.item_code: flt(r.qty) for r in frappe.db.sql(
 			f"""
 			SELECT sii.item_code, SUM(sii.stock_qty) AS qty
@@ -193,6 +301,8 @@ def get_items(from_date=None, to_date=None, refresh=0):
 				"outgoing_cartons": to_cartons(out, factors.get(it.item_code)),
 				"produced_pct": pct(prod, plan),
 				"outgoing_pct": pct(out, plan if plan else prod),
+				"nhap_lai": sum(flt(x["so"]) for x in nhap_lai.get(it.item_code, [])),
+				"nhap_lai_ds": nhap_lai.get(it.item_code, []),
 			})
 		rows = drop_hidden(rows)  # mã admin đã ẩn khỏi báo cáo
 		rows.sort(key=lambda r: (r["stock"], r["produced"]), reverse=True)  # tồn kho lớn → bé
@@ -210,7 +320,7 @@ def _diagnose(f, t, has_production: bool) -> dict:
 		{"f": f, "t": t}, as_dict=True)}
 	last = frappe.db.sql(
 		f"""SELECT MAX(se.posting_date) FROM `tabStock Entry Detail` sed
-		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {production_filter()}""", {"sx_wh": _wh()})[0][0]
+		    JOIN `tabStock Entry` se ON se.name = sed.parent WHERE {production_filter(bo_nhap_lai=True)}""", {"sx_wh": _wh()})[0][0]
 	return {
 		"has_production": has_production,
 		"entries_by_purpose": by_purpose,
@@ -252,7 +362,7 @@ def get_daily_summary(year=None, month=None, refresh=0):
 			SELECT se.posting_date AS date, sed.item_code, SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {production_filter()} AND se.posting_date BETWEEN %(s)s AND %(e)s
+			WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date BETWEEN %(s)s AND %(e)s
 			GROUP BY se.posting_date, sed.item_code
 			""",
 			{"s": start, "e": end, "sx_wh": _wh()},
@@ -290,7 +400,7 @@ def get_daily_detail(date=None, refresh=0):
 				SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount
 			FROM `tabStock Entry Detail` sed
 			JOIN `tabStock Entry` se ON se.name = sed.parent
-			WHERE {production_filter()} AND se.posting_date = %(d)s
+			WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date = %(d)s
 			GROUP BY se.name, sed.item_code
 			ORDER BY se.name, sed.item_code
 			""",

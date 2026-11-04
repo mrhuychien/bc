@@ -74,7 +74,7 @@ def _production_rows(day, wh, until_time=None) -> list:
 			SUM(sed.transfer_qty) AS boxes, SUM(sed.amount) AS amount, COUNT(DISTINCT se.name) AS vouchers
 		FROM `tabStock Entry Detail` sed
 		JOIN `tabStock Entry` se ON se.name = sed.parent
-		WHERE {production_filter()} AND se.posting_date = %(d)s {cond}
+		WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date = %(d)s {cond}
 		GROUP BY sed.item_code, HOUR(se.posting_time)
 		""",
 		{"d": day, "sx_wh": wh, "t": until_time},
@@ -85,7 +85,7 @@ def _production_rows(day, wh, until_time=None) -> list:
 def _voucher_count(day, wh) -> int:
 	return cint(frappe.db.sql(
 		f"""SELECT COUNT(DISTINCT se.name) FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-		    WHERE {production_filter()} AND se.posting_date = %(d)s""", {"sx_wh": wh, "d": day})[0][0])
+		    WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date = %(d)s""", {"sx_wh": wh, "d": day})[0][0])
 
 
 def _finished_stock(wh) -> dict:
@@ -217,7 +217,7 @@ def _feed(day, wh, limit=14) -> list:
 		f"""SELECT se.name, se.posting_time, SUM(sed.transfer_qty) AS boxes, COUNT(DISTINCT sed.item_code) AS so_ma,
 		          MAX(sed.item_name) AS item_name
 		    FROM `tabStock Entry` se JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-		    WHERE {production_filter()} AND se.posting_date = %(d)s
+		    WHERE {production_filter(bo_nhap_lai=True)} AND se.posting_date = %(d)s
 		    GROUP BY se.name, se.posting_time ORDER BY se.posting_time DESC LIMIT %(n)s""",
 		{"sx_wh": wh, "d": day, "n": limit}, as_dict=True):
 		ev.append({"kind": "production", "time": str(r.posting_time or "")[:5],

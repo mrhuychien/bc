@@ -19,7 +19,7 @@ pip install pymysql
 
 | File | Kiểm gì |
 |---|---|
-| `test_sx.py` | Số sản xuất: Manufacture dòng thành phẩm + Material Receipt trừ phiếu kiểm kê / dọn lô; site không có sx; kho TP từ SX Settings |
+| `test_sx.py` | Số sản xuất: Manufacture dòng thành phẩm + Material Receipt trừ phiếu kiểm kê / dọn lô; bỏ phiếu nhập lại sau kiểm kê đưa về 0 (đúng số, sớm nhất sau giờ chốt, ≤ 60 ngày, gộp dòng lô; không bỏ phiếu gốc cùng ngày trước giờ chốt, kiểm kê còn số / đã huỷ / kho khác / biên bản lệch sổ, phiếu số khác) ở SX Tết + Thời gian thực, Kho › Nhập TP vẫn theo sổ; site không có sx; kho TP từ SX Settings |
 | `test_channel.py` | Kênh Showroom từ PKD Settings; pkd chưa migrate `kenh_showroom` vẫn giữ 3 kênh |
 | `test_cn.py` | Phải thu FIFO + tuổi nợ theo kênh, MT theo bảng kê (code ketoan thật), DSO, phải trả, quỹ, che số TK; các nhánh dự phòng |
 | `test_attp.py` | So vi sai với `sx.api.qc_attp.tong_quan` / `qc_baocao.so_lieu` THẬT (bc dưới BC Viewer, sx dưới System Manager) |

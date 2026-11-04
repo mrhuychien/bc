@@ -4,7 +4,7 @@ import sys
 from seed import reset
 import seed_ui, test_attp, test_cn, test_ns, test_sx, test_vc
 reset()
-test_sx.seed()
+test_sx.seed_nhap_lai()  # seed() + kiểm kê đưa về 0 rồi nhập lại (thẻ SX Tết ghi phần không tính)
 test_cn.seed()
 test_attp.seed()
 test_vc.seed()

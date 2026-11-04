@@ -27,6 +27,18 @@ const SCEN = {
         await page.waitForTimeout(1500);
         const t = await page.textContent('.bc-main');
         check('SX Tết: không hiện lỗi', !t.includes('Không tải được'), t.slice(0, 200));
+        // Kiểm kê đưa về 0 rồi nhập lại đúng số (seed_nhap_lai): thẻ DTL ghi phần không tính, số Sản xuất = API.
+        await page.waitForSelector('#sx-prods .bc-pc', { timeout: 15000 });
+        const api = await page.evaluate(() => fetch('/api/method/bc.api.sx.get_items', { method: 'POST' })
+            .then((r) => r.json()).then((j) => j.message.rows.find((r) => r.item_code === 'DTL')));
+        const card = await page.evaluate(() => [...document.querySelectorAll('#sx-prods .bc-pc')]
+            .map((c) => c.textContent.replace(/\s+/g, ' ')).find((x) => x.includes('· DTL')) || '');
+        const fmt = (n) => Number(n).toLocaleString('vi-VN');
+        check(`SX Tết: thẻ DTL Sản xuất ${fmt(api?.produced)} (đã bỏ ${fmt(api?.nhap_lai)} hộp nhập lại) + ghi chú`,
+            !!api && api.nhap_lai > 0 && card.includes(`Sản xuất ${fmt(api.produced)}`)
+            && card.includes(`không tính ${fmt(api.nhap_lai)} hộp nhập lại`) && card.includes('sau kiểm kê 12/10/2026'), card.slice(0, 400));
+        const note = await page.textContent('#sx-nhaplai').catch(() => '');
+        check('SX Tết: ghi chú chung liệt kê mã có phần nhập lại không tính', note.includes('DTL') && note.includes('nhập lại'), note);
     },
     '/thoi-gian-thuc': async (page) => {
         await page.waitForSelector('#lv-kpis .bc-lv-kpis', { timeout: 15000 });

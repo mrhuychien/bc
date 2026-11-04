@@ -87,7 +87,17 @@ function card(r, i) {
         </div>
         ${bar('SX / KH', r.produced_pct, 'bc-ok', hasPlan)}
         ${bar('Bán / KH', soldPct, '', hasPlan)}
+        ${nhapLaiNote(r)}
     </div>`;
+}
+
+/** Phiếu nhập lại sau kiểm kê (kiểm kê đưa mã về 0 rồi nhập lại đúng số đó) — máy chủ đã bỏ khỏi Sản xuất. */
+function nhapLaiNote(r) {
+    const ds = r.nhap_lai_ds || [];
+    if (!ds.length) return '';
+    const chi = ds.map((x) => `${fmtNum(x.so)} hộp nhập lại ${fmtDate(x.ngay_nhap)} sau kiểm kê ${fmtDate(x.ngay_kiem)}`).join('; ');
+    return `<div class="bc-note" title="${escapeHtml(ds.map((x) => `${x.phieu} ↔ ${x.kiem_ke}`).join(', '))}">ⓘ Sản xuất không tính ${escapeHtml(chi)}
+        — kiểm kê đã đưa về 0 rồi nhập lại đúng số đó, không phải sản xuất mới.</div>`;
 }
 
 function paintProducts() {
@@ -109,8 +119,12 @@ function paintStats() {
     const g = window.BC_CONTEXT?.groups || {};
     const tet = state.rows.filter((r) => r.group_key === 'tet');
     const tt = state.rows.filter((r) => r.group_key === 'traditional');
+    const nl = state.rows.filter((r) => Number(r.nhap_lai) > 0);
     fill('sx-stats', `<div class="bc-grid bc-grid-2" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
-        ${groupStats(tet, g.tet || 'Hàng Tết', '🧧')}${groupStats(tt, g.traditional || 'Hàng truyền thống', '🥮')}</div>`);
+        ${groupStats(tet, g.tet || 'Hàng Tết', '🧧')}${groupStats(tt, g.traditional || 'Hàng truyền thống', '🥮')}</div>
+        ${nl.length ? `<div class="bc-note" id="sx-nhaplai">ⓘ Sản xuất đã bỏ ${fmtNum(sum(nl, 'nhap_lai'))} hộp của ${fmtNum(nl.length)} mã
+            (${escapeHtml(nl.map((r) => r.item_code).join(', '))}): hàng bị kiểm kê đưa về 0 rồi nhập lại đúng số đó — không
+            phải sản xuất mới, tính vào sẽ trùng.</div>` : ''}`);
     const counts = { tet: tet.length, traditional: tt.length, other: state.rows.length - tet.length - tt.length };
     fill('sx-tabs', tabs([
         { key: 'tet', label: g.tet || 'Hàng Tết', count: counts.tet },
