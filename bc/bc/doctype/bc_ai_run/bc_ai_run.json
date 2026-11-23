@@ -8,6 +8,7 @@
  "field_order": [
   "run_type",
   "step",
+  "run_id",
   "provider",
   "model",
   "started",
@@ -40,6 +41,14 @@
    "in_list_view": 1,
    "read_only": 1,
    "description": "tong = dòng tổng của lượt chạy; còn lại = một lượt gọi mô hình (tên nhóm)."
+  },
+  {
+   "fieldname": "run_id",
+   "fieldtype": "Data",
+   "label": "Lượt chạy",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "Tên dòng tổng (step = tong) của lượt chạy mà dòng này thuộc về."
   },
   {
    "fieldname": "provider",

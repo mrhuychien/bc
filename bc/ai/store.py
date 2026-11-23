@@ -69,8 +69,12 @@ def rerank() -> None:
 	raise NotImplementedError
 
 
-def start_run(run_type: str, step: str, provider: str | None = None, model: str | None = None, now=None) -> str:
-	"""Tạo dòng BC AI Run (started = now) → name."""
+def start_run(run_type: str, step: str, provider: str | None = None, model: str | None = None, now=None,
+		run_id: str | None = None) -> str:
+	"""Tạo dòng BC AI Run (started = now) → name. Một lượt chạy = 1 dòng tổng (step "tong", status ok | loi = sức khoẻ
+	của bước quy tắc) + các dòng con mang run_id = name dòng tổng: một dòng / lượt gọi mô hình (step = tên nhóm, có
+	provider + model; status ok | loi | het-credit) hoặc MỘT dòng step "ai" khi cả bước AI bị bỏ (status tat |
+	khong-khoa | vuot-tran, có provider, không token). Dòng tổng: run_id = chính nó (đặt sau khi tạo)."""
 	raise NotImplementedError
 
 

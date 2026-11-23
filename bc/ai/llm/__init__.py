@@ -21,6 +21,11 @@ class LLMError(Exception):
 		self.message = message
 
 
+def run_status(kind: str) -> str:
+	"""LLMError.kind → BC AI Run.status."""
+	return {"credit": "het-credit", "no_key": "khong-khoa"}.get(kind, "loi")
+
+
 def has_key(provider: str) -> bool:
 	"""Site có khai khoá của provider không (chỉ trả có / không)."""
 	raise NotImplementedError
