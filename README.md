@@ -157,6 +157,118 @@ giá trị theo sổ), đối chiếu phiếu ↔ phiếu kho, hàng nhập Kho 
 (phần sẽ thành nợ BOM), đã vào hộp chưa nhập kho, **nợ BOM đang mở** (giá tạm lúc nhập, tuổi, mã đã có BOM xử lý được
 ngay), nguyên liệu còn treo trên sổ (ước tính), thành phẩm đang tồn giá vốn 0.
 
+## Trợ lý AI (`#/tro-ly`, quản trị: `#/ai`)
+
+Mỗi sáng 5:30 máy chủ đọc lại **đúng các con số của các màn báo cáo**, dùng quy tắc có ngưỡng để tìm việc đáng chú
+ý toàn công ty, rồi (nếu bật) nhờ Claude viết lại lời cho dễ đọc. Lãnh đạo mở `/bc#/tro-ly` thấy danh sách việc
+cần chú ý: cái gì, bao nhiêu, nên làm gì, bấm sang màn gốc để xem số. Đặc tả: `docs/SPEC_bc_ai.md`; bản này làm
+giai đoạn P0 + P1 (chưa có OpenAI phản biện, bộ dò chứng từ, bản tin tuần / tháng, hỏi đáp).
+
+**Luồng một lượt chạy** (`bc.ai.pipeline.run_daily`, cron `30 5 * * *` giờ của site → hàng đợi `long`, chống chạy
+trùng):
+
+1. `collect` gọi lại 23 method `bc.api.*` dưới Administrator (`refresh=1`, làm ấm luôn cache buổi sáng) → gói số
+   `pack[mảng][tên]`. Không đọc thẳng chứng từ nào: muốn Trợ lý thấy thêm số gì thì thêm vào màn báo cáo trước.
+2. 8 bộ dò hệ thống (`bc/ai/detectors/he_thong.py`, chỉ `SELECT`): Error Log tăng vọt, tác vụ định kỳ lỗi, email
+   lỗi, hàng đợi ứ, sao lưu cũ, đĩa đầy, đăng nhập sai nhiều lần, Trợ lý lỗi 3 lượt liền.
+3. 42 quy tắc (`bc/ai/rules/*.py`, hàm thuần trên gói số, không SQL): kinh doanh 5, kho & sản xuất 11, công nợ 7,
+   vận chuyển 6, nhân sự 3, ATTP 2, hệ thống 8. Từng quy tắc đọc số nào, so ngưỡng ra sao:
+   `docs/ai-rules-audit.md`.
+4. Lưu vào `BC AI Insight` theo khoá tín hiệu: mới → mở; còn → cộng ngày kéo dài; hết → tự đóng; nguồn số lỗi →
+   **giữ nguyên**, không đóng nhầm; đã đóng mà xuất hiện lại → mở lại.
+5. Nếu bật AI, có khoá và chưa chạm trần chi: mỗi nhóm một lượt gọi Claude — viết lại lời, xếp ưu tiên, thêm khuyến
+   nghị theo **bộ phận**, và được nêu thêm tối đa 3 nhận định ngoài quy tắc.
+6. Máy chủ thay số vào lời rồi kiểm; lời không qua kiểm thì bỏ, tín hiệu giữ lời theo quy tắc.
+7. Ghi `BC AI Run`: một dòng tổng + một dòng mỗi lượt gọi (token, chi phí, trạng thái) và ảnh chụp 70 chỉ số đầu màn.
+
+Bước 5–6 hỏng kiểu gì (tắt AI, hết credit, API lỗi, quá giờ) cũng chỉ thành một trạng thái trong `BC AI Run`; màn
+vẫn hiện đủ tín hiệu với nhãn "Quy tắc".
+
+**Luật số.** Mô hình **không được viết con số**. Mọi số trong lời là chỗ giữ `{{path|kiểu}}` trỏ vào gói số
+(`{{cong-no.receivables.kpis.overdue_pct|pct}}`), kiểu `tien | so | pct | ngay | chu`; máy chủ chèn số thật theo
+đúng cách viết của màn báo cáo ("1,6 tỷ", "251 triệu", "35,0%", "5/11/2026"). Sau khi chèn, phần lời do mô hình viết
+được soát lại: còn số viết tay ("1.250.000", "35%", "2 tỷ", "gấp đôi", "hai tỷ"), path không có thật, sai kiểu, hoặc
+path của nhóm khác → bỏ cả nhận định (đếm ở cột "Bị loại" của lượt chạy, quản trị xem ở `#/ai`). Chỉ số ngắn chỉ thời
+hạn ("trong 7 ngày") được viết thường. Lời theo quy tắc cũng dựng bằng chỗ giữ nên luôn khớp màn gốc tại lúc chạy.
+
+**Luật riêng tư.**
+
+- Khoá API chỉ nằm trong `site_config.json` (`bc_ai_anthropic_key`); không ở DocType, không trả ra API, không vào
+  Error Log (thông báo lỗi được xoá mọi chuỗi trùng khoá trước khi lưu). Chỉ `bc/ai/llm/` được gọi mạng và đọc khoá.
+- Gửi đi chỉ có payload của bc (đã qua luật riêng tư của từng màn: không tên nhân viên, lương gộp nhóm, số tài
+  khoản đã che). Tên khách và nhà cung cấp được thay bằng mã `KH#0001`, `NCC#0001` trước khi gửi và đổi lại khi lưu
+  (`ai_mask_parties`, mặc định bật); ghi chú của quản trị trên thẻ cũng được che tên nằm giữa câu — che hết sức: tên
+  gọi tắt hoặc viết khác hồ sơ thì không nhận ra, nên đừng ghi tên riêng vào ghi chú và vào ô "Bối cảnh công ty".
+- Đề bài và gói số không được lưu, không được ghi log. Lời chỉ được lưu sau khi đã thay số và kiểm.
+- Người xem chỉ thấy nhận định dành cho lãnh đạo, đang mở, và **mọi** mảng mà nhận định dùng số đều đang hiện với
+  họ (ẩn mảng Công nợ → nhận định công nợ biến mất; ẩn mảng Trợ lý AI → mất menu, API trả 403). Chứng từ liên quan,
+  ghi chú quản trị, nhóm Hệ thống chỉ System Manager thấy.
+- bc vẫn chỉ đọc: phần này chỉ ghi `BC AI Insight`, `BC AI Run` và mục "Trợ lý AI" của BC Settings.
+
+**Cấu hình** (`/bc#/ai`, hoặc mục "Trợ lý AI" trong `/app/bc-settings` — mọi field permlevel 1):
+
+| Field | Ý nghĩa | Mặc định |
+|---|---|---|
+| `ai_enabled` | Cho Claude viết lời. Tắt thì vẫn chạy quy tắc mỗi sáng | tắt |
+| `ai_claude_model` | Model viết lời hằng ngày | `claude-sonnet-5-5` |
+| `ai_mask_parties` | Thay tên khách / NCC bằng mã trước khi gửi | bật |
+| `ai_max_signals` | Số tín hiệu tối đa gửi mỗi nhóm (đỏ trước, mới trước) | 40 |
+| `ai_cap_claude_usd`, `ai_cycle_day_claude` | Trần chi mỗi kỳ và ngày bắt đầu kỳ; đã chi tới trần thì thôi gọi (đặt 0 = chặn hết) | 90 USD, ngày 1 |
+| `ai_prices` | Giá mỗi model (USD / 1 triệu token vào, ra). Model chưa khai giá: vẫn chạy, chi phí ghi "chưa khai giá" và không tính vào trần | Sonnet 5.5: 2 / 10, Opus 5.5: 4 / 20 |
+| `ai_context` | Bối cảnh công ty gửi kèm mọi lượt (mùa vụ, ưu tiên của năm) | trống |
+| `ai_rules` | Ghi đè từng quy tắc: tắt, ngưỡng vàng, ngưỡng đỏ (trống hoặc 0 = dùng mặc định) | trống |
+
+Ngoài trần mềm trên còn chặn cứng 30 lượt gọi mỗi ngày. Trần thật nằm ở Console của Anthropic: không gắn thẻ, không
+bật tự nạp — hết credit thì API tự từ chối, lượt chạy ghi `het-credit` và dừng gọi tiếp. Các field `ai_openai_*`,
+`ai_claude_model_deep` đã có sẵn cho giai đoạn sau, hiện chưa dùng.
+
+Trên màn `#/tro-ly`, quản trị đánh dấu từng việc "Đang xử lý", "Bỏ qua" 7 ngày / 30 ngày / hẳn, ghi chú (lượt sau mô
+hình đọc ghi chú này để nói tiến triển thay vì báo như việc mới). Màn `#/ai`: trạng thái khoá, "Thử kết nối", chi
+phí kỳ này, "Chạy ngay", bảng quy tắc (bật / tắt, ngưỡng), các lượt chạy gần nhất, lời AI bị loại.
+
+**Thêm một quy tắc.** Viết một hàm trong `bc/ai/rules/<nhóm>.py`; không cần khai báo ở đâu khác (màn `#/ai` tự có
+dòng mới; file quy tắc mới thì thêm tên module vào `_MODULES` của `bc/ai/registry.py`). Số phải có sẵn trong payload của một màn; đọc code method đó để lấy đúng tên khoá và đơn vị, rồi ghi vào
+`docs/ai-rules-audit.md`.
+
+```python
+from bc.ai.registry import ph, resolve, rule
+
+SRC = "cong-no.receivables"
+
+@rule("cn.qua_han_ty_le", section="cong-no", sources=[SRC], vang=20, do=35, unit="%", label="Tỷ lệ nợ quá hạn")
+def qua_han_ty_le(pack, cfg):
+	p = f"{SRC}.kpis.overdue_pct"
+	muc = cfg.muc(resolve(pack, p))          # None | "vang" | "do" theo ngưỡng (đã tính ghi đè của quản trị)
+	if not muc:
+		return []
+	return [cfg.signal(muc, f"Nợ quá hạn chiếm {ph(p, 'pct')} phải thu", paths=[p])]
+```
+
+Khối nguồn trong `sources` bị lỗi hoặc `available: False` → quy tắc được ghi là "không chạy được" và tín hiệu cũ giữ
+nguyên. Số quy tắc tự tính (không có sẵn trên payload) đưa qua `tinh={"ten": giá_trị}` và viết `{{@ten|kiểu}}` trong
+lời — không gõ số vào chuỗi. Mỗi quy tắc cần ca dương, ca âm, ca đúng ngưỡng trong `test_ai_rules_*.py`.
+
+**Deploy lần đầu.**
+
+```bash
+cd ~/frappe-bench
+ bench --site a.rongvanghoanggia.com set-config bc_ai_anthropic_key 'KHOÁ'   # dấu cách đầu dòng: không vào history
+cd apps/bc && git pull && cd ../..
+bench --site a.rongvanghoanggia.com migrate && bench build --app bc && bench restart
+bench --site a.rongvanghoanggia.com execute bc.ai.pipeline.run_daily          # chạy thử ngay, chưa gọi Claude
+```
+
+Thứ tự nên làm: (1) deploy, để AI **tắt**, xem 3 sáng liên tiếp — tín hiệu phải khớp số trên màn gốc, chỉnh ngưỡng
+ở `#/ai`; (2) tạo API key ở Console (không gắn thẻ, không tự nạp), `set-config`, vào `#/ai` bấm "Thử kết nối", kiểm
+lại bảng giá `ai_prices` theo bảng giá hiện hành; (3) bật `ai_enabled`. Sau một tuần xem cột "Bị loại" ở `#/ai`: mục
+tiêu dưới 10% lời AI bị loại.
+
+Khác đặc tả (đã cân nhắc, ghi ở đầu các module): ép đầu ra bằng structured outputs thay cho tool bắt buộc (các
+model Claude 5.5 từ chối `tool_choice` ép buộc); `max_tokens` 16.000 vì model luôn suy nghĩ trước khi trả lời; có thêm
+trạng thái lỗi "bị từ chối"; giá hai model được điền sẵn khi migrate; nhận định tự do của AI tự đóng khi lượt sau
+không nêu lại. **Chưa kiểm trên site thật**: chưa có lượt gọi Claude thật nào (bộ thử dùng mô hình giả, không ra
+mạng) và chưa chạy trên bench thật.
+
 ## Kiểm thử
 
 Bộ thử chạy SQL thật trên MariaDB với schema sinh từ DocType JSON của ERPNext v16 + các app (không cần
@@ -276,9 +388,13 @@ grand_total), `_KEYWORDS` (map kênh), `PLAN_COLUMNS` (cột kế hoạch trên 
 bc/api/        _common.py (guard, settings, fy_range, tet_season, cache, kênh),
                common.py, kd.py, tet.py, sx.py, live.py, cn.py (công nợ), attp.py, vc.py (vận chuyển),
                ns.py (nhân sự), kho.py (nền nhóm Kho) + kho_ton.py, kho_han.py, kho_kk.py, kho_nhap.py,
-               sections.py (ẩn / hiện mảng), hidden.py, share.py, _provinces.py
+               sections.py (ẩn / hiện mảng), hidden.py, share.py, _provinces.py,
+               ai.py (API màn Trợ lý AI + Cấu hình AI)
+bc/ai/         Trợ lý AI: registry.py (Signal, @rule, @detector, KPIS), collect.py, rules/, detectors/,
+               store.py, render.py, redact.py, budget.py, prompt.py, llm/ (nơi duy nhất gọi mạng + đọc khoá),
+               pipeline.py, jobs.py
 bc/www/        bc.py (guard + BC_CONTEXT), bc.html (import map + shell)
 bc/public/bc/  shell.js, shell.css, lib/, components/, views/
 bc/scripts/    dump_report_sql.py, compare_tet_reports.py
-docs/          tet-curdate-audit.md, report-sql/
+docs/          tet-curdate-audit.md, report-sql/, SPEC_bc_ai.md, ai-rules-audit.md
 ```
