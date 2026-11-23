@@ -24,3 +24,11 @@ fixtures = [
 
 # Seed mặc định BC Settings (ngày Tết, nhóm hàng) — idempotent, không làm chết install.
 after_install = "bc.install.after_install"
+after_migrate = "bc.install.after_migrate"  # điền mặc định cho ô cấu hình mới (Single không tự nhận default khi migrate)
+
+# Trợ lý AI: 05:30 mỗi sáng theo múi giờ của site (System Settings › Time Zone). Chỉ xếp hàng job nền.
+scheduler_events = {
+	"cron": {
+		"30 5 * * *": ["bc.ai.jobs.daily"],
+	},
+}

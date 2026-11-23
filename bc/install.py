@@ -30,6 +30,28 @@ def after_install():
 		frappe.log_error(frappe.get_traceback(), "bc after_install: seed BC Settings")
 
 
+def after_migrate():
+	"""Mỗi lần bench migrate: điền mặc định cho ô cấu hình còn trống (không ghi đè). Field mới của một Single không tự
+	nhận default — vd ai_mask_parties chưa lưu sẽ bị form Desk ghi thành 0 ở lần lưu kế tiếp."""
+	try:
+		seed_settings()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "bc after_migrate: seed BC Settings")
+
+
+# Giá mô hình (USD / 1 triệu token) lúc viết 11/2026 — chỉ là giá khởi tạo cho hai mô hình mặc định; quản trị sửa ở
+# BC Settings › Giá mô hình theo bảng giá hiện hành của Anthropic.
+SEED_AI_PRICES = {"claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.0)}
+# field → mặc định; chỉ điền khi field CHƯA TỪNG được lưu (không có dòng trong tabSingles) — 0 do quản trị đặt giữ nguyên.
+SEED_AI = {"ai_claude_model": "claude-sonnet-5-5", "ai_claude_model_deep": "claude-opus-5-5", "ai_mask_parties": 1,
+	"ai_max_signals": 40, "ai_cap_claude_usd": 90, "ai_cap_openai_usd": 90, "ai_cycle_day_claude": 1,
+	"ai_cycle_day_openai": 1}
+
+
+def _chua_luu(field: str) -> bool:
+	return not frappe.db.sql("SELECT 1 FROM `tabSingles` WHERE doctype = 'BC Settings' AND field = %s", (field,))
+
+
 def seed_settings():
 	"""Điền giá trị mặc định cho các ô còn trống — không ghi đè cấu hình đã có."""
 	s = frappe.get_single("BC Settings")
@@ -56,6 +78,13 @@ def seed_settings():
 	for year, (month, day) in SEED_TET_DATES.items():
 		if year not in have:
 			s.append("tet_dates", {"year": year, "tet_date": f"{year:04d}-{month:02d}-{day:02d}"})
+	if s.meta.has_field("ai_prices"):  # Trợ lý AI (site đã migrate field)
+		for field, default in SEED_AI.items():
+			if _chua_luu(field):
+				s.set(field, default)
+		if not s.get("ai_prices"):
+			for model, (gia_vao, gia_ra) in SEED_AI_PRICES.items():
+				s.append("ai_prices", {"model": model, "price_in": gia_vao, "price_out": gia_ra})
 	s.flags.ignore_permissions = True
 	s.flags.ignore_mandatory = True
 	s.save()
