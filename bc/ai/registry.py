@@ -379,6 +379,37 @@ def run_detectors(now) -> dict:
 	return out
 
 
+# ─── Kiểu của từng con số (chặn mô hình dùng sai kiểu: số đếm viết thành %, tiền viết thành số đếm) ──────────────
+SO_KIEU = ("tien", "so", "pct")
+
+# (mảng, tên) có trong gói số cho quy tắc đọc nhưng KHÔNG gửi mô hình (kỳ trước — mô hình dễ kể như số kỳ này).
+NO_SEND: frozenset = frozenset({("van-chuyen", "overview_truoc")})
+
+
+def kind_map(signals=()) -> dict:
+	"""{path đã bỏ chỉ số mảng: kiểu số đúng} — từ KPIS và mọi chỗ giữ trong lời quy tắc của `signals` (lời quy tắc do
+	người viết, đã đối chiếu đơn vị với code). Một path bị hai nguồn khai hai kiểu khác nhau → bỏ (không đoán).
+	bc.ai.render dùng để loại lời mô hình viết sai kiểu; path không có ở đây thì render xét theo tên khoá."""
+	out, xung_dot = {}, set()
+
+	def them(path, kind):
+		if kind not in SO_KIEU:
+			return
+		p = strip_index(path)
+		if out.setdefault(p, kind) != kind:
+			xung_dot.add(p)
+
+	for path, kind, _label in KPIS:
+		them(path, kind)
+	for s in signals:
+		for text in (getattr(s, "title", ""), getattr(s, "detail", "")):
+			for path, kind in placeholders(text or ""):
+				them(path, kind)
+	for p in xung_dot:
+		out.pop(p, None)
+	return out
+
+
 # ─── KPI (ảnh chụp mỗi ngày vào BC AI Run.kpis — nền cho phát hiện lệch chuẩn / bản tin tuần ở P2) ─────────────
 # Mỗi mục: (path, kiểu, nhãn). Chỉ path có thật trên payload (docs/ai-rules-audit.md); thiếu thì bỏ qua lúc chụp.
 KPIS: list = [

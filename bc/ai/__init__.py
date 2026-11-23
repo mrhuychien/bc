@@ -22,3 +22,10 @@ def conf(field: str, default=None):
 	if not r or r[0][0] in (None, ""):
 		return default
 	return r[0][0]
+
+
+def daily_model() -> str:
+	"""Model Claude viết lời hằng ngày: BC Settings.ai_claude_model, để trống → DEFAULT_CLAUDE_MODEL. MỘT nơi phân giải
+	cho pipeline, màn Cấu hình AI và nút Thử kết nối (màn không được báo "chưa chọn model" trong khi lượt chạy vẫn
+	gọi model mặc định)."""
+	return str(conf("ai_claude_model") or "").strip() or DEFAULT_CLAUDE_MODEL

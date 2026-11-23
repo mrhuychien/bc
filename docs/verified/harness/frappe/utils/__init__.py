@@ -37,6 +37,14 @@ def today():
 	return nowdate()
 
 
+FAKE_SYSTEM_TZ = "Asia/Ho_Chi_Minh"   # System Settings › Time Zone của site giả
+
+
+def get_system_timezone():
+	"""v16 utils/data.py: múi giờ của SITE (now_datetime trả giờ ngây thơ theo múi này, không theo múi của máy)."""
+	return FAKE_SYSTEM_TZ
+
+
 def now_datetime():
 	return datetime.datetime.combine(FAKE_TODAY, FAKE_NOW_TIME)
 
