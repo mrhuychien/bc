@@ -5,6 +5,7 @@
 export const NAV_GROUPS = [
     { title: 'Điều hành', items: [
         { route: '/thoi-gian-thuc', label: 'Thời gian thực', icon: 'fa-tower-broadcast' },
+        { route: '/tro-ly', label: 'Trợ lý AI', icon: 'fa-wand-magic-sparkles' },
     ] },
     { title: 'Kinh doanh', items: [
         { route: '/tong-quan', label: 'Tổng quan', icon: 'fa-chart-pie' },

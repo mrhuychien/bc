@@ -111,3 +111,35 @@ def fmt_money(v, *a, **k):
 def escape_html(s):
 	import html
 	return html.escape(str(s or ""))
+
+
+def add_to_date(date=None, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, as_string=False,
+		as_datetime=False):
+	"""Như v16 utils.data.add_to_date: None = bây giờ; chuỗi vào → chuỗi ra (có giờ nếu chuỗi có giờ hoặc cộng giờ);
+	date / datetime vào → trả CÙNG kiểu (date + relativedelta), cộng tháng kẹp ngày cuối tháng."""
+	import datetime as _dt
+	if date is None:
+		date = now_datetime()
+	if hours:
+		as_datetime = True
+	if isinstance(date, str):
+		as_string = True
+		if " " in date:
+			as_datetime = True
+		date = get_datetime(date)
+	if years or months:
+		t = add_months(date, months + 12 * years)  # add_months trả date; giữ giờ nếu là datetime
+		date = date.replace(year=t.year, month=t.month, day=t.day)
+	date = date + _dt.timedelta(weeks=weeks, days=days, hours=hours, minutes=minutes, seconds=seconds)
+	if as_string:
+		return date.strftime("%Y-%m-%d %H:%M:%S.%f" if as_datetime else "%Y-%m-%d")
+	return date
+
+
+def get_site_path(*path):
+	import frappe
+	return frappe.get_site_path(*path)
+
+
+def get_backups_path():
+	return get_site_path("private", "backups")

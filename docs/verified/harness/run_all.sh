@@ -3,7 +3,7 @@
 # DocType JSON v16 (./fetch_schema.sh). Giao diện: node + playwright (thiếu thì bỏ qua).
 set -uo pipefail
 cd "$(dirname "$0")"
-[ -d .src/erpnext ] || ./fetch_schema.sh
+[ -d .src/erpnext ] && [ -d .src/frappe/frappe/email/doctype ] || ./fetch_schema.sh
 python3 -B extract_cf.py >/dev/null
 fail=0
 for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py test_ns.py test_sections.py \

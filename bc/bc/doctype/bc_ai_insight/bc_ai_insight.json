@@ -1,0 +1,244 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "signal_key",
+  "rule",
+  "section",
+  "route",
+  "sections_used",
+  "audience",
+  "severity",
+  "status",
+  "source",
+  "title",
+  "rule_title",
+  "body",
+  "advice",
+  "paths",
+  "documents",
+  "priority",
+  "rank",
+  "seen_count",
+  "first_seen",
+  "last_seen",
+  "closed_on",
+  "text_at",
+  "mute_until",
+  "admin_note",
+  "review_verdict",
+  "review_note",
+  "needs_check"
+ ],
+ "fields": [
+  {
+   "fieldname": "signal_key",
+   "fieldtype": "Data",
+   "label": "Khoá tín hiệu",
+   "reqd": 1,
+   "unique": 1,
+   "read_only": 1,
+   "length": 140
+  },
+  {
+   "fieldname": "rule",
+   "fieldtype": "Data",
+   "label": "Quy tắc",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section",
+   "fieldtype": "Data",
+   "label": "Mảng chính",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "route",
+   "fieldtype": "Data",
+   "label": "Đường dẫn màn gốc",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sections_used",
+   "fieldtype": "Small Text",
+   "label": "Mảng có số được dùng",
+   "read_only": 1,
+   "description": "Mỗi dòng một mã mảng."
+  },
+  {
+   "fieldname": "audience",
+   "fieldtype": "Select",
+   "label": "Người xem",
+   "options": "lanh-dao\nquan-tri",
+   "default": "lanh-dao",
+   "read_only": 1
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "label": "Mức",
+   "options": "do\nvang",
+   "default": "vang",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Trạng thái",
+   "options": "mo\ndang-xu-ly\nbo-qua\ndong",
+   "default": "mo",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Lời do",
+   "options": "quy-tac\nai",
+   "default": "quy-tac",
+   "read_only": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Tiêu đề",
+   "length": 200,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "rule_title",
+   "fieldtype": "Data",
+   "label": "Tiêu đề theo quy tắc",
+   "length": 200,
+   "read_only": 1
+  },
+  {
+   "fieldname": "body",
+   "fieldtype": "Small Text",
+   "label": "Nội dung",
+   "read_only": 1
+  },
+  {
+   "fieldname": "advice",
+   "fieldtype": "Small Text",
+   "label": "Khuyến nghị",
+   "read_only": 1,
+   "description": "Mỗi dòng một khuyến nghị."
+  },
+  {
+   "fieldname": "paths",
+   "fieldtype": "JSON",
+   "label": "Đường dẫn số liệu",
+   "read_only": 1
+  },
+  {
+   "fieldname": "documents",
+   "fieldtype": "JSON",
+   "label": "Chứng từ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "label": "Ưu tiên",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rank",
+   "fieldtype": "Int",
+   "label": "Thứ tự",
+   "read_only": 1
+  },
+  {
+   "fieldname": "seen_count",
+   "fieldtype": "Int",
+   "label": "Số ngày xuất hiện",
+   "read_only": 1
+  },
+  {
+   "fieldname": "first_seen",
+   "fieldtype": "Datetime",
+   "label": "Xuất hiện từ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "label": "Còn thấy lúc",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closed_on",
+   "fieldtype": "Datetime",
+   "label": "Đóng lúc",
+   "read_only": 1
+  },
+  {
+   "fieldname": "text_at",
+   "fieldtype": "Datetime",
+   "label": "Lời sinh lúc",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mute_until",
+   "fieldtype": "Date",
+   "label": "Bỏ qua đến ngày"
+  },
+  {
+   "fieldname": "admin_note",
+   "fieldtype": "Small Text",
+   "label": "Ghi chú quản trị",
+   "description": "Đưa vào đề bài cho AI ở lượt chạy sau."
+  },
+  {
+   "fieldname": "review_verdict",
+   "fieldtype": "Select",
+   "label": "Phản biện",
+   "options": "\ndong-y\nnghi-ngo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_note",
+   "fieldtype": "Small Text",
+   "label": "Ghi chú phản biện",
+   "read_only": 1
+  },
+  {
+   "fieldname": "needs_check",
+   "fieldtype": "Check",
+   "label": "Lời AI lượt gần nhất bị loại",
+   "default": "0",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC AI Insight",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title"
+}

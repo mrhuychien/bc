@@ -6,7 +6,7 @@ import { showModal, closeModal } from './components/modal.js';
 import { NAV_GROUPS as REPORT_GROUPS, sectionOf } from './lib/nav.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p6-r1';
+const BUILD = 'bc-p7-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -16,6 +16,7 @@ const ASSET_V = encodeURIComponent(CTX.assetVersion || '');
 const withV = (p) => (ASSET_V ? `${p}?v=${ASSET_V}` : p);
 const ALL_VIEWS = {
     '/thoi-gian-thuc': () => import(withV('./views/thoi-gian-thuc.js')),
+    '/tro-ly': () => import(withV('./views/tro-ly.js')),
     '/tong-quan': () => import(withV('./views/tong-quan.js')),
     '/ngay': () => import(withV('./views/ngay.js')),
     '/thang': () => import(withV('./views/thang.js')),
@@ -43,12 +44,14 @@ if (IS_ADMIN) {
     VIEW_MODULES['/chia-se'] = () => import(withV('./views/chia-se.js'));
     VIEW_MODULES['/an-sp'] = () => import(withV('./views/an-sp.js'));
     VIEW_MODULES['/an-mang'] = () => import(withV('./views/an-mang.js'));
+    VIEW_MODULES['/ai'] = () => import(withV('./views/ai-quan-tri.js'));
 }
 
 // Nhóm điều hướng (danh mục ở lib/nav.js — dùng chung với màn Ẩn / hiện mảng).
 const NAV_GROUPS = REPORT_GROUPS.map((g) => ({ ...g, items: g.items.slice() }));
 if (IS_ADMIN) NAV_GROUPS.push({ title: 'Quản trị', admin: true, items: [
     { route: '/an-mang', label: 'Ẩn / hiện mảng', icon: 'fa-layer-group' },
+    { route: '/ai', label: 'Cấu hình AI', icon: 'fa-robot' },
     { route: '/chia-se', label: 'Chia sẻ lãnh đạo', icon: 'fa-share-nodes' },
     { route: '/an-sp', label: 'Ẩn sản phẩm', icon: 'fa-eye-slash' },
 ] });

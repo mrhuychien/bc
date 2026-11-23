@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "creation": "2026-11-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_key",
+  "disabled",
+  "threshold",
+  "threshold_red",
+  "note"
+ ],
+ "fields": [
+  {
+   "fieldname": "rule_key",
+   "fieldtype": "Data",
+   "label": "Mã quy tắc",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "label": "Tắt",
+   "default": "0",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "threshold",
+   "fieldtype": "Float",
+   "label": "Ngưỡng vàng",
+   "in_list_view": 1,
+   "description": "0 = dùng mặc định của quy tắc."
+  },
+  {
+   "fieldname": "threshold_red",
+   "fieldtype": "Float",
+   "label": "Ngưỡng đỏ",
+   "in_list_view": 1,
+   "description": "0 = dùng mặc định của quy tắc."
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Data",
+   "label": "Ghi chú",
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC AI Rule",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -77,10 +77,12 @@ def custom_fields():
 	return out
 
 
-def col(fieldname, fieldtype):
+def col(fieldname, fieldtype, length=None):
 	t = TYPE_MAP.get(fieldtype)
 	if not t:
 		return None
+	if length and t == "varchar(140)":  # như Frappe: Data / Link… có `length` → varchar(length)
+		t = f"varchar({int(length)})"
 	if fieldtype in NUMERIC:
 		return f"`{fieldname}` {t} NOT NULL DEFAULT 0"
 	return f"`{fieldname}` {t} DEFAULT NULL"
@@ -110,7 +112,7 @@ def ddl(name, d, extra_fields):
 		fn, ft = f.get("fieldname"), f.get("fieldtype")
 		if not fn or fn in cols:
 			continue
-		c = col(fn, ft)
+		c = col(fn, ft, f.get("length"))
 		if c:
 			cols[fn] = c
 	body = ",\n  ".join(list(cols.values()) + ["PRIMARY KEY (`name`)"])

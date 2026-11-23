@@ -19,6 +19,7 @@ VIEWER, ADMIN, SM = "viewer@example.com", "Administrator", "sm@example.com"  # S
 # method → mảng (route bỏ "/"). Đổi bảng này phải là quyết định có chủ ý.
 EXPECTED = {
 	"live.get_snapshot": "thoi-gian-thuc",
+	"ai.get_feed": "tro-ly", "ai.get_badge": "tro-ly",
 	"kd.get_summary": "tong-quan", "kd.get_channels": "tong-quan", "kd.get_item_groups": "tong-quan",
 	"kd.get_top_customers": "tong-quan", "kd.get_daily": "ngay", "kd.get_orders": "ngay", "kd.get_monthly": "thang",
 	"kd.get_provinces": "tinh-thanh", "kd.get_top_products": "san-pham",
@@ -30,7 +31,8 @@ EXPECTED = {
 	"kho_ton.get_overview": "ton-kho", "kho_ton.get_trend": "ton-kho", "kho_han.get_overview": "han-dung",
 	"kho_kk.get_overview": "kiem-ke", "kho_nhap.get_overview": "nhap-tp",
 }
-KHONG_MANG = {"common.get_context_meta", "sections.get_hidden", "sections.set_hidden", "hidden.list_hidden",
+KHONG_MANG = {"ai.get_admin", "ai.run_now", "ai.set_status", "ai.set_rule", "ai.test_connection",
+	"common.get_context_meta", "sections.get_hidden", "sections.set_hidden", "hidden.list_hidden",
 	"hidden.search_items", "hidden.hide_item", "hidden.unhide_item", "share.list_leaders", "share.create_leader",
 	"share.grant_existing", "share.issue_link", "share.revoke_link", "share.set_enabled", "share.login", "share.logout"}
 

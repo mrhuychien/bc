@@ -94,6 +94,16 @@ export const kho = {
     nhapTp: (thang) => call('bc.api.kho_nhap.get_overview', { thang }),
 };
 
+export const ai = {
+    feed:      (closed)                              => call('bc.api.ai.get_feed', { closed: closed ? 1 : undefined }),
+    badge:     ()                                    => call('bc.api.ai.get_badge'),
+    admin:     ()                                    => call('bc.api.ai.get_admin'),
+    runNow:    ()                                    => call('bc.api.ai.run_now'),
+    setStatus: (insight, status, mute_days, note)    => call('bc.api.ai.set_status', { insight, status, mute_days, note }),
+    setRule:   (rule_key, disabled, threshold, threshold_red) => call('bc.api.ai.set_rule', { rule_key, disabled, threshold, threshold_red }),
+    test:      (provider)                            => call('bc.api.ai.test_connection', { provider }),
+};
+
 export const common = {
     contextMeta: () => call('bc.api.common.get_context_meta'),
 };

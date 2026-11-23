@@ -255,6 +255,12 @@ class _DB:
 		where, vals = self._where(filters or {})
 		return self.sql(f"SELECT COUNT(*) FROM `tab{doctype}` WHERE {where}", vals)[0][0]
 
+	def commit(self):  # bộ thử chạy autocommit — có để code job nền gọi được như site thật
+		self.commits = getattr(self, "commits", 0) + 1
+
+	def rollback(self):
+		pass
+
 
 db = _DB()
 
@@ -363,6 +369,54 @@ def get_doc(doctype, name=None, **kw):
 	if isinstance(doctype, dict):
 		return _NewDoc(doctype)
 	return get_cached_doc(doctype, name)
+
+
+# ─── Job nền, phiên, tiện ích (cho bc.ai) ──────────────────────────────────
+ENQUEUED: list = []          # mọi lời gọi enqueue: (method, kwargs của enqueue, kwargs của hàm)
+ENQUEUE_RUN = True           # True: chạy thẳng hàm (như spec bộ thử); False: chỉ ghi lại
+FAKE_SITE_PATH = None        # thư mục site giả (get_site_path / get_backups_path); bộ thử tự đặt
+
+
+def get_attr(method_string):
+	import importlib
+	mod, fn = method_string.rsplit(".", 1)
+	return getattr(importlib.import_module(mod), fn)
+
+
+def enqueue(method, queue="default", timeout=None, event=None, is_async=True, job_name=None, now=False,
+		enqueue_after_commit=False, *, on_success=None, on_failure=None, at_front=False, job_id=None,
+		deduplicate=False, at_front_when_starved=False, **kwargs):
+	"""Như v16 frappe.utils.background_jobs.enqueue (cùng chữ ký): deduplicate cần job_id; kwargs còn lại vào hàm.
+	Bộ thử: ghi lại rồi chạy thẳng (ENQUEUE_RUN) dưới đúng user đang gọi."""
+	if deduplicate and not job_id:
+		throw("`job_id` paramater is required for deduplication.")
+	from frappe.utils import background_jobs
+	if deduplicate and background_jobs.is_job_enqueued(job_id):
+		return None
+	ENQUEUED.append((method, {"queue": queue, "timeout": timeout, "job_id": job_id, "deduplicate": deduplicate}, kwargs))
+	if ENQUEUE_RUN:
+		fn = get_attr(method) if isinstance(method, str) else method
+		return fn(**kwargs)
+	return None
+
+
+def set_user(username):
+	session.user = username
+
+
+def get_site_path(*joins):
+	import os
+	if not FAKE_SITE_PATH:
+		raise RuntimeError("bộ thử chưa đặt frappe.FAKE_SITE_PATH")
+	return os.path.join(FAKE_SITE_PATH, *joins)
+
+
+def parse_json(v):
+	return json.loads(v) if isinstance(v, (str, bytes)) else v
+
+
+def as_json(obj, indent=1, separators=None, ensure_ascii=True):
+	return json.dumps(obj, indent=indent, separators=separators, ensure_ascii=ensure_ascii, default=str)
 
 
 # ─── Cache ─────────────────────────────────────────────────────────────────

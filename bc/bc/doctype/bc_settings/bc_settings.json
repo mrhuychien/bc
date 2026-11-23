@@ -34,7 +34,23 @@
   "hidden_items",
   "hidden_sections",
   "share_section",
-  "share_links"
+  "share_links",
+  "ai_section",
+  "ai_enabled",
+  "ai_claude_model",
+  "ai_claude_model_deep",
+  "ai_openai_model",
+  "ai_mask_parties",
+  "ai_max_signals",
+  "column_break_ai",
+  "ai_cap_claude_usd",
+  "ai_cycle_day_claude",
+  "ai_cap_openai_usd",
+  "ai_cycle_day_openai",
+  "ai_context_section",
+  "ai_context",
+  "ai_prices",
+  "ai_rules"
  ],
  "fields": [
   {
@@ -205,7 +221,7 @@
    "fieldtype": "Small Text",
    "label": "Mảng báo cáo ẩn với người xem",
    "permlevel": 1,
-   "description": "Quản lý ở /bc › Quản trị › Ẩn / hiện mảng báo cáo. Mỗi dòng một mã: thoi-gian-thuc, tong-quan, ngay, thang, tet, tinh-thanh, san-pham, sx-tet, van-chuyen, cong-no, phai-tra, nhan-su, attp. Người xem (BC Viewer) không mở được mảng bị ẩn; quản trị vẫn thấy."
+   "description": "Quản lý ở /bc › Quản trị › Ẩn / hiện mảng báo cáo. Mỗi dòng một mã mảng (= đường dẫn màn bỏ dấu /, vd tro-ly, cong-no). Người xem (BC Viewer) không mở được mảng bị ẩn; quản trị vẫn thấy."
   },
   {
    "fieldname": "share_section",
@@ -220,12 +236,124 @@
    "label": "Link đăng nhập đã cấp",
    "permlevel": 1,
    "description": "Quản lý tại /bc → Chia sẻ. Xoá dòng = thu hồi link."
+  },
+  {
+   "fieldname": "ai_section",
+   "fieldtype": "Section Break",
+   "label": "Trợ lý AI",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_enabled",
+   "fieldtype": "Check",
+   "label": "Bật AI viết lời",
+   "default": "0",
+   "permlevel": 1,
+   "description": "Tắt: Trợ lý chỉ hiện tín hiệu theo quy tắc. Bật cần khoá API trong site_config.json (bc_ai_anthropic_key)."
+  },
+  {
+   "fieldname": "ai_claude_model",
+   "fieldtype": "Data",
+   "label": "Mô hình Claude (lượt ngày)",
+   "default": "claude-sonnet-5-5",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_claude_model_deep",
+   "fieldtype": "Data",
+   "label": "Mô hình Claude (bản tin tuần / tháng)",
+   "default": "claude-opus-5-5",
+   "permlevel": 1,
+   "description": "Để trống = dùng mô hình lượt ngày."
+  },
+  {
+   "fieldname": "ai_openai_model",
+   "fieldtype": "Data",
+   "label": "Mô hình OpenAI (phản biện)",
+   "permlevel": 1,
+   "description": "Để trống = tắt phản biện."
+  },
+  {
+   "fieldname": "ai_mask_parties",
+   "fieldtype": "Check",
+   "label": "Thay tên khách / nhà cung cấp bằng mã giả khi gửi đi",
+   "default": "1",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_max_signals",
+   "fieldtype": "Int",
+   "label": "Số tín hiệu tối đa mỗi nhóm mỗi lượt",
+   "default": "40",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "column_break_ai",
+   "fieldtype": "Column Break",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_cap_claude_usd",
+   "fieldtype": "Float",
+   "label": "Trần chi Claude mỗi kỳ (USD)",
+   "default": "90",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_cycle_day_claude",
+   "fieldtype": "Int",
+   "label": "Ngày bắt đầu kỳ credit Claude",
+   "default": "1",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_cap_openai_usd",
+   "fieldtype": "Float",
+   "label": "Trần chi OpenAI mỗi kỳ (USD)",
+   "default": "90",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_cycle_day_openai",
+   "fieldtype": "Int",
+   "label": "Ngày bắt đầu kỳ credit OpenAI",
+   "default": "1",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_context_section",
+   "fieldtype": "Section Break",
+   "label": "Trợ lý AI — bối cảnh, giá, quy tắc",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "ai_context",
+   "fieldtype": "Small Text",
+   "label": "Bối cảnh công ty cho AI",
+   "permlevel": 1,
+   "description": "Quản trị tự viết (ngành hàng, mùa vụ, điều lãnh đạo quan tâm). Gửi kèm mọi lượt gọi mô hình — không ghi thông tin mật."
+  },
+  {
+   "fieldname": "ai_prices",
+   "fieldtype": "Table",
+   "label": "Giá mô hình",
+   "options": "BC AI Model Price",
+   "permlevel": 1,
+   "description": "USD / 1 triệu token, theo bảng giá hiện hành của nhà cung cấp. Mô hình chưa khai giá: không tính được chi phí, trần chi không có tác dụng."
+  },
+  {
+   "fieldname": "ai_rules",
+   "fieldtype": "Table",
+   "label": "Ghi đè quy tắc",
+   "options": "BC AI Rule",
+   "permlevel": 1,
+   "description": "Quản lý ở /bc › Quản trị › Cấu hình AI."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-27 13:00:00.000000",
+ "modified": "2026-11-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BC",
  "name": "BC Settings",

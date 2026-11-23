@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "run_type",
+  "step",
+  "provider",
+  "model",
+  "started",
+  "finished",
+  "status",
+  "tokens_in",
+  "tokens_out",
+  "cost_usd",
+  "cost_known",
+  "signals",
+  "insights_ai",
+  "rejected",
+  "error",
+  "kpis"
+ ],
+ "fields": [
+  {
+   "fieldname": "run_type",
+   "fieldtype": "Select",
+   "label": "Loại lượt chạy",
+   "options": "ngay\ntuan\ntay\nhoi-dap",
+   "default": "ngay",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "step",
+   "fieldtype": "Data",
+   "label": "Bước",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "tong = dòng tổng của lượt chạy; còn lại = một lượt gọi mô hình (tên nhóm)."
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "label": "Nhà cung cấp",
+   "read_only": 1
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Mô hình",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started",
+   "fieldtype": "Datetime",
+   "label": "Bắt đầu",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "finished",
+   "fieldtype": "Datetime",
+   "label": "Kết thúc",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Kết quả",
+   "options": "ok\nloi\nhet-credit\nvuot-tran\ntat\nkhong-khoa",
+   "default": "ok",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "tokens_in",
+   "fieldtype": "Int",
+   "label": "Token vào",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tokens_out",
+   "fieldtype": "Int",
+   "label": "Token ra",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_usd",
+   "fieldtype": "Float",
+   "label": "Chi phí (USD)",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cost_known",
+   "fieldtype": "Check",
+   "label": "Đã khai giá mô hình",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "signals",
+   "fieldtype": "Int",
+   "label": "Số tín hiệu",
+   "read_only": 1
+  },
+  {
+   "fieldname": "insights_ai",
+   "fieldtype": "Int",
+   "label": "Số lời AI nhận",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejected",
+   "fieldtype": "Int",
+   "label": "Số lời AI bị loại",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Lỗi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kpis",
+   "fieldtype": "JSON",
+   "label": "Ảnh chụp KPI",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC AI Run",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
