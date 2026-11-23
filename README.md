@@ -291,7 +291,8 @@ Khác đặc tả (đã cân nhắc, ghi ở đầu các module): ép đầu ra 
 model Claude 5.5 từ chối `tool_choice` ép buộc); `max_tokens` 16.000 vì model luôn suy nghĩ trước khi trả lời; có thêm
 trạng thái lỗi "bị từ chối"; giá hai model được điền sẵn khi migrate; nhận định tự do của AI tự đóng khi lượt sau
 không nêu lại; che tên cả khi nằm giữa câu (đặc tả chỉ thay chuỗi bằng đúng một tên); cảnh báo trả cước xe nhà tính
-cả tháng trước để không tự đóng vào ngày 1; đề bài kèm bảng kiểu của các con số. Kiểm nhanh sau deploy:
+cả tháng trước để không tự đóng vào ngày 1 (chỉ theo dõi tháng này và tháng trước — chuyến cũ hơn thì thẻ tự đóng,
+phải xem màn Vận chuyển theo tháng); đề bài kèm bảng kiểu của các con số. Kiểm nhanh sau deploy:
 `grep -rn "sk-" apps/bc/bc` phải rỗng. **Chưa kiểm trên site thật**: chưa có lượt gọi Claude thật nào (bộ thử dùng mô hình giả, không ra
 mạng) và chưa chạy trên bench thật.
 
