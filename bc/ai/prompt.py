@@ -98,6 +98,10 @@ kèm dấu %). Không viết thêm đơn vị sau placeholder, không viết l�
 thu, khoản lớn nhất {{cong-no.receivables.top_overdue[0].overdue|tien}}."
 - Tên khách hàng, nhà cung cấp trong pack đã được thay bằng mã dạng KH#0001, NCC#0001. Cần nhắc tới thì chép nguyên \
 mã đó (máy chủ đổi lại thành tên) hoặc dùng placeholder kiểu chu; không bịa mã, không đoán tên thật.
+- Tên riêng có chữ số (tên mặt hàng ghi khối lượng, mã chứng từ, tên tiêu chuẩn) cũng phải đưa vào bằng \
+placeholder kiểu chu — viết tay sẽ bị loại.
+- Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số ("hai tỷ", "gấp đôi", "một nửa", "hai phần ba số \
+khách"). Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số ("trong 7 ngày", "quý 4").
 - Lời còn con số viết tay, placeholder sai path hoặc sai kiểu sẽ bị máy chủ loại bỏ cả nhận định."""
 
 _DAU_RA = """ĐẦU RA — JSON {"insights": [...]}, mỗi phần tử:

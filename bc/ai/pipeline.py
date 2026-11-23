@@ -188,11 +188,16 @@ def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: floa
 		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu))
 		row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
 		try:
+			# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
 			res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
-				timeout=max(30, min(CALL_TIMEOUT, int(con / 3))))
+				timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
 		except llm.LLMError as e:
 			st = llm.run_status(e.kind)
-			store.finish_run(row, status=st, now=now_datetime(), signals=len(rows), error=e.message)
+			# Lượt bị từ chối / cắt cụt / sai schema vẫn bị tính tiền → ghi token + chi phí nếu máy chủ đã trả lời.
+			ti, to = cint(getattr(e, "tokens_in", 0)), cint(getattr(e, "tokens_out", 0))
+			store.finish_run(row, status=st, now=now_datetime(), signals=len(rows), error=e.message, tokens_in=ti,
+				tokens_out=to, model=getattr(e, "model", "") or model,
+				cost_usd=_cost(getattr(e, "model", ""), model, ti, to) if (ti or to) else None)
 			store.sync_ai_free(sections, [], now)
 			out["status"] = st
 			if e.kind in ("credit", "no_key"):
@@ -204,9 +209,17 @@ def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: floa
 		out["rejected"] += rej
 		store.finish_run(row, status="ok", now=now_datetime(), tokens_in=cint(res.get("tokens_in")),
 			tokens_out=cint(res.get("tokens_out")), model=res.get("model") or model, signals=len(rows), insights_ai=acc,
-			rejected=rej, cost_usd=budget.cost(res.get("model") or model, cint(res.get("tokens_in")),
-				cint(res.get("tokens_out"))), error="; ".join(notes)[:300] if notes else None)
+			rejected=rej, cost_usd=_cost(res.get("model"), model, cint(res.get("tokens_in")), cint(res.get("tokens_out"))),
+			error="; ".join(notes)[:300] if notes else None)
 		frappe.db.commit()
+
+
+def _cost(served: str | None, requested: str, tokens_in: int, tokens_out: int):
+	"""Chi phí theo giá mô hình THỰC trả lời; mô hình đó chưa khai giá (vd mô hình dự phòng khi bị từ chối) → ước theo
+	giá mô hình đã yêu cầu để trần chi vẫn đếm; cả hai chưa khai → None (chưa khai giá)."""
+	from bc.ai import budget
+	c = budget.cost(served, tokens_in, tokens_out) if served else None
+	return c if c is not None else budget.cost(requested, tokens_in, tokens_out)
 
 
 def _co_so(block) -> bool:
@@ -237,7 +250,7 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now)
 			continue
 		raw = {"title": ins.get("title") or "", "body": ins.get("body") or "", "advice": ins.get("advice") or []}
 		sev = ins.get("severity") if ins.get("severity") in registry.SEVERITIES else "vang"
-		prio = cint(ins.get("priority"))
+		prio = max(0, min(5, cint(ins.get("priority"))))   # schema không ràng được khoảng → kẹp ở đây (5 = đáng chú ý nhất)
 		sid = ins.get("signal")
 		if sid:
 			row = by_id.get(str(sid))
