@@ -11,6 +11,11 @@ for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py t
 	echo "═══ $t"; python3 -B "$t" | tail -1 || fail=1
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done
+# Trợ lý AI: mỗi bộ thử một DB riêng; LLM giả, không bộ nào ra mạng
+for t in render llm store rules_kd rules_kho rules_cn rules_vc rules_ns he_thong api pipeline; do
+	echo "═══ test_ai_$t.py"; out=$(BC_TEST_DB=bc_test_ai_$t python3 -B "test_ai_$t.py" 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+done
 echo "═══ lunar_check.mjs"; node lunar_check.mjs | tail -1 || fail=1
 if node -e "require('playwright')" 2>/dev/null; then
 	pkill -f '^python3 -B server.py 812' || true; sleep 0.5  # server cũ còn giữ cổng = code + cache cũ

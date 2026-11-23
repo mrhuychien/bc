@@ -808,6 +808,31 @@ B = redact.build()
 eq("thiếu cả hai bảng → không lỗi, không che", (B.mask([ABC, "CUST-0001"]), B.unmask("KH#0001 nợ")),
 	([ABC, "CUST-0001"], "KH#0001 nợ"))
 
+# ══ 7b. Chữ tự do (ghi chú quản trị) ═════════════════════════════════════════
+print("\n— mask_text: che tên khách / NCC nằm giữa câu trong chữ tự do —")
+MT = redact.Mask([
+	("KH#0001", "Công ty Hùng Phát", {"CUST-0001", "Công ty Hùng Phát"}),
+	("KH#0002", "Hùng Phát", {"CUST-0002", "Hùng Phát"}),
+	("KH#0003", "An", {"An"}),
+	("NCC#0001", "Bột mì Bình Đông (2024)", {"SUP-0001", "Bột mì Bình Đông (2024)"}),
+])
+eq("tên nằm giữa câu → mã giả", MT.mask_text("Đã gọi Hùng Phát hôm qua, hẹn trả cuối tuần"),
+	"Đã gọi KH#0002 hôm qua, hẹn trả cuối tuần")
+eq("tên dài thắng tên ngắn là phần của nó", MT.mask_text("Công ty Hùng Phát xin giãn nợ"), "KH#0001 xin giãn nợ")
+eq("mã chứng từ cũng được che", MT.mask_text("xem CUST-0001 và SUP-0001."), "xem KH#0001 và NCC#0001.")
+eq("tên có ký tự đặc biệt của biểu thức", MT.mask_text("NCC Bột mì Bình Đông (2024) báo tăng giá"),
+	"NCC NCC#0001 báo tăng giá")
+eq("tên ngắn hơn 4 ký tự không thay (dễ trùng từ thường)", MT.mask_text("An toàn thực phẩm: gọi An"),
+	"An toàn thực phẩm: gọi An")
+eq("tên dính chữ / số hai bên không thay", MT.mask_text("xHùng Phát, Hùng Phát2, CUST-00012"),
+	"xHùng Phát, Hùng Phát2, CUST-00012")
+eq("phân biệt hoa thường như mask", MT.mask_text("hùng phát"), "hùng phát")
+eq("None / rỗng → chuỗi rỗng", (MT.mask_text(None), MT.mask_text("")), ("", ""))
+eq("Mask rỗng (tắt che) → giữ nguyên", redact.Mask().mask_text("Đã gọi Hùng Phát"), "Đã gọi Hùng Phát")
+eq("chỉ toàn tên ngắn → giữ nguyên", redact.Mask([("KH#0001", "An", {"An"})]).mask_text("gọi An"), "gọi An")
+eq("lời đã che hoàn nguyên được", MT.unmask(MT.mask_text("Đã gọi Hùng Phát hôm qua")), "Đã gọi Hùng Phát hôm qua")
+eq("gọi lại lần hai cho cùng kết quả", MT.mask_text("Hùng Phát và Công ty Hùng Phát"), "KH#0002 và KH#0001")
+
 # ══ 8. Luật tĩnh ══════════════════════════════════════════════════════════════
 print("\n— luật tĩnh: render thuần (không DB), không module nào đụng mạng / khoá —")
 for ten in ("render", "redact"):

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 import importlib
 
 import frappe
@@ -35,6 +36,8 @@ def chi_module(*modules):
 
 def _khop(value, kind) -> bool:
 	if kind in ("tien", "so", "pct"):
+		if isinstance(value, decimal.Decimal):      # cột Float đọc bằng SQL thô — render.fmt cũng nhận
+			return value.is_finite()
 		return isinstance(value, (int, float)) and not isinstance(value, bool)
 	if kind == "ngay":
 		if isinstance(value, (datetime.date, datetime.datetime)):

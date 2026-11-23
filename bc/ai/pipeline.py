@@ -184,7 +184,7 @@ def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: floa
 			out["status"] = dung
 			continue
 		by_id = {f"S{i}": r for i, r in enumerate(rows, 1)}
-		tin_hieu = [_ctx(sid, r, sigs[r["signal_key"]], today) for sid, r in by_id.items()]
+		tin_hieu = [_ctx(sid, r, sigs[r["signal_key"]], today, mask) for sid, r in by_id.items()]
 		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu))
 		row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
 		try:
@@ -230,13 +230,15 @@ def _co_so(block) -> bool:
 		for k, v in block.items() if k != "_ai")
 
 
-def _ctx(sid: str, row: dict, sig, today) -> dict:
-	"""Một tín hiệu trong đề bài. Lời quy tắc gửi đi CÒN placeholder (lời đã thay số có thể chứa tên khách thật)."""
+def _ctx(sid: str, row: dict, sig, today, mask) -> dict:
+	"""Một tín hiệu trong đề bài. Lời quy tắc gửi đi CÒN placeholder (lời đã thay số có thể chứa tên khách thật).
+	Ghi chú của quản trị là chữ tự do → che tên khách / NCC xuất hiện giữa câu (mask.mask chỉ thay chuỗi bằng đúng
+	một tên)."""
 	fs = row.get("first_seen")
 	return {"id": sid, "rule": row["rule"], "muc": row["severity"],
 		"loi_quy_tac": (sig.title + (" — " + sig.detail if sig.detail else "")), "paths": list(sig.paths),
 		SO_NGAY_KEY: max(0, (today - getdate(fs)).days) if fs else 0, "trang_thai": row["status"],
-		"ghi_chu_quan_tri": row.get("admin_note") or ""}
+		"ghi_chu_quan_tri": mask.mask_text(row.get("admin_note") or "")}
 
 
 def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now) -> tuple:

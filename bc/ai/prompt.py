@@ -102,6 +102,8 @@ mã đó (máy chủ đổi lại thành tên) hoặc dùng placeholder kiểu c
 placeholder kiểu chu — viết tay sẽ bị loại.
 - Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số ("hai tỷ", "gấp đôi", "một nửa", "hai phần ba số \
 khách"). Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số ("trong 7 ngày", "quý 4").
+- Không đặt con số viết tay sát một placeholder số, không đặt hai placeholder số liền nhau, không viết từ chỉ \
+bậc ("trăm", "nghìn", "triệu") ngay sau placeholder — giữa chúng luôn có ít nhất một từ thường.
 - Lời còn con số viết tay, placeholder sai path hoặc sai kiểu sẽ bị máy chủ loại bỏ cả nhận định."""
 
 _DAU_RA = """ĐẦU RA — JSON {"insights": [...]}, mỗi phần tử:

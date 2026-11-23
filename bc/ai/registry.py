@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 import frappe
 
@@ -380,7 +381,78 @@ def run_detectors(now) -> dict:
 
 # ─── KPI (ảnh chụp mỗi ngày vào BC AI Run.kpis — nền cho phát hiện lệch chuẩn / bản tin tuần ở P2) ─────────────
 # Mỗi mục: (path, kiểu, nhãn). Chỉ path có thật trên payload (docs/ai-rules-audit.md); thiếu thì bỏ qua lúc chụp.
-KPIS: list = []
+KPIS: list = [
+	("tong-quan.summary.rows[0].sales", "tien", "Doanh số bán ra từ đầu năm tài chính"),
+	("tong-quan.summary.rows[0].returns", "tien", "Hàng trả về từ đầu năm tài chính"),
+	("tong-quan.summary.rows[0].net", "tien", "Thực bán từ đầu năm tài chính"),
+	("tong-quan.summary.rows[0].return_rate", "pct", "Tỷ lệ trả hàng"),
+	("tong-quan.summary.meta.growth.sales", "pct", "Tăng trưởng doanh số so cùng kỳ"),
+	("tong-quan.summary.meta.growth.net", "pct", "Tăng trưởng thực bán so cùng kỳ"),
+	("tong-quan.channels.rows[0].sales", "tien", "Doanh số kênh NPP từ đầu năm tài chính"),
+	("tong-quan.channels.rows[1].sales", "tien", "Doanh số kênh MT từ đầu năm tài chính"),
+	("tinh-thanh.provinces.rows[0].pct", "pct", "Tỷ trọng doanh số của tỉnh đứng đầu"),
+	("ton-kho.overview.value.totals.value", "tien", "Tổng giá trị tồn kho"),
+	("ton-kho.overview.value.totals.value_sellable", "tien", "Tồn ở kho bán được"),
+	("ton-kho.overview.value.totals.value_unsellable", "tien", "Tồn ở kho trả về & cách ly"),
+	("ton-kho.overview.value.tp.value", "tien", "Tồn thành phẩm"),
+	("ton-kho.overview.doi.traditional.days", "so", "Số ngày tồn hàng truyền thống"),
+	("ton-kho.overview.slow.total.slow_pct", "pct", "Tỷ lệ hàng chậm luân chuyển"),
+	("ton-kho.overview.slow.total.dead_pct", "pct", "Tỷ lệ tồn chết"),
+	("ton-kho.overview.tet_stock.value", "tien", "Tồn hàng Tết"),
+	("han-dung.overview.khong_ban.het_han.value", "tien", "Thành phẩm đã hết hạn"),
+	("han-dung.overview.han.can_date.value", "tien", "Hàng cận date"),
+	("han-dung.overview.han.can_date.pct", "pct", "Tỷ lệ cận date / thành phẩm"),
+	("han-dung.overview.khong_ban.tong", "tien", "Tồn không bán được"),
+	("han-dung.overview.am.value_abs", "tien", "Giá trị tồn âm"),
+	("han-dung.overview.am.items", "so", "Số mã tồn âm"),
+	("han-dung.overview.khong_ban.thu_hoi.value", "tien", "Lô đang thu hồi"),
+	("kiem-ke.overview.ira.ty_le", "pct", "Độ chính xác tồn"),
+	("kiem-ke.overview.kho.tong.chua_kiem", "so", "Kho chưa kiểm kê lần nào"),
+	("kiem-ke.overview.kho.tong.qua_30", "so", "Kho quá 30 ngày chưa kiểm"),
+	("kiem-ke.overview.kho.tong.qua_90", "so", "Kho quá 90 ngày chưa kiểm"),
+	("kiem-ke.overview.tong.gia_tri", "tien", "Tổng điều chỉnh kho trong tháng"),
+	("kiem-ke.overview.xuat_khac.gia_tri", "tien", "Xuất khác trong tháng"),
+	("kiem-ke.overview.dang_dem.so_phieu", "so", "Phiếu kiểm kê đang đếm dở"),
+	("nhap-tp.overview.nhap.total.value", "tien", "Giá trị nhập thành phẩm trong tháng"),
+	("nhap-tp.overview.cho_duyet.count", "so", "Phiếu nhập TP chờ duyệt"),
+	("nhap-tp.overview.no_bom.items", "so", "Mã đang nợ BOM"),
+	("nhap-tp.overview.no_bom.age_days", "so", "Tuổi nợ BOM cũ nhất"),
+	("nhap-tp.overview.no_bom.value_tam", "tien", "Giá trị nợ BOM (giá tạm)"),
+	("nhap-tp.overview.nvl_treo.value", "tien", "Nguyên liệu treo chưa trừ"),
+	("nhap-tp.overview.gia_von_0.ton.items", "so", "Mã thành phẩm tồn giá vốn 0"),
+	("cong-no.receivables.kpis.receivable", "tien", "Tổng phải thu"),
+	("cong-no.receivables.kpis.overdue", "tien", "Nợ phải thu quá hạn"),
+	("cong-no.receivables.kpis.overdue_pct", "pct", "Tỷ lệ nợ quá hạn"),
+	("cong-no.receivables.kpis.overdue_customers", "so", "Số khách quá hạn"),
+	("cong-no.receivables.kpis.dso.dso", "so", "Số ngày thu tiền bình quân"),
+	("cong-no.receivables.kpis.unallocated", "tien", "Tiền khách trả chưa gắn hoá đơn"),
+	("cong-no.receivables.kpis.over_limit", "so", "Khách vượt hạn mức"),
+	("cong-no.receivables.kpis.net", "tien", "Phải thu ròng"),
+	("phai-tra.payables.ap.total", "tien", "Tổng phải trả nhà cung cấp"),
+	("phai-tra.payables.ap.overdue", "tien", "Phải trả quá hạn (tuổi nợ)"),
+	("phai-tra.payables.ap.due.overdue_total", "tien", "Hoá đơn mua quá hạn chưa trả"),
+	("phai-tra.payables.ap.due.overdue_count", "so", "Số hoá đơn mua quá hạn"),
+	("phai-tra.payables.ap.due.upcoming_total", "tien", "Phải trả đến hạn 14 ngày tới"),
+	("phai-tra.payables.cash.total", "tien", "Quỹ tiền mặt và ngân hàng"),
+	("van-chuyen.overview.giao.total", "so", "Đơn giao trong tháng"),
+	("van-chuyen.overview.giao.ty_le_giao", "pct", "Tỷ lệ đã giao trong tháng"),
+	("van-chuyen.overview.giao.cho_qua_han.qua_n", "so", "Đơn chờ giao quá hạn"),
+	("van-chuyen.overview.giao.xep.chua_xep", "so", "Đơn tự giao chưa xếp chuyến"),
+	("van-chuyen.overview.giao.lan_dau.ty_le", "pct", "Tỷ lệ giao được lần đầu"),
+	("van-chuyen.overview.su_co.dang_mo", "so", "Sự cố vận chuyển đang mở"),
+	("van-chuyen.overview.su_co.mo_qua_n", "so", "Sự cố mở quá hạn"),
+	("van-chuyen.overview.cuoc.ty_le_doanh_thu", "pct", "Cước xe nhà trên doanh thu đã giao"),
+	("nhan-su.overview.nhan_su.dang_lam", "so", "Số người đang làm"),
+	("nhan-su.overview.nhan_su.tam_nghi", "so", "Số người tạm nghỉ"),
+	("nhan-su.overview.bien_dong.vao", "so", "Vào làm 12 tháng"),
+	("nhan-su.overview.bien_dong.nghi", "so", "Nghỉ việc 12 tháng"),
+	("nhan-su.overview.bhxh.ty_le", "pct", "Tỷ lệ đóng BHXH"),
+	("nhan-su.overview.bhxh.rui_ro", "so", "Người quá một tháng chưa đóng BHXH, chưa ghi lý do"),
+	("nhan-su.overview.giay_to.hd.do", "so", "Người hết hạn hợp đồng"),
+	("nhan-su.overview.giay_to.ksk.do", "so", "Người hết hạn khám sức khỏe"),
+	("attp.overview.dem.do", "so", "Lĩnh vực ATTP đèn đỏ"),
+	("attp.overview.dem.vang", "so", "Lĩnh vực ATTP đèn vàng"),
+]
 
 
 def snapshot_kpis(pack: dict) -> dict:
@@ -388,7 +460,9 @@ def snapshot_kpis(pack: dict) -> dict:
 	out = {}
 	for path, _kind, _label in KPIS:
 		v = resolve(pack, path, None)
-		if isinstance(v, bool) or not isinstance(v, (int, float)):
+		if isinstance(v, Decimal):          # cột Float đọc bằng SQL thô trả Decimal
+			v = float(v)
+		if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
 			continue
 		out[path] = v
 	return out

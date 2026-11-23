@@ -1,0 +1,122 @@
+# Trợ lý AI — đối chiếu quy tắc với số liệu gốc
+
+Mỗi quy tắc của Trợ lý AI (`bc/ai/rules/*.py`, `bc/ai/detectors/he_thong.py`) chỉ đọc số đã có trong payload của các
+method `bc.api.*` — đúng con số màn báo cáo đang hiện. Tài liệu này ghi cho từng quy tắc: đọc path nào, đơn vị gì,
+so với ngưỡng ra sao, và chỗ nào đã phải giải nghĩa đặc tả (`docs/SPEC_bc_ai.md` §4). Ngưỡng mặc định sửa được ở
+màn **Cấu hình AI** (`/bc#/ai`); ô để trống hoặc 0 = dùng mặc định.
+
+Cách đọc: "ngặt" = so `>` / `<`; "có dấu bằng" = `≥` / `≤`. "Số tự tính" = số quy tắc tính thêm từ payload, nằm ở
+`<mảng>._ai.<quy tắc>.<tên>` trong gói số để lời trích được như mọi số khác.
+
+## Nhóm Kinh doanh — `bc/ai/rules/kd.py` (đối chiếu `bc/api/kd.py`, `bc/api/tet.py`, `views/tong-quan.js`, `views/tet.js`)
+
+Đơn vị chung: tiền = VND (`si.net_total` / `sii.net_amount`, chưa VAT; hàng trả về đã đổi thành số DƯƠNG ở `returns`);
+mọi tỷ lệ / tăng trưởng đã nhân 100 và làm tròn 1 số lẻ (`_common.pct` / `growth`), mẫu số 0 → `None`.
+`tong-quan.summary.rows` luôn 3 dòng theo thứ tự `current`, `same_period`, `last_year`; `tong-quan.channels.rows` 15 dòng
+(3 kỳ × 5 kênh `npp`, `mt`, `dulich`, `showroom`, `khac`) — quy tắc vẫn TÌM dòng theo `period` / `channel_key`, không
+theo vị trí. `tet.npp_growth.rows` xếp `this_year` giảm dần, chỉ kênh NPP.
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| `kd.tang_truong_am` | `tong-quan.summary.meta.growth.net` (điều kiện); lời: `tong-quan.summary.rows[i].net` của dòng `period = current` và `same_period` | `growth.net` = % tăng trưởng THỰC BÁN (bán ra − trả về) năm tài chính đến hôm nay so cùng kỳ; `None` khi cùng kỳ = 0 → không tín hiệu. Đặc tả "< −10% / < −20%" được khai dưới dạng MỨC GIẢM dương: `giam = −growth.net`, vàng `> 10`, đỏ `> 20` (so ngặt; −10,0% đúng ngưỡng chưa báo) — cùng điều kiện, nhưng ngưỡng trong BC Settings là số dương như `kd.kenh_sut` (ghi đè 0 / trống = mặc định vẫn đúng nghĩa). Số tự tính: `giam`. |
+| `kd.tra_hang_cao` | `tong-quan.summary.rows[i].return_rate` (dòng `current` và `same_period`), lời thêm `rows[i].returns` | `return_rate` = trả về / bán ra × 100; `None` khi bán ra = 0. ĐỎ: năm nay `> 5` (không cần so cùng kỳ). VÀNG: năm nay `> 3` VÀ chênh so cùng kỳ `≥ 1` điểm; chênh = làm tròn 1 số lẻ của (năm nay − cùng kỳ) đúng như dòng "So cùng kỳ" trên thẻ Tỷ lệ trả (4,1 − 3,1 phải ra 1,0 chứ không phải 0,9999…). Cùng kỳ `None` (năm trước chưa bán) → không so được → KHÔNG báo vàng, đỏ vẫn báo. Mốc "1 điểm" là hằng số trong code (`CHENH_DIEM`), không chỉnh được qua BC Settings (chỉ có 2 ô ngưỡng = 3 và 5). Số tự tính: `chenh`. |
+| `kd.kenh_sut` | `tong-quan.channels.rows[i].sales`, `.channel`, tìm theo `period` ∈ {`current`, `same_period`} × `channel_key` | Payload KHÔNG có sẵn tăng trưởng và tỷ trọng theo kênh → quy tắc tự tính bằng đúng công thức của thẻ kênh trên màn Tổng quan: `(năm nay − cùng kỳ) / cùng kỳ × 100`, làm tròn 1 số lẻ kiểu `Math.round`, trên DOANH SỐ BÁN RA (`sales` — số thẻ kênh hiện), không phải thực bán. Cùng kỳ = 0 → bỏ kênh đó. "≥ 10% doanh số" (đặc tả không nói kỳ nào): lấy tỷ trọng LỚN HƠN giữa năm nay và cùng kỳ — kênh sụt mạnh có thể đã tụt dưới 10% năm nay nhưng vẫn là kênh lớn cần báo; mốc 10% là hằng số (`TY_TRONG_KENH`). Ngưỡng chỉnh được: mức giảm, vàng `> 15` (ngặt); đặc tả không có mức đỏ → mặc định không đỏ (quản trị đặt `threshold_red` thì có). Mỗi kênh một tín hiệu, khoá `kd.kenh_sut:<channel_key>`. Số tự tính: `giam`, `ty_trong` (năm nay), `ty_trong_cung_ky`. |
+| `tet.npp_tut` | `tet.npp_growth.meta.between_seasons`; `tet.npp_growth.rows[i].last_year`, `.this_year`, `.growth_pct`, `.customer` | Chỉ chạy khi `between_seasons` sai (thiếu khoá = sai). `rows[].last_year` của payload này là năm trước CÙNG KỲ (`last_year_out`: đầu mùa trước → `ly_asof`), KHÔNG phải cả mùa trước (số cả mùa chỉ có ở `tet.get_npp_detail`, không nằm trong pack) → "năm trước ≥ 100 tr" áp trên số cùng kỳ; đầu mùa ít NPP đạt mốc nên quy tắc tự im. `this_year` đã trừ trả về. `growth_pct` `None` (NPP mới) → bỏ. NPP tính là tụt khi `last_year ≥ 100.000.000` và `growth_pct < −20` (ngặt; hai mốc là hằng số `NPP_NAM_TRUOC`, `NPP_GIAM`). Ngưỡng chỉnh được = SỐ NPP tụt: vàng `≥ 3`; không có mức đỏ mặc định. Gộp MỘT tín hiệu (khoá `tet.npp_tut`); lời nêu tối đa 3 NPP hụt nhiều tiền nhất, tên qua `{{…customer|chu}}` (mã giả hoạt động); `paths` tối đa 5 NPP. Số tự tính: `so_npp`, `nguong_giam`, `hut`, `nam_nay`, `nam_truoc`. |
+| `tet.cham_muc_tieu` | `tet.npp_growth.meta.between_seasons`, `.meta.target_pct`, `.meta.asof`; `tet.npp_growth.rows[].this_year`, `.last_year` (cộng) | "Chỉ trong mùa" = `between_seasons` sai (cùng cờ với `tet.npp_tut`; cờ này còn sai tới 60 ngày sau mùng 1 Tết, lúc đó số đã khoá ở mùng 1 — tín hiệu vẫn còn tới khi sang "giữa hai mùa"). Payload không có dòng tổng → tăng trưởng cùng kỳ của cả kênh tự tính như dòng "Tổng" của bảng NPP tăng trưởng: `(Σ this_year − Σ last_year) / Σ last_year × 100` (1 số lẻ kiểu `Math.round`); Σ cùng kỳ ≤ 0 → không tín hiệu. `target_pct` là % (20.0 = +20%), 0 là mục tiêu hợp lệ, `None` → không tín hiệu. Thiếu = `target_pct − tăng trưởng` (điểm, 1 số lẻ): vàng `≥ 10`, đỏ `≥ 20` (có dấu bằng). CHỈ kênh NPP (pack không có `get_mt_detail`) → lời ghi rõ "kênh NPP". Lưu ý vận hành: những ngày đầu mùa số cùng kỳ còn nhỏ nên tỷ lệ dao động mạnh — đặc tả không đặt sàn, giữ nguyên, chỉnh ngưỡng sau khi chạy thật. Số tự tính: `tang_truong`, `thieu`, `nam_nay`, `nam_truoc`. |
+
+Không bỏ quy tắc nào của nhóm. Phần KHÔNG làm vì payload không có số: so mục tiêu hàng Tết cho kênh MT / cả công ty
+(pack chỉ có `tet.npp_growth` và `tet.items`); mức đỏ cho `kd.kenh_sut` và `tet.npp_tut` (đặc tả chỉ có một điều kiện).
+
+Chỉ số theo dõi hằng ngày (số đứng đầu màn, có thật trên payload): danh sách `KPIS` trong `bc/ai/registry.py`. Các mảng `ngay`, `thang`,
+`tet`, `san-pham` KHÔNG có con số tổng nào ngoài danh sách (`rows[]` theo ngày / tháng / khách / mã) → chưa có chỉ số theo dõi;
+muốn theo dõi (vd tổng hàng Tết kênh NPP, doanh số tháng này) cần thêm số tổng vào `meta` của method bc tương ứng trước.
+
+## Nhóm Kho (`bc/ai/rules/kho.py`) — đối chiếu code `bc.api.kho_han` / `kho_ton` / `kho_kk` / `kho_nhap` + view
+
+Đơn vị chung: tiền = VND theo giá vốn, chưa VAT, số dương trừ khi ghi khác; `pct` = đã nhân 100, 1 số lẻ, mẫu số 0
+→ None (`_common.pct`). Mọi khối con là `safe_block` → lỗi = `{available: False, error: True}` (quy tắc không chạy).
+Pack: `han-dung.overview` = kho_han.get_overview, `ton-kho.overview` / `ton-kho.trend` = kho_ton.get_overview /
+get_trend, `kiem-ke.overview` = kho_kk.get_overview() (tháng hiện tại, đến hôm nay), `nhap-tp.overview` =
+kho_nhap.get_overview().
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| `kho.ton_am` | `han-dung.overview.am.items`, `.am.value_abs`, `.am.warehouses` | Vàng: số MÃ có dòng tồn âm (Bin < −1e-6, mọi kho công ty) > ngưỡng vàng (mặc định 0, ô "vàng" = số mã). Đỏ: giá trị phần âm (Σ \|qty\| × giá vốn dự phòng, số dương) ≥ ngưỡng đỏ (mặc định 20 000 000 đ, so ≥). `no_rate_rows` (dòng chưa có giá vốn) không làm đổi mức — giá trị là cận dưới. Mức lô (`am.lo.lo_am`) không dùng: đặc tả nói "mã âm". |
+| `kho.het_han` | `han-dung.overview.han.buckets[i]` với `key == "het_han"` (tìm theo key, không theo vị trí): `.value`, `.lots`, `.items` | Chỉ đỏ: giá trị > 0 (ngưỡng đỏ mặc định 0, so ngặt). Lô hết hạn HÔM NAY chưa tính hết hạn (như ERPNext). Cùng số với `khong_ban.het_han.value`. |
+| `kho.can_date` | `han-dung.overview.han.can_date.pct`, `.value`, `.ngay` | `pct` = giá trị lô còn 0..N ngày / Σ giá trị phần DƯƠNG thành phẩm ở kho bán được (×100). N = `can_date.ngay` (BC Settings.kho_can_date_ngay). KHÔNG gồm hàng đã hết hạn (có quy tắc riêng). > 10 / > 20 ngặt. |
+| `kho.khong_ban_duoc` | `han-dung.overview.khong_ban.tong`, `.day_du` | `tong` = kho trả về & cách ly + lô đang thu hồi + thành phẩm hết hạn (chỉ các phần có số). ≥ 50 tr / ≥ 200 tr. `day_du` sai → vẫn so (tổng là cận dưới), lời nói rõ "chưa đủ". |
+| `kho.ton_chet` | `ton-kho.overview.slow.total.dead_pct`, `.dead_value`, `.dead_items`, `ton-kho.overview.slow.dead_days` | "hàng bán được" = `slow.total` (mọi mã ở kho bán được); `dead_pct` = giá trị tồn chết / `sellable_value` × 100. > 5 / > 10 ngặt. Phần `tp` / `vat_tu` không dùng (tránh tín hiệu trùng). |
+| `kho.doi_cao` | `ton-kho.overview.doi.traditional.days`, `.value`, `ton-kho.overview.doi.window_days` | Số ngày tồn = tồn hàng truyền thống ở kho bán được / (giá vốn bán `window_days` ngày / `window_days`). `no_sales` (không bán) → `days` None → không tín hiệu. Phần Tết bỏ (đặc tả chỉ "truyền thống"). > 45 / > 75 ngặt. |
+| `kho.suc_khoe` (quan-tri) | `ton-kho.overview.health.failed_reposts`, `.failed_repost_since`; `.si_no_stock_relief.{count, days, oldest}`; `.pos_unconsolidated`; `ton-kho.trend.trend.ledger_bin_diff`; `ton-kho.trend.trend.future_value` | 5 mục, mỗi mục 1 khoá `kho.suc_khoe:<mục>`: `dinh_gia_lai` (failed_reposts > 0 → ĐỎ), `hoa_don_chua_tru_kho` (count > 0), `pos_chua_gop` (> 0), `so_lech_bin` (\|ledger_bin_diff\| ≥ 1 đ — đúng mốc của view), `phieu_tuong_lai` (future_value ≠ 0 — như view) → vàng. Hai nguồn `overview.health` + `trend.trend` đều là `sources` (một khối hỏng → không chạy, giữ tín hiệu cũ, không đóng nhầm). Mục `health` bị `_soft` bỏ (thiếu bảng / lỗi) → mục đó không báo. `pending_reposts`, `allow_negative_stock`… không có trong đặc tả → không làm. Không ngưỡng (vang/do None). |
+| `kho.kk_lech` | (a) `kiem-ke.overview.kho.tong.{qua_30, qua_90, chua_kiem}`, `kiem-ke.overview.meta.nguong.{canh_bao, nguy}`; (b) `kiem-ke.overview.ira.ty_le`, `.so_ma`, `.so_ma_khop` | **Mơ hồ đặc tả đã giải**: `meta.nguong` có thật nhưng là SỐ NGÀY từ lần kiểm gần nhất (canh_bao 30, nguy 90 — `kho_kk.NGUONG_*`), không phải ngưỡng độ chính xác. Nên quy tắc có 2 khoá: `kho.kk_lech:tre` dùng đúng ngưỡng có sẵn trong meta — đỏ khi có kho quá `nguy` ngày hoặc chưa kiểm kê lần nào (`qua_90 + chua_kiem` > 0, view tô đỏ cả hai), vàng khi có kho quá `canh_bao` ngày (`qua_30` > 0; `qua_30` đã gồm `qua_90`); `kho.kk_lech:ira` — độ chính xác tồn (% mã khớp sổ) dưới ngưỡng vàng 80 (đúng mốc tô màu của view; `lower=True`, ô vàng/đỏ BC Settings ghi đè được, đỏ mặc định không có). `ira` `available: False` vì site không có app sx → bỏ phần (b), vẫn chạy (a); `ira` lỗi / thiếu → `NotRunnable` (giữ tín hiệu cũ). `ty_le` None (chưa có lần kiểm sx) → không báo. |
+| `kho.xuat_khac_cao` | `kiem-ke.overview.xuat_khac.gia_tri`, `.so_phieu`, `kiem-ke.overview.meta.from`, `.to` | Giá trị xuất khác (Material Issue không phải kiểm kê / dọn tồn / bù nợ BOM, = −Σ chênh giá trị sổ, số dương) từ đầu tháng tới hôm nay. Đặc tả chỉ 1 mốc "≥ 30 tr / tháng" → vàng (so ≥), không đỏ. |
+| `kho.no_bom` | `nhap-tp.overview.no_bom.age_days`, `.items`, `.rows` | `age_days` = tuổi (ngày) của phiếu nợ BOM CŨ NHẤT còn "Chờ BOM"; không nợ → None → không báo. > 7 / > 30 ngặt. Site không sx → khối `available: False` → không chạy. |
+| `kho.gia_von_0` | `nhap-tp.overview.gia_von_0.ton.items`, `.nhap_ky.items` | Vàng khi số mã thành phẩm tồn ở kho bán được có giá vốn ≤ 0 (`ton.items`) HOẶC số mã nhập trong tháng với đơn giá 0 (`nhap_ky.items`) > ngưỡng vàng (mặc định 0). Không đỏ. Hai số có thể trùng mã → không cộng, nêu riêng. |
+
+Không bỏ quy tắc nào. KPI mảng `sx-tet`: `sx.get_items` / `get_daily_summary` chỉ trả danh sách theo mã / ngày,
+không có số tổng → chưa có chỉ số theo dõi (cần thêm tổng vào màn trước).
+
+## Công nợ — `bc/ai/rules/cn.py` (đối chiếu `bc/api/cn.py` `get_receivables` / `get_payables`, `views/cong-no.js`, `views/phai-tra.js`)
+
+Đơn vị chung: mọi số tiền là VND **gồm VAT** (khác doanh số chưa VAT của nhóm Kinh doanh), làm tròn 2 số lẻ. `overdue_pct`
+= `_common.pct(overdue, receivable)` → đã nhân 100, 1 số lẻ, phải thu 0 → `None`. `kpis.dso` là **dict**
+`{debt, revenue, window_days, dso}` (không phải số) — số ngày nằm ở `kpis.dso.dso`, `None` khi doanh thu cửa sổ = 0.
+`top_overdue` = tối đa 10 khách NGOÀI MT có quá hạn > 0,5 đ, xếp `overdue` giảm dần (rồi `receivable`); `customer` là
+`customer_name` (tên thật → chỉ qua `{{…|chu}}`). `max_days` = số ngày quá hạn của hoá đơn cũ nhất còn nợ theo FIFO
+(phần "chưa rõ hạn" không tính), 0 nếu không có phần quá hạn gắn hoá đơn.
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| `cn.qua_han_ty_le` | `cong-no.receivables.kpis.overdue_pct`; lời thêm `kpis.overdue`, `kpis.receivable` | % đã ×100. Vàng `> 20`, đỏ `> 35` (ngặt). `None` → không tín hiệu. Tỷ lệ gồm cả kênh MT (theo bảng kê). |
+| `cn.qua_han_lon` | `cong-no.receivables.top_overdue[i].max_days`, `.overdue`, `.customer` | Khách tính là "quá hạn lâu, số lớn" khi `max_days > 90` (ngặt, hằng số `QUA_NGAY`, không chỉnh qua BC Settings) VÀ `overdue ≥ ngưỡng vàng` (mặc định 50.000.000 đ, có dấu bằng — ngưỡng chỉnh được là SỐ TIỀN). Gộp MỘT tín hiệu (khoá `cn.qua_han_lon`); lời nêu tối đa 5 khách nợ quá hạn nhiều nhất, tên chỉ qua `{{cong-no.receivables.top_overdue[i].customer|chu}}`, nằm ở THÂN (không ở tiêu đề). Đặc tả không có mức đỏ → mặc định chỉ vàng; quản trị đặt `threshold_red` (số tiền, ≥) thì khách nào đạt mức đó làm tín hiệu thành đỏ. Giới hạn của nguồn: chỉ thấy 10 khách quá hạn nhiều tiền nhất, KHÔNG có khách MT (MT nằm ở `mt.chains`, không có `max_days`) → đếm `so_khach` là "trong top 10". Số tự tính: `so_khach`, `so_ngay` (= 90), `tong`. |
+| `cn.vuot_han_muc` | `cong-no.receivables.kpis.over_limit` | Số KHÁCH (int) nợ GL vượt `Customer Credit Limit` của công ty. `> 0` → vàng (đặc tả không có đỏ). Lưu ý: ketoan tắt `enable_credit_limit_alert` thì API trả 0 → quy tắc im. |
+| `cn.dso_cao` | `cong-no.receivables.kpis.dso.dso`; lời thêm `kpis.dso.debt`, `.revenue`, `.window_days` | Đặc tả ghi `kpis.dso` nhưng đó là dict → dùng `kpis.dso.dso` (ngày, 1 số lẻ). Vàng `> 45`, đỏ `> 60` (ngặt). Nợ = GL toàn công ty (gồm MT), doanh thu gồm VAT trong `window_days` (mặc định 365). |
+| `cn.chua_phan_bo` | `cong-no.receivables.kpis.unallocated` | Tổng `Payment Entry.unallocated_amount` của khách (đ). `≥ 100.000.000` → vàng (có dấu bằng). Đặc tả không có đỏ. |
+| `cn.phai_tra_qua_han` | `phai-tra.payables.ap.due.overdue_total`, `.overdue_count` | `overdue_total` = Σ `outstanding_amount` hoá đơn mua đã quá hạn (mọi tuổi); `overdue_count` = số HOÁ ĐƠN (không phải số NCC). Vàng `> 0` (ngặt), đỏ `≥ 200.000.000` (có dấu bằng) — hai mốc khác kiểu so: vàng xét ngặt bằng `cfg.muc(v)`, đỏ xét `cfg.muc(v, bang=True)`. |
+| `cn.thieu_tien_14_ngay` | `phai-tra.payables.ap.due.overdue_total`, `.upcoming_total`, `phai-tra.payables.cash.total`, `phai-tra.payables.meta.due_ahead` | Phải trả 14 ngày = quá hạn + đến hạn trong `meta.due_ahead` (= 14) ngày tới. Tỷ lệ = phải trả / `cash.total` × 100, làm tròn 1 số lẻ (nửa lên) rồi so: vàng `> 80`, đỏ `> 100` (ngặt). Phải trả ≤ 0 → không tín hiệu. Quỹ (`cash.total`, Σ số dư TK Cash/Bank, có thể âm) ≤ 0 mà còn phải trả → ĐỎ, lời không nêu % (không chia được). Số tự tính: `phai`, `ty_le`. |
+
+## Vận chuyển — `bc/ai/rules/vc.py` (đối chiếu `bc/api/vc.py` `get_overview`, `views/van-chuyen.js`)
+
+`get_overview()` (pack gọi không tham số → tháng này cắt ở hôm nay). Cả trang `available: False` khi chưa cài vanchuyen;
+mỗi khối (`giao`, `cuoc`, `su_co`, `xe`) có thể `{available: False}` / `{available: False, error: True}` (safe_block) →
+`sources` khai sâu tới khối (`van-chuyen.overview.giao`, …) nên khối hỏng → "không chạy được". Bên trong `giao`, `xep` và
+`lan_dau` là `None` khi thiếu bảng Chuyen Xe → chạy được, không tín hiệu. `cho_qua_han`, `xep` là ẢNH CHỤP hôm nay (mọi
+tháng); `lan_dau`, `cuoc` theo THÁNG. Tỷ lệ đã ×100 (`pct`).
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| `vc.cho_qua_han` | `van-chuyen.overview.giao.cho_qua_han.qua_n`, `.so_ngay`; lời thêm `.rows[0].hinh_thuc`, `.rows[0].qua_n` | Số ĐƠN chờ giao quá `so_ngay` (= 3) ngày. Vàng `> 0`, đỏ `> 10` (ngặt). `rows` xếp `qua_n` giảm dần → dòng 0 = hình thức (hãng / tự giao) dồn nhiều nhất; chỉ nêu khi dòng 0 có `qua_n > 0` và tên hình thức là chuỗi. |
+| `vc.chua_xep_chuyen` | `van-chuyen.overview.giao.xep.chua_xep`; lời thêm `giao.xep.mot_phan` | Số đơn TỰ VẬN CHUYỂN chưa giao mà chưa lên chuyến nào. Vàng `> 0`, đỏ `> 10`. Chỉ xét `chua_xep` (đặc tả ghi cả khối `xep`); `mot_phan` (xếp một phần) chỉ nhắc trong thân khi > 0. `xep = None` → không tín hiệu. |
+| `vc.giao_lan_dau` | `van-chuyen.overview.giao.lan_dau.ty_le`, `.so_don`, `.khach_hen`, `.hoan` | `lower=True`: vàng `< 90`, đỏ `< 80` (ngặt). `ty_le = None` / `lan_dau = None` → không tín hiệu. **Lệch có chủ ý**: chỉ xét khi `so_don ≥ 10` (hằng số `LAN_DAU_TOI_THIEU`) — đầu tháng vài đơn hỏng một là tỷ lệ tụt về 50% báo đỏ ảo; đặc tả không nói sàn mẫu. |
+| `vc.su_co_mo` | `van-chuyen.overview.su_co.mo_qua_n`, `.so_ngay` | Sự cố chưa `Đã xử lý` / `Đóng` phát sinh quá `so_ngay` (= 7, hằng số của API — không chỉnh qua BC Settings) ngày. `> 0` → vàng (ngưỡng chỉnh được là SỐ sự cố). |
+| `vc.cuoc_canh_bao` | `van-chuyen.overview.cuoc.tra_bat_thuong`, `.tra_chuyen_huy`, `.tra_chuyen_huy_tien`, `.sua_tay`, `.an` | "Các cảnh báo trả cước" = đúng 3 cảnh báo màn Vận chuyển hiện (`van-chuyen.js` `warn`): đã trả mà bút toán chưa duyệt / đã huỷ, chuyến huỷ mà bút toán trả còn hiệu lực, cước sửa tay. Mỗi mục `> 0` → một tín hiệu vàng khoá `vc.cuoc_canh_bao:<tên trường>`. `tra_bat_thuong` / `tra_chuyen_huy` có thể `None` / 0 khi site thiếu cột `da_tra_cuoc` → không báo. **Riêng tư**: `an: True` (tháng < K lái xe) → KHÔNG nêu tiền (`tra_chuyen_huy_tien` đã `None`), chỉ nêu số chuyến như màn. Không `so_chua_tra` (chưa trả cước không phải cảnh báo trên màn). |
+| `vc.xe_qua_han` | `van-chuyen.overview.xe.can_xu_ly[i].qua_han`, `.can_xu_ly[i].xe` | `can_xu_ly` = xe đang dùng có đăng kiểm / thay dầu / bảo dưỡng `qua_han` hoặc `sap_den`, xếp quá hạn trước. Gộp MỘT tín hiệu: có xe quá hạn (`qua_han = True`) → đỏ (`> ngưỡng đỏ` = 0), chỉ có xe sắp đến hạn → vàng (`> ngưỡng vàng` = 0); ngưỡng là SỐ XE. Lời nêu tối đa 3 biển số (tài sản công ty, API đã cho hiện) qua `{{…xe|chu}}`. Số tự tính: `qua_han`, `sap_den`. |
+
+Không bỏ quy tắc nào. Phần KHÔNG làm: khách MT trong `cn.qua_han_lon` (nguồn không có tuổi nợ theo khách MT); khách quá
+hạn ngoài top 10; mức đỏ cho các quy tắc đặc tả chỉ có một điều kiện (`cn.vuot_han_muc`, `cn.chua_phan_bo`,
+`cn.qua_han_lon`, `vc.su_co_mo`, `vc.cuoc_canh_bao`) — để trống, quản trị đặt `threshold_red` thì có.
+
+## Nhân sự (nhan-su.overview = bc.api.ns.get_overview), ATTP (attp.overview / attp.report = bc.api.attp), Hệ thống (detector bc.ai.detectors.he_thong)
+
+Đối chiếu code bc/api/ns.py, bc/api/attp.py, view nhan-su.js / attp.js, sx/qc/bao_cao.py (chi_tieu, danh_gia), ns/api/canh_bao.py (TEN), DocType JSON v16 (Error Log, Scheduled Job Log, Email Queue, Activity Log) + bc_ai_run.json. Mọi khối con của ns qua `safe_block` → lỗi = `{"_error": True}`, thiếu bảng / app = `{"available": False}`.
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| ns.bhxh_rui_ro | `nhan-su.overview.bhxh` (nguồn), `.rui_ro` | Số NGƯỜI đang làm, vào làm > 30 ngày (BHXH_NGAY của bc = ns), cờ ns_dong_bhxh = 0, chưa ghi lý do. `rui_ro` = None khi `uoc_tinh` (site chưa cài ns) → không tín hiệu. Đặc tả "> 0 người", một mức → khai `do=0` (ns tô mã này mức đỏ), so ngặt. Số "30 ngày" không có trên payload → lời viết "hơn một tháng" (không gõ chữ số). |
+| ns.giay_to | `nhan-su.overview.giay_to` (nguồn), `.{hd,ksk,attp}.{do,vang}`, `.so_ngay` | Mỗi nhóm giấy một khoá `ns.giay_to:<hd|ksk|attp>` (mã nhóm cố định của bc). Đỏ: số người ĐÃ hết hạn `do` > ngưỡng đỏ (mặc định 0); vàng: số người hết hạn trong `so_ngay` ngày tới `vang` > ngưỡng vàng (mặc định 0). Hai thước đo khác nhau trên cùng một ngưỡng-pair (như kho.ton_am). Đơn vị: người. |
+| ns.viec_ton | `nhan-su.overview.canh_bao` (nguồn), `.rows[i].{ma, ten, muc, so_nguoi}` | Một khoá `ns.viec_ton:<ma>` / dòng có `muc == "do"`; dòng TÌM theo `ma` (danh sách sắp theo mức rồi thứ tự ns — vị trí đổi). `ten` = nhãn mã cảnh báo của ns (canh_bao.TEN), không phải tên người → `{{…ten|chu}}`. BỎ mã `bhxh_rui_ro` (đã là quy tắc riêng ns.bhxh_rui_ro, cùng số — test_ns vi sai) để không báo hai lần. Mức đỏ khi `so_nguoi` > ngưỡng đỏ (mặc định 0). Mã trùng (không xảy ra với ns) → lấy dòng đầu. |
+| attp.den_do | `attp.overview` (nguồn), `.linh_vuc[i].{ma, ten, den, nhac}` | Một khoá `attp.den_do:<ma>` / lĩnh vực `den == "do"`, tìm theo `ma`. Không ngưỡng số (đèn đỏ của sx là luật sẵn) → mức đỏ cố định. `so` / `nhan_so` là CHUỖI đã định dạng của sx ("55,6%", "0/0", "–") → không dùng làm placeholder số. Số việc treo = len(nhac), số việc mức cao = đếm `muc_do == "cao"` → `tinh`. Không dùng `nhac[].tieu_de / chi_tiet` (chữ tự do, có thể có tên khách / NCC). `du_lieu_mau` (site còn dữ liệu mẫu) không chặn quy tắc. |
+| attp.chi_tieu | `attp.report` (nguồn), `.chi_tieu[i].{chi_so, ten, so_sanh, muc_tieu, don_vi, nam_luy_ke, dat_nam}`, `.nam` | Một khoá `attp.chi_tieu:<chi_so>` / chỉ tiêu `dat_nam is False` (luỹ kế năm chưa đạt; None = chưa có số → không báo). Mức vàng cố định (đặc tả một mức, không ngưỡng số). `don_vi == "%"` → kiểu pct (giá trị sx đã ×100, vd 96.7), còn lại so. `ten` = tên chỉ tiêu do Ban ISO đặt / tên chỉ số → chu. chi_so trùng (sx cho phép 2 chỉ tiêu cùng chỉ số) → dòng đầu (creation asc). Khoá `nam` của sx đã được bc tách thành `nam_luy_ke`. |
+| ht.error_log | `he-thong.error_log.{tong, tb_ngay, nhom[i].{method, so}}` | Detector: `tabError Log`.creation trong (now − 24 h, now] = `tong`; 7 ngày TRƯỚC đó (now − 8 ngày, now − 24 h] / 7 = `tb_ngay` (1 số lẻ); 5 nhóm `method` nhiều nhất (số giảm, tên tăng), method cắt 120 ký tự, trống → "(không ghi)". KHÔNG đọc cột error. Quy tắc: `tong` ≥ SAN (10) và `tong` > vàng × tb (mặc định 2, ngặt); đỏ chỉ khi đặt `do` (cùng cách tính). tb = 0 → chỉ cần ≥ 10. |
+| ht.job_that_bai | `he-thong.job_that_bai.{tong, so_loai, loai[i].{job, so}}` | `tabScheduled Job Log` status 'Failed', creation trong 24 h, nhóm `scheduled_job_type` (top 5). Một tín hiệu gộp (không key theo job: tên job dài ~100 ký tự, khoá Insight 140) nêu job lỗi nhiều nhất; vàng > 0. |
+| ht.email_loi | `he-thong.email_loi.so` | `tabEmail Queue` status 'Error', creation trong 24 h. vàng > 0. |
+| ht.hang_doi | `he-thong.hang_doi.{cho, so_hang}` | Σ q.count của `get_queues()`; Redis lỗi → detector `{"_error": True}` → quy tắc không chạy. > 50 / > 200 ngặt. |
+| ht.backup_cu | `he-thong.backup_cu.{co_ban, gio, moi_nhat}` | File (thường) mới nhất theo mtime trong `get_backups_path()`; `gio` = (now − mtime)/3600, 1 số lẻ. Thư mục thiếu / rỗng → `co_ban` False, `gio` None → đỏ. Đỏ khi `gio` > 26 (ngặt — đúng 26 giờ không báo). |
+| ht.dia_day | `he-thong.dia_day.{pct, con_trong_gb}` | `shutil.disk_usage(get_site_path())`: pct = used / total × 100 (1 số lẻ). > 85 / > 93 ngặt. |
+| ht.dang_nhap_sai | `he-thong.dang_nhap_sai.{so_tk, max_lan, lan}` | `tabActivity Log` operation 'Login', status 'Failed', creation trong 24 h, nhóm `user`. Gói số CHỈ có số: `lan` = số lần mỗi tài khoản (giảm dần, ≤ 20), không tên. Quy tắc: số tài khoản có lần > vàng (mặc định 10) → `tinh`. Tên tài khoản chỉ vào `Signal.documents` ({"doctype": "User"}) — lấy từ bộ nhớ của module do detector của CÙNG lượt ghi (khớp `moc`), không có trong pack; tài khoản không tồn tại ("Unknown User", email gõ sai) chỉ được đếm. |
+| ht.ai_loi | `he-thong.ai_loi.{so_luot, that_bai, het_credit}` | `tabBC AI Run`: 3 dòng tổng (step 'tong') ĐÃ XONG (finished có) gần nhất theo started, run_type ≠ hoi-dap; lượt đang chạy (status loi / error "chưa hoàn tất", finished trống) bị bỏ. Lượt hỏng: dòng tổng loi, hoặc có ≥ 1 dòng gọi mô hình (step ∉ {tong, ai}) và MỌI dòng đó loi / het-credit. Cần đủ 3 lượt. Vàng khi cả 3 hỏng. |
+
+Bỏ / không làm:
+- Số ngày ngưỡng BHXH (30) và ngưỡng giấy tờ: chỉ `giay_to.so_ngay` có trên payload; BHXH_NGAY không có → lời không nêu số ngày.
+- attp.den_do: không nêu `so` / `nhan_so` (chuỗi định dạng, không phải số) và không nêu tiêu đề việc treo (chữ tự do).
+- "Bộ lập lịch chết" — đặc tả xử lý ở get_feed, không phải detector.

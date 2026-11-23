@@ -24,6 +24,7 @@ import frappe
 # (DocType, cột tên hiển thị, tiền tố mã giả) — thứ tự = thứ tự ưu tiên khi trùng chuỗi.
 NGUON = (("Customer", "customer_name", "KH"), ("Supplier", "supplier_name", "NCC"))
 
+TEN_TOI_THIEU = 4        # mask_text: tên ngắn hơn không thay trong chữ tự do
 _MA = re.compile(r"(?<![\w#])[A-Za-z]+#\d+(?![\w#])")     # dạng mã giả chuẩn: KH#0001, NCC#0012
 
 
@@ -45,6 +46,7 @@ class Mask:
 		# Mã không theo dạng chuẩn (nơi gọi tự đặt) → soát bằng biểu thức riêng, dài trước.
 		le = sorted((m for m in self._ten if not _MA.fullmatch(m)), key=len, reverse=True)
 		self._le = re.compile(r"(?<![\w#])(?:" + "|".join(map(re.escape, le)) + r")(?![\w#])") if le else None
+		self._tu_do = None       # biểu thức cho mask_text, dựng khi cần
 
 	def mask(self, obj):
 		"""Bản SAO sâu của obj (dict / list / scalar), mọi chuỗi (giá trị, KHÔNG phải khoá dict) bằng đúng một tên đã
@@ -58,6 +60,20 @@ class Mask:
 		if isinstance(obj, str):
 			return self._ma.get(obj.strip(), obj)
 		return obj
+
+	def mask_text(self, text) -> str:
+		"""Chữ TỰ DO (ghi chú của quản trị): thay mọi tên đã biết xuất hiện như chuỗi con → mã giả, tên dài trước.
+		Chỉ thay tên từ TEN_TOI_THIEU ký tự (tên quá ngắn dễ trùng một phần của từ khác) và chỉ khi tên đứng riêng,
+		không dính chữ / số hai bên. Là che HẾT SỨC: tên gọi tắt, tên viết khác hồ sơ không nhận ra được."""
+		text = "" if text is None else str(text)
+		if not self._ma or not text:
+			return text
+		if self._tu_do is None:
+			ds = sorted((s for s in self._ma if len(s) >= TEN_TOI_THIEU), key=len, reverse=True)
+			self._tu_do = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, ds)) + r")(?!\w)") if ds else False
+		if not self._tu_do:
+			return text
+		return self._tu_do.sub(lambda m: self._ma[m.group(0)], text)
 
 	def _thay(self, text, fn) -> str:
 		text = "" if text is None else str(text)
