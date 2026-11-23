@@ -33,7 +33,7 @@ import time
 import frappe
 import requests
 
-from bc.ai.llm import PROVIDERS, LLMError
+from bc.ai.llm import PROVIDERS, LLMError, key_ok
 
 URL = "https://api.anthropic.com/v1/messages"
 VERSION = "2026-10-21"
@@ -72,14 +72,15 @@ def _request(key: str, model: str, system: str, user: str, schema: dict, max_tok
 
 def _send(headers: dict, data: bytes, timeout) -> tuple:
 	"""Một lượt gửi → (status, thân dict | None, chữ). status 0: quá thời gian / lỗi nối (thử lại được); -1: lỗi gửi
-	khác (không thử lại). Chữ của ngoại lệ có thể chứa khoá — chỉ đi tiếp vào LLMError (tự làm sạch)."""
+	khác (không thử lại) — chỉ ghi TÊN loại ngoại lệ (lời của nó có thể chép nguyên header mang khoá). Chữ của lỗi mạng
+	có thể chứa khoá — chỉ đi tiếp vào LLMError (tự làm sạch)."""
 	try:
 		r = http_post(URL, headers, data, (CONNECT_TIMEOUT, timeout))
 		status, text = int(r.status_code), str(r.text or "")
 	except _NET_ERRORS as e:
 		return 0, None, f"{type(e).__name__}: {e}"
 	except Exception as e:
-		return -1, None, f"{type(e).__name__}: {e}"
+		return -1, None, type(e).__name__
 	try:
 		body = json.loads(text)
 	except ValueError:
@@ -170,6 +171,8 @@ def call(model: str, system: str, user: str, schema_name: str, schema: dict, max
 	key = str(frappe.conf.get(PROVIDERS["claude"]) or "").strip()   # chỉ sống trong hàm này
 	if not key:
 		raise LLMError("no_key", f"chưa khai {PROVIDERS['claude']} trong site_config")
+	if not key_ok(key):   # dấu cách / xuống dòng ở giữa: thư viện HTTP sẽ chép khoá vào lời lỗi — không gửi
+		raise LLMError("no_key", f"{PROVIDERS['claude']} khai sai dạng (có dấu cách / xuống dòng / ký tự lạ)")
 	fallback = model in FALLBACK_MODELS
 	waits = list(RETRY_WAITS)
 	lan = 0

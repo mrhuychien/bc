@@ -167,10 +167,13 @@ giai đoạn P0 + P1 (chưa có OpenAI phản biện, bộ dò chứng từ, b�
 **Luồng một lượt chạy** (`bc.ai.pipeline.run_daily`, cron `30 5 * * *` giờ của site → hàng đợi `long`, chống chạy
 trùng):
 
-1. `collect` gọi lại 23 method `bc.api.*` dưới Administrator (`refresh=1`, làm ấm luôn cache buổi sáng) → gói số
-   `pack[mảng][tên]`. Không đọc thẳng chứng từ nào: muốn Trợ lý thấy thêm số gì thì thêm vào màn báo cáo trước.
+1. `collect` gọi lại 24 lượt method `bc.api.*` dưới Administrator (`refresh=1`, làm ấm luôn cache buổi sáng) → gói
+   số `pack[mảng][tên]`: 23 mục đúng như các màn đang hiện, cộng số vận chuyển của tháng trước (chỉ để quy tắc đọc,
+   không gửi mô hình). Không đọc thẳng chứng từ nào: muốn Trợ lý thấy thêm số gì thì thêm vào màn báo cáo trước.
 2. 8 bộ dò hệ thống (`bc/ai/detectors/he_thong.py`, chỉ `SELECT`): Error Log tăng vọt, tác vụ định kỳ lỗi, email
-   lỗi, hàng đợi ứ, sao lưu cũ, đĩa đầy, đăng nhập sai nhiều lần, Trợ lý lỗi 3 lượt liền.
+   lỗi, hàng đợi ứ, sao lưu cũ, đĩa đầy, đăng nhập sai nhiều lần, Trợ lý lỗi 3 lượt liền. Error Log chỉ được đếm
+   theo tên lớp lỗi / tên method của app đã cài; tiêu đề lỗi nguyên văn (có thể chứa email, tên khách) không vào
+   gói số.
 3. 42 quy tắc (`bc/ai/rules/*.py`, hàm thuần trên gói số, không SQL): kinh doanh 5, kho & sản xuất 11, công nợ 7,
    vận chuyển 6, nhân sự 3, ATTP 2, hệ thống 8. Từng quy tắc đọc số nào, so ngưỡng ra sao:
    `docs/ai-rules-audit.md`.
@@ -191,18 +194,39 @@ vẫn hiện đủ tín hiệu với nhãn "Quy tắc".
 path của nhóm khác → bỏ cả nhận định (đếm ở cột "Bị loại" của lượt chạy, quản trị xem ở `#/ai`). Chỉ số ngắn chỉ thời
 hạn ("trong 7 ngày") được viết thường. Lời theo quy tắc cũng dựng bằng chỗ giữ nên luôn khớp màn gốc tại lúc chạy.
 
+Hai lớp kiểm thêm cho lời của mô hình: (1) **kiểu phải đúng với con số** — số đếm không được viết thành %, tiền không
+được viết thành số đếm (đối chiếu với 70 chỉ số đã khai kiểu, với lời quy tắc của lượt đó, còn lại xét theo tên
+khoá); (2) quanh một chỗ giữ số không được có đơn vị, dấu cộng trừ, chữ số hay "lần" viết tay ("{{…}}%", "-{{…}}",
+"3 {{…}}"), và hai chỗ giữ số không được đứng liền nhau. Soát nhầm thì thẻ chỉ quay về lời quy tắc; soát sót mới là
+lỗi, nên bộ soát nghiêng về phía loại.
+
+Thẻ của quy tắc **không chạy được** ở lượt gần nhất (nguồn số lỗi) vẫn hiện nhưng mang nhãn "Số ngày … — chưa cập
+nhật được", để số cũ không bị đọc như số sáng nay.
+
 **Luật riêng tư.**
 
 - Khoá API chỉ nằm trong `site_config.json` (`bc_ai_anthropic_key`); không ở DocType, không trả ra API, không vào
-  Error Log (thông báo lỗi được xoá mọi chuỗi trùng khoá trước khi lưu). Chỉ `bc/ai/llm/` được gọi mạng và đọc khoá.
+  Error Log (thông báo lỗi được xoá mọi chuỗi trùng khoá trước khi lưu; Error Log của phần này chỉ ghi tên loại lỗi
+  và dòng code). Chỉ `bc/ai/llm/` được gọi mạng và đọc khoá. Khoá dán lỗi (có dấu cách, xuống dòng) được coi như
+  chưa có khoá — lượt chạy ghi `khong-khoa`.
 - Gửi đi chỉ có payload của bc (đã qua luật riêng tư của từng màn: không tên nhân viên, lương gộp nhóm, số tài
   khoản đã che). Tên khách và nhà cung cấp được thay bằng mã `KH#0001`, `NCC#0001` trước khi gửi và đổi lại khi lưu
-  (`ai_mask_parties`, mặc định bật); ghi chú của quản trị trên thẻ cũng được che tên nằm giữa câu — che hết sức: tên
-  gọi tắt hoặc viết khác hồ sơ thì không nhận ra, nên đừng ghi tên riêng vào ghi chú và vào ô "Bối cảnh công ty".
+  (`ai_mask_parties`, mặc định bật):
+  - tên trên hồ sơ, mã hồ sơ, và cả tên cũ còn nằm trên hoá đơn đã duyệt (khách đổi tên) về cùng một mã;
+  - tên nằm giữa một câu (vd "Nguồn: <tên NCC>" trong số ATTP) cũng được thay, khi đứng riêng thành từ và đủ dài
+    (từ 2 từ hoặc 6 ký tự);
+  - ô nào mang tên khách / NCC / chuỗi siêu thị mà không khớp hồ sơ nào thì vẫn được cấp mã mới — không để lọt;
+  - khi lưu, chỉ mã **đã thật sự gửi trong lượt gọi đó** mới được đổi lại thành tên; mã mô hình tự bịa bị loại.
+  Ghi chú của quản trị trên thẻ và ô "Bối cảnh công ty" là chữ tự do: ghi chú được che như trên, còn tên gọi tắt
+  hoặc viết khác hồ sơ thì máy không nhận ra — đừng ghi tên riêng vào hai chỗ này.
 - Đề bài và gói số không được lưu, không được ghi log. Lời chỉ được lưu sau khi đã thay số và kiểm.
 - Người xem chỉ thấy nhận định dành cho lãnh đạo, đang mở, và **mọi** mảng mà nhận định dùng số đều đang hiện với
   họ (ẩn mảng Công nợ → nhận định công nợ biến mất; ẩn mảng Trợ lý AI → mất menu, API trả 403). Chứng từ liên quan,
   ghi chú quản trị, nhóm Hệ thống chỉ System Manager thấy.
+- Mảng đang ẩn không được gửi cho mô hình. Lời AI được tính là "dùng số" của mọi mảng mô hình đã thấy trong lượt
+  gọi đó, nên **vừa ẩn thêm một mảng thì các thẻ lời AI cùng nhóm tạm biến mất với người xem cho tới lượt chạy sau**
+  — ẩn xong hãy bấm "Chạy ngay" ở `#/ai` để lời được viết lại không có số của mảng đó.
+- Việc quản trị đã "Bỏ qua" không quay lại dưới dạng nhận định tự do của AI.
 - bc vẫn chỉ đọc: phần này chỉ ghi `BC AI Insight`, `BC AI Run` và mục "Trợ lý AI" của BC Settings.
 
 **Cấu hình** (`/bc#/ai`, hoặc mục "Trợ lý AI" trong `/app/bc-settings` — mọi field permlevel 1):
@@ -266,7 +290,9 @@ tiêu dưới 10% lời AI bị loại.
 Khác đặc tả (đã cân nhắc, ghi ở đầu các module): ép đầu ra bằng structured outputs thay cho tool bắt buộc (các
 model Claude 5.5 từ chối `tool_choice` ép buộc); `max_tokens` 16.000 vì model luôn suy nghĩ trước khi trả lời; có thêm
 trạng thái lỗi "bị từ chối"; giá hai model được điền sẵn khi migrate; nhận định tự do của AI tự đóng khi lượt sau
-không nêu lại. **Chưa kiểm trên site thật**: chưa có lượt gọi Claude thật nào (bộ thử dùng mô hình giả, không ra
+không nêu lại; che tên cả khi nằm giữa câu (đặc tả chỉ thay chuỗi bằng đúng một tên); cảnh báo trả cước xe nhà tính
+cả tháng trước để không tự đóng vào ngày 1; đề bài kèm bảng kiểu của các con số. Kiểm nhanh sau deploy:
+`grep -rn "sk-" apps/bc/bc` phải rỗng. **Chưa kiểm trên site thật**: chưa có lượt gọi Claude thật nào (bộ thử dùng mô hình giả, không ra
 mạng) và chưa chạy trên bench thật.
 
 ## Kiểm thử

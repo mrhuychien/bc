@@ -10,6 +10,9 @@ nay. Cả trang `available: False` khi chưa cài vanchuyen; từng khối giao 
 - su_co{mo_qua_n, so_ngay (= 7), …}; xe{can_xu_ly[{xe (biển số), qua_han (bool), viec[…]}] quá hạn trước};
 - cuoc{an, tra_bat_thuong, tra_chuyen_huy, tra_chuyen_huy_tien, sua_tay, …}: `an: True` (tháng < K lái xe) thì
   mọi số TIỀN đã None — quy tắc không bao giờ nêu tiền cước khi `an`.
+- van-chuyen.overview_truoc = get_overview(thang=<tháng trước>) — CHỈ vc.cuoc_canh_bao đọc (cộng cảnh báo trả cước
+  của tháng trước để tín hiệu không tự đóng ngày 1); KHÔNG khai trong `sources` (thiếu / hỏng → chạy trên tháng này,
+  riêng ca dễ đóng nhầm thì NotRunnable); pipeline không gửi khối này cho mô hình (registry.NO_SEND).
 
 Luật: giá trị None / thiếu / không phải số → không tín hiệu, không ném lỗi. Mọi số / tên từ dữ liệu trong lời là
 placeholder; số tự tính trong `tinh`. Không tên lái xe / khách (payload vốn không có).
@@ -19,14 +22,16 @@ from __future__ import annotations
 
 import math
 
-from bc.ai.registry import ph, resolve, rule
+from bc.ai.registry import NotRunnable, ph, resolve, rule, source_ok
 
 O = "van-chuyen.overview"
 G, CUOC, SC, XE = f"{O}.giao", f"{O}.cuoc", f"{O}.su_co", f"{O}.xe"
+CUOC_TRUOC = "van-chuyen.overview_truoc.cuoc"     # tháng trước — chỉ vc.cuoc_canh_bao đọc
 
 LAN_DAU_TOI_THIEU = 10   # vc.giao_lan_dau: chỉ xét khi tháng có từ ngần này đơn đã chạy chuyến (tránh báo ảo đầu tháng)
 NEU_XE = 3               # vc.xe_qua_han: số biển số nêu trong lời
 CANH_BAO_CUOC = ("tra_bat_thuong", "tra_chuyen_huy", "sua_tay")   # đúng 3 cảnh báo màn Vận chuyển hiện
+CONG_THANG_TRUOC = ("tra_bat_thuong", "tra_chuyen_huy")            # trạng thái chứng từ → cộng cả tháng trước
 
 
 def _so(v):
@@ -110,30 +115,48 @@ def su_co_mo(pack, cfg):
 @rule("vc.cuoc_canh_bao", section="van-chuyen", sources=[CUOC], vang=0, unit="chuyến",
 	label="Cảnh báo trả cước xe nhà")
 def cuoc_canh_bao(pack, cfg):
-	"""Mỗi cảnh báo trả cước của màn (> 0 chuyến) một tín hiệu `vc.cuoc_canh_bao:<trường>`. Tháng `an` không nêu tiền."""
+	"""Mỗi cảnh báo trả cước của màn (> 0 chuyến) một tín hiệu `vc.cuoc_canh_bao:<trường>`. Tháng `an` không nêu tiền.
+
+	tra_bat_thuong / tra_chuyen_huy là TRẠNG THÁI chứng từ nhưng API đếm theo tháng giao → cộng tháng trước (nếu
+	overview_truoc dùng được) để tín hiệu không tự đóng ngày 1. Tiền chuyến huỷ chỉ nêu khi KHÔNG tháng nào `an`.
+	overview_truoc hỏng và tháng này không đủ báo một cảnh báo được cộng → NotRunnable (giữ tín hiệu cũ)."""
 	an = resolve(pack, f"{CUOC}.an", None) is not False   # thiếu cờ → coi như đang ẩn tiền (an toàn)
+	co_truoc = source_ok(pack, CUOC_TRUOC)
+	an_truoc = co_truoc and resolve(pack, f"{CUOC_TRUOC}.an", None) is not False
+	if not co_truoc and any(not cfg.muc(_num(pack, f"{CUOC}.{k}")) for k in CONG_THANG_TRUOC):
+		raise NotRunnable("thieu-thang-truoc")
 	out = []
 	for k in CANH_BAO_CUOC:
 		p = f"{CUOC}.{k}"
-		muc = cfg.muc(_num(pack, p))
+		nay = _num(pack, p)
+		truoc = _num(pack, f"{CUOC_TRUOC}.{k}") if co_truoc and k in CONG_THANG_TRUOC else None
+		tong = None if nay is None and truoc is None else (nay or 0) + (truoc or 0)
+		muc = cfg.muc(tong)
 		if not muc:
 			continue
-		n = ph(p, "so")
+		hai = bool(truoc)             # tháng trước góp vào số
+		ca = "tính cả tháng này và tháng trước, " if hai else ""
+		tinh = {"so": tong}
+		paths = [p]          # không trỏ overview_truoc: khối đó không gửi mô hình (NO_SEND)
 		if k == "tra_bat_thuong":
-			title = f"{n} chuyến ghi đã trả cước mà phiếu chi chưa duyệt"
-			detail = "Phiếu chi chưa duyệt hoặc đã huỷ thì sổ sách không khớp tiền đã trả, kế toán cần kiểm lại."
+			title = "{{@so|so}} chuyến ghi đã trả cước mà phiếu chi chưa duyệt"
+			detail = (f"{ca}phiếu chi chưa duyệt hoặc đã huỷ thì sổ sách không khớp tiền đã trả, kế toán cần "
+				"kiểm lại.")
 		elif k == "tra_chuyen_huy":
-			title = f"{n} chuyến đã huỷ nhưng tiền cước vẫn đã chi"
-			tien = f"{CUOC}.tra_chuyen_huy_tien"
-			if not an and _num(pack, tien) is not None:
-				detail = (f"Tiền cước đã chi cho các chuyến này là {ph(tien, 'tien')}, kế toán cần thu hồi hoặc "
+			title = "{{@so|so}} chuyến đã huỷ nhưng tiền cước vẫn đã chi"
+			tien_nay = _num(pack, f"{CUOC}.tra_chuyen_huy_tien")
+			tien_truoc = _num(pack, f"{CUOC_TRUOC}.tra_chuyen_huy_tien") if hai else 0
+			if not an and not an_truoc and tien_nay is not None and tien_truoc is not None:
+				tinh["tien"] = round(tien_nay + tien_truoc, 2)
+				detail = (f"{ca}tiền cước đã chi cho các chuyến này là {{{{@tien|tien}}}}, kế toán cần thu hồi hoặc "
 					"huỷ phiếu chi.")
 			else:
-				detail = "Tiền đã chi cho chuyến không chạy, kế toán cần thu hồi hoặc huỷ phiếu chi."
+				detail = f"{ca}tiền đã chi cho chuyến không chạy, kế toán cần thu hồi hoặc huỷ phiếu chi."
 		else:
-			title = f"{n} chuyến có cước sửa tay trong tháng"
+			title = "{{@so|so}} chuyến có cước sửa tay trong tháng"
 			detail = "Cước sửa tay không theo bảng giá, người phụ trách vận chuyển cần duyệt lại."
-		out.append(cfg.signal(muc, title, detail=detail, obj=k))
+		detail = detail[0].upper() + detail[1:]
+		out.append(cfg.signal(muc, title, detail=detail, obj=k, paths=paths, tinh=tinh))
 	return out
 
 

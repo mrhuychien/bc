@@ -11,6 +11,7 @@ import ast
 import datetime
 import json
 import os
+import re
 import socket
 import traceback
 from decimal import Decimal
@@ -416,7 +417,9 @@ c("… khoá không có trong str / repr / args / message", not lo_khoa(str(err)
 	repr(err))
 c("… khoá không có trong vết lỗi; lỗi không kéo theo ngoại lệ gốc", not lo_khoa(vet(err)) and err.__context__ is None
 	and err.__cause__ is None, vet(err))
-c("… chỗ của khoá đã thay bằng ***", "***" in err.message and "InvalidHeader" in err.message, err.message)
+# D6: lỗi gửi không phải lỗi mạng → chỉ ghi TÊN loại ngoại lệ (lời của nó có thể chép header mang khoá)
+c("… message chỉ còn tên loại ngoại lệ (InvalidHeader), không chép lời của thư viện",
+	err.message == "không gửi được yêu cầu (InvalidHeader)", err.message)
 kh = khung_llm(err)
 c("… vết lỗi chỉ còn MỘT khung của bc.ai.llm (hàm call của cửa) — không còn khung adapter", [k[0] for k in kh]
 	== ["call"], [k[0] for k in kh])
@@ -782,7 +785,15 @@ c("giải thích path (dấu chấm, [chỉ số] từ 0) và việc không vi�
 	and "đếm từ 0" in p and "Không viết thêm đơn vị sau placeholder" in p)
 c("giải thích đầu ra: signal / severity / priority / title / body / advice", all(f'"{k}"' in p for k in
 	("signal", "severity", "priority", "title", "body", "advice")))
-c("dặn về mã giả KH# / NCC# và khối _cat", "KH#0001" in p and "NCC#0001" in p and '"_cat"' in p)
+c("dặn về mã giả KH# / NCC# (viết dạng chữ KH#… / NCC#…) và khối _cat", "KH#…" in p and "NCC#…" in p
+	and '"_cat"' in p)
+# D4: ví dụ trong đề bài không được là một mã có thể hợp lệ (mô hình chép lại → thành tên một khách có thật)
+c("[S4] system prompt không chứa mã giả nào có chữ số (KH#<số> / NCC#<số>)",
+	not re.search(r"(?:KH|NCC)\s*#\s*\d", p), re.findall(r"(?:KH|NCC)\s*#\s*\S{0,6}", p))
+# D8: luật kiểu số theo "kieu" (không thêm chữ số nào — bộ kiểm chữ số ở trên vẫn đúng)
+c("[N2] system prompt: giải thích \"kieu\" (path không kèm [chỉ số]) và luật kiểu phải đúng như \"kieu\" ghi",
+	'- "kieu" (nếu có): {path: kiểu}' in p and "path viết không kèm [chỉ số]" in p
+	and 'có trong "kieu" thì kiểu phải đúng y như "kieu" ghi' in p and "Sai kiểu sẽ bị loại" in p)
 # Hai lời dặn khớp bộ kiểm số trần của máy chủ (bc.ai.render): tên có chữ số viết tay và số viết bằng chữ đều bị loại.
 c("dặn tên riêng có chữ số (mặt hàng ghi khối lượng, mã chứng từ) phải đưa vào bằng placeholder kiểu chu",
 	"Tên riêng có chữ số" in p and "cũng phải đưa vào bằng placeholder kiểu chu — viết tay sẽ bị loại" in p)
@@ -809,7 +820,7 @@ c("20/2/2027: mùa Tết 2027 đã kết thúc (mùng 1 là 6/2/2027)", "- Mùa 
 	"20/2/2026." in p3, p3[-400:])
 # Không số liệu kinh doanh: ngoài khối mốc thời gian + bối cảnh, chữ số chỉ thuộc luật / cú pháp.
 than_luat = p.split("BỐI CẢNH CÔNG TY")[0]
-import re  # noqa: E402
+
 so = set(re.findall(r"\d+", than_luat))
 # 1–7: số thứ tự luật, S1 / S2, 1–3 khuyến nghị, tối đa 3, trong 7 ngày, [0] / đếm từ 0, 1 đến 5, luật 6; 12 / 60 từ;
 # KH#0001 / NCC#0001
@@ -944,5 +955,95 @@ s5, n5 = prompt.build_user("g", {"m": {"k": {"note": "y" * 500}}}, [], max_chars
 c("không còn danh sách để cắt → trả nguyên (557 ký tự) + ghi chú 'vẫn dài'", len(s5) == 557
 	and n5 == ["gói số vẫn dài 557 ký tự (trần 100) sau khi cắt hết danh sách"], (len(s5), n5))
 c("mặc định trần 120000: gói 3416 ký tự không bị cắt", prompt.build_user("g", big, [])[0] == s0)
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+print("\n[19] build_user: \"kieu\" — kiểu đúng của các con số (D8 / N2)")
+KM = {"cong-no.receivables.top_overdue.overdue": "tien", "cong-no.receivables.kpis.overdue_pct": "pct",
+	"cong-no.receivables.kpis.overdue_customers": "so", "cong-no.receivables.kpis.as_of": "ngay",
+	"tong-quan.summary.rows.sales": "tien", "cong-nox.a": "so"}
+
+
+def bu(*a, **k):
+	try:
+		return prompt.build_user(*a, **k)
+	except Exception as e:  # noqa: BLE001 — bản trước sửa không nhận kinds
+		return repr(e), None
+
+
+sk, nk = bu("tai-chinh", pack, tin, kinds=KM)
+ok_json = nk is not None
+ok_k = json.loads(sk) if ok_json else {}
+c("[N2] kinds → khoá \"kieu\": chỉ path của mảng có trong gói (bỏ tong-quan, bỏ 'cong-nox' chỉ trùng tiền tố), chỉ "
+	"kiểu số (bỏ ngay)", ok_k.get("kieu") == {"cong-no.receivables.kpis.overdue_customers": "so",
+	"cong-no.receivables.kpis.overdue_pct": "pct", "cong-no.receivables.top_overdue.overdue": "tien"}, sk[:200])
+c("[N2] … \"kieu\" sắp theo path trong chuỗi gửi đi; pack / tin_hieu giữ nguyên như khi không có kinds", ok_json
+	and list(ok_k["kieu"]) == sorted(ok_k["kieu"]) and sk.index('"kieu"') < sk.index('"nhom"')
+	and {k: v for k, v in ok_k.items() if k != "kieu"} == json.loads(s))
+c("[N2] kinds rỗng → \"kieu\": {}; kinds None → không có khoá kieu (như cũ)", ok_json
+	and json.loads(bu("tai-chinh", pack, tin, kinds={})[0]).get("kieu") == {} and "kieu" not in json.loads(
+	bu("tai-chinh", pack, tin, kinds=None)[0]))
+# "kieu" tính vào trần: gói big dài 3416 (vừa khít trần 3416) + kieu {"m.k.big.t":"so"} → phải cắt
+sb, nb = bu("g", big, [], max_chars=3416, kinds={"m.k.big.t": "so", "x.y": "pct"})
+c("[N2] \"kieu\" tính vào trần ký tự: gói vừa khít trần + kieu → phải cắt danh sách và vẫn ≤ trần", nb is not None
+	and len(sb) <= 3416 and json.loads(sb)["kieu"] == {"m.k.big.t": "so"} and len(json.loads(sb)["pack"]["m"]["k"]["big"])
+	== 15 and nb == ["gói số quá dài: cắt m.k.big còn 15 phần tử"], (len(sb), nb))
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+print("\n[20] Khoá khai sai dạng (xuống dòng / dấu cách ở giữa) — D6 / S6")
+TAIL = "Tk9RvSAFETYtailSECRET0123456789abcdefXYZ-AA"
+HEAD = "sk" + "-ant-api03-"
+xau = {"xuống dòng \\n": HEAD + "\n" + TAIL, "\\r giữa khoá": HEAD + "\r" + TAIL, "dấu cách": HEAD + " " + TAIL,
+	"tab": HEAD + "\t" + TAIL, "ký tự ngoài ASCII": HEAD + "é" + TAIL, "ký tự điều khiển": HEAD + "\x00" + TAIL}
+for nhan, k in xau.items():
+	frappe.conf["bc_ai_anthropic_key"] = "  " + k + "\n"
+	c(f"[S6] has_key False khi khoá có {nhan}", llm.has_key("claude") is False)
+	out, err, fake, sl = goi([ok()])
+	c(f"[S6] … gọi → no_key (→ khong-khoa), KHÔNG gọi mạng, lời lỗi không mang mảnh nào của khoá ({nhan})",
+		err is not None and err.kind == "no_key" and llm.run_status(err.kind) == "khong-khoa" and fake.calls == []
+		and all(x not in repr(err) + err.message + vet(err) for x in (TAIL, TAIL[:8], "api03")), err and err.message)
+frappe.conf["bc_ai_anthropic_key"] = HEAD + "\n" + TAIL
+fake = FakeRequests([ok()])
+anthropic.requests = fake
+try:
+	anthropic.call("claude-sonnet-5-5", SYSTEM, USER, prompt.SCHEMA_NAME, prompt.SCHEMA)
+	e4 = None
+except llm.LLMError as e:
+	e4 = e
+c("[S6] anthropic.call gọi thẳng (bỏ qua cửa) với khoá có xuống dòng → no_key, không gửi, không mảnh khoá",
+	e4 is not None and e4.kind == "no_key" and fake.calls == [] and TAIL not in str(e4) and "khai sai dạng" in e4.message,
+	e4 and e4.message)
+c("[S6] khoá chỉ thừa khoảng trắng HAI ĐẦU vẫn dùng được (như cũ)",
+	(frappe.conf.__setitem__("bc_ai_anthropic_key", f" {KEY}\n") or llm.has_key("claude")) is True
+	and goi([ok()])[1] is None)
+# clean(): dạng repr (\\n thành hai ký tự) và từng mảnh ≥ 6 ký tự của khoá khai sai
+frappe.conf["bc_ai_anthropic_key"] = HEAD + "\n" + TAIL
+k = frappe.conf["bc_ai_anthropic_key"]
+cl = llm.clean(f"InvalidHeader: header value: {k!r} / đuôi {TAIL} / đầu {HEAD}x")
+c("[S6] clean(): xoá dạng repr của khoá + mọi mảnh ≥ 6 ký tự (đuôi khoá đứng riêng, đầu khoá)", TAIL not in cl
+	and "SECRET" not in cl and "api03" not in cl and "InvalidHeader: header value: '***' / đuôi *** / đầu ***x" == cl, cl)
+frappe.conf["bc_ai_anthropic_key"] = "abcde\nTAILPART99"
+c("[S6] clean(): mảnh < 6 ký tự giữ nguyên (tránh xoá chữ thường), mảnh ≥ 6 bị xoá",
+	llm.clean("x abcde y TAILPART99 z") == "x abcde y *** z", llm.clean("x abcde y TAILPART99 z"))
+# _send: lỗi gửi không phải lỗi mạng → chỉ tên loại ngoại lệ
+frappe.conf["bc_ai_anthropic_key"] = KEY
+out, err, fake, sl = goi([ValueError(f"header lạ: {TAIL}")])
+c("[S6] _send: lỗi gửi khác (ValueError mang chữ lạ) → message chỉ 'không gửi được yêu cầu (ValueError)'",
+	err is not None and err.kind == "http" and err.message == "không gửi được yêu cầu (ValueError)", err and err.message)
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+print("\n[21] Gói phần mềm không chứa chuỗi tiền tố khoá (D16 / P5)")
+hits = []
+for goc_dir, dirs, files in os.walk(os.path.join(BC_ROOT, "bc")):
+	dirs[:] = [d for d in dirs if d != "__pycache__"]
+	for f in files:
+		try:
+			txt = open(os.path.join(goc_dir, f), encoding="utf-8").read()
+		except (UnicodeDecodeError, OSError):
+			continue
+		hits += [f"{os.path.relpath(os.path.join(goc_dir, f), BC_ROOT)}:{i}" for i, ln in
+			enumerate(txt.splitlines(), 1) if "sk" + "-" in ln]
+c("[P5] grep 'sk-' trong bc/ (trừ __pycache__) rỗng", hits == [], hits)
+c("[P5] … mẫu khoá vẫn bắt chuỗi dạng khoá Anthropic không khai trong site", llm.clean(f"k={SK}") == "k=***"
+	and llm.clean("risk-adjusted task-budgets") == "risk-adjusted task-budgets")
 
 c.done()

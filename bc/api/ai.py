@@ -11,6 +11,9 @@ Luật đọc (get_feed / get_badge — dùng chung _rows, nên chấm đỏ tr�
 - counts {do, vang} đếm trên nhận định ĐANG MỞ (mo / dang-xu-ly) đã trả. Bản tin ngày ghép lúc đọc từ danh sách đã
   lọc: 5 nhận định lanh-dao đang mở đầu tiên.
 - meta.stale: không có lượt tổng ok nào, hoặc lượt ok gần nhất kết thúc CÁCH NAY HƠN 26 giờ (đúng 26 giờ chưa cũ).
+- Mỗi nhận định có `stale` (cả hai vai): đang mở (mo / dang-xu-ly) mà last_seen TRƯỚC `started` của lượt tổng ok mới
+  nhất — lượt ok gần nhất không làm mới nó (quy tắc không chạy được, số còn là số ngày last_seen). meta.stale_count =
+  số nhận định stale trong danh sách đã lọc của người gọi.
 
 Khoá API: chỉ trả có / không (bc.ai.llm.has_key); lỗi của lượt gọi thử đã qua bc.ai.llm.clean.
 Module bc.ai.{llm, budget, store} nạp muộn trong hàm (bộ thử thay bằng bản giả).
@@ -25,7 +28,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, date_diff, flt, get_datetime, getdate, now_datetime
 
-from bc.ai import registry
+from bc.ai import daily_model, registry
 from bc.api._common import _guard, get_settings, hidden_sections, is_admin
 
 INSIGHT = "BC AI Insight"
@@ -39,6 +42,7 @@ STALE_HOURS = 26
 BRIEF_MAX = 5
 NOTE_MAX = 500
 MUTE_MAX = 365
+KHOA_SAI_DANG = "khoá khai sai dạng (lẫn dấu cách / xuống dòng) — dán lại vào site_config"
 TEST_MAX_TOKENS = 2048      # thinking tính vào max_tokens — nhỏ hơn dễ dừng vì max_tokens
 TEST_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"],
 	"additionalProperties": False}
@@ -75,9 +79,29 @@ def _today():
 	return getdate(now_datetime())
 
 
-def _shape(r, admin: bool, today=None) -> dict:
-	"""Một nhận định ra API. Người xem: đúng 16 trường; quản trị: thêm 9 trường quản trị."""
+def _ok_started():
+	"""started của lượt tổng ok mới nhất (None khi chưa có)."""
+	r = frappe.db.sql(f"""SELECT started FROM `tab{RUN}` WHERE step = 'tong' AND status = 'ok'
+		ORDER BY started DESC LIMIT 1""")
+	return r[0][0] if r and r[0][0] else None
+
+
+def _is_stale(r, ok_started) -> bool:
+	"""Đang mở mà lượt ok gần nhất không làm mới (last_seen < started của lượt đó)."""
+	seen = r.get("last_seen")
+	return bool(r.get("status") in OPEN and seen and ok_started
+		and get_datetime(seen) < get_datetime(ok_started))
+
+
+_CHUA = object()
+
+
+def _shape(r, admin: bool, today=None, ok_started=_CHUA) -> dict:
+	"""Một nhận định ra API. Người xem: đúng 17 trường; quản trị: thêm 9 trường quản trị.
+	ok_started: started của lượt tổng ok mới nhất (truyền khi đã đọc sẵn — không thì đọc ở đây)."""
 	today = today or _today()
+	if ok_started is _CHUA:
+		ok_started = _ok_started()
 	sec = cstr(r.get("section"))
 	g = registry.group_of(sec)
 	first = r.get("first_seen")
@@ -86,7 +110,8 @@ def _shape(r, admin: bool, today=None) -> dict:
 		"title": cstr(r.get("title")), "body": cstr(r.get("body")), "advice": _lines(r.get("advice")),
 		"route": cstr(r.get("route")), "source": r.get("source"), "status": r.get("status"),
 		"days": max(0, date_diff(today, first)) if first else 0, "first_seen": first,
-		"last_seen": r.get("last_seen"), "review_verdict": cstr(r.get("review_verdict"))}
+		"last_seen": r.get("last_seen"), "review_verdict": cstr(r.get("review_verdict")),
+		"stale": _is_stale(r, ok_started)}
 	if admin:
 		d.update({"documents": _json_list(r.get("documents")), "admin_note": cstr(r.get("admin_note")),
 			"review_note": cstr(r.get("review_note")), "needs_check": cint(r.get("needs_check")),
@@ -135,7 +160,8 @@ def _brief(rows, today) -> dict | None:
 			for r in ld[:BRIEF_MAX]]}
 
 
-def _meta() -> dict:
+def _meta(rows=(), ok_started=None) -> dict:
+	"""rows: danh sách đã lọc của người gọi (đếm stale_count); ok_started: started của lượt tổng ok mới nhất."""
 	from bc.ai import jobs
 	last = frappe.db.sql(f"SELECT started FROM `tab{RUN}` WHERE step = 'tong' ORDER BY started DESC LIMIT 1")
 	ok = frappe.db.sql(f"""SELECT finished FROM `tab{RUN}` WHERE step = 'tong' AND status = 'ok'
@@ -143,7 +169,8 @@ def _meta() -> dict:
 	last_ok = ok[0][0] if ok and ok[0][0] else None
 	stale = last_ok is None or now_datetime() - get_datetime(last_ok) > datetime.timedelta(hours=STALE_HOURS)
 	return {"last_run": last[0][0] if last else None, "last_ok": last_ok, "stale": bool(stale), "ai_on": _ai_on(),
-		"as_of": last_ok, "running": bool(jobs.is_running())}
+		"as_of": last_ok, "running": bool(jobs.is_running()),
+		"stale_count": sum(_is_stale(r, ok_started) for r in rows)}
 
 
 def _ai_on() -> bool:
@@ -159,8 +186,9 @@ def get_feed(refresh=0, closed=0):
 	admin = is_admin()
 	today = _today()
 	rows = _rows(admin, closed if admin else 0)
-	return {"meta": _meta(), "brief": _brief(rows, today), "counts": _counts(rows),
-		"insights": [_shape(r, admin, today) for r in rows]}
+	since = _ok_started()
+	return {"meta": _meta(rows, since), "brief": _brief(rows, today), "counts": _counts(rows),
+		"insights": [_shape(r, admin, today, since) for r in rows]}
 
 
 @frappe.whitelist()
@@ -202,18 +230,19 @@ def _budget_claude(model: str) -> dict:
 
 
 def _insights_where(where: str, p: dict) -> list:
-	today = _today()
+	today, since = _today(), _ok_started()
 	rows = frappe.db.sql(f"SELECT {_COLS} FROM `tab{INSIGHT}` WHERE {where}", p, as_dict=True)
-	return [_shape(r, True, today) for r in sorted(rows, key=_order)]
+	return [_shape(r, True, today, since) for r in sorted(rows, key=_order)]
 
 
 @frappe.whitelist()
 def get_admin():
-	"""Trạng thái cấu hình, chi phí, quy tắc, lượt chạy (chỉ quản trị). Khoá API: chỉ có / không."""
+	"""Trạng thái cấu hình, chi phí, quy tắc, lượt chạy (chỉ quản trị). Khoá API: chỉ có / không.
+	models.claude + price_known theo bc.ai.daily_model() (ô trống → model mặc định — đúng model lượt chạy gọi)."""
 	_admin_guard()
 	from bc.ai import jobs, llm
 	s = get_settings()
-	models = {"claude": cstr(s.get("ai_claude_model")), "claude_deep": cstr(s.get("ai_claude_model_deep")),
+	models = {"claude": daily_model(), "claude_deep": cstr(s.get("ai_claude_model_deep")),
 		"openai": cstr(s.get("ai_openai_model"))}
 	_load_rules()
 	ov, n_open = registry.overrides_from_settings(), _open_by_rule()
@@ -221,6 +250,8 @@ def get_admin():
 		as_dict=True)
 	return {
 		"keys": {"claude": bool(llm.has_key("claude")), "openai": bool(llm.has_key("openai"))},
+		# có khai nhưng sai dạng (dán lẫn dấu cách / xuống dòng) → màn nói rõ, không báo "chưa có"
+		"keys_bad": {"claude": bool(llm.key_malformed("claude")), "openai": bool(llm.key_malformed("openai"))},
 		"enabled": bool(cint(s.get("ai_enabled"))),
 		"models": models,
 		"budget": {"claude": _budget_claude(models["claude"])},
@@ -327,11 +358,12 @@ def test_connection(provider):
 	provider = cstr(provider).strip()
 	if provider not in ("claude", "openai"):
 		frappe.throw(_("Nhà cung cấp không hợp lệ."))
-	model = cstr(get_settings().get("ai_claude_model" if provider == "claude" else "ai_openai_model")).strip()
+	model = daily_model() if provider == "claude" else cstr(get_settings().get("ai_openai_model")).strip()
 	if not llm.has_key(provider):
 		run = store.start_run("tay", "test", provider=provider, model=model)
-		store.finish_run(run, status="khong-khoa", error="chưa có khoá")
-		return {"ok": False, "model": model, "error": "chưa có khoá"}
+		loi = KHOA_SAI_DANG if llm.key_malformed(provider) else "chưa có khoá"
+		store.finish_run(run, status="khong-khoa", error=loi)
+		return {"ok": False, "model": model, "error": loi}
 	ok, why = budget.can_call(provider)
 	if not ok:
 		msg = "quá số lượt gọi hôm nay" if why == "qua-so-luot" else "đã chi tới trần kỳ này"

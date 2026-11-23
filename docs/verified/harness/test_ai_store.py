@@ -468,6 +468,46 @@ c("nhóm rỗng: không làm gì", store.sync_ai_free((), [], D(2026, 11, 12, 5,
 kq = store.sync_ai_free(["ton-kho"], [], D(2026, 11, 12, 5, 36))
 c("đóng theo đúng mảng của nhóm được gọi", kq == {"new": 0, "kept": 0, "closed": 1} and R(G1K).status == "dong", kq)
 
+print("A8b. blocked_paths (D10): path chủ đề đang bo-qua còn hạn / tín hiệu quy tắc đang mở → tự do không nêu lại")
+xoa()
+N0, NAY = D(2026, 10, 27, 5, 30), D(2026, 10, 27, 10, 30)
+store.sync_signals([sig("bp.mo", paths=["cong-no.a.b[0].c", "cong-no.k"]), sig("bp.xl", paths=["cong-no.xl"]),
+	sig("bp.bq", paths=["cong-no.bq[2].v", "cong-no.k"]), sig("bp.bq_het", paths=["cong-no.het"]),
+	sig("bp.bq_han", paths=["cong-no.han"]), sig("bp.dong", paths=["cong-no.dong"]),
+	sig("bp.khac", section="phai-tra", paths=["phai-tra.p[0]"])], set(), N0)
+dat("bp.xl", status="dang-xu-ly")
+dat("bp.bq", status="bo-qua", mute_until=None)                  # bỏ qua hẳn
+dat("bp.bq_het", status="bo-qua", mute_until="2026-10-26")      # hết hạn hôm qua → không chặn
+dat("bp.bq_han", status="bo-qua", mute_until="2026-10-27")      # tới hết hôm nay → còn chặn
+dat("bp.dong", status="dong")
+
+
+def tu_do(key, path):
+	return {"key": key, "section": "cong-no", "route": "#/cong-no", "severity": "vang", "priority": 1, "title": "T",
+		"body": "B", "advice": [], "paths": [path], "sections_used": ["cong-no"]}
+
+
+store.sync_ai_free(["cong-no"], [tu_do("ai:cong-no.f", "cong-no.f[1]"), tu_do("ai:cong-no.g", "cong-no.g")], N0)
+dat("ai:cong-no.f", status="bo-qua", mute_until=None)           # quản trị bỏ qua một nhận định TỰ DO
+bp = store.blocked_paths(["cong-no"], NAY)
+# mo / dang-xu-ly (rule ≠ ai) → "mo"; bo-qua còn hạn (mọi rule, kể cả ai) → "bo-qua"; cong-no.k có cả hai → bo-qua;
+# bỏ chỉ số mảng; không: bo-qua hết hạn, dong, mảng khác, nhận định tự do đang mở (cong-no.g)
+c("blocked_paths: đúng tập path + loại, đã bỏ chỉ số", bp == {"cong-no.a.b.c": "mo", "cong-no.k": "bo-qua",
+	"cong-no.xl": "mo", "cong-no.bq.v": "bo-qua", "cong-no.han": "bo-qua", "cong-no.f": "bo-qua"}, bp)
+c("blocked_paths: hằng số loại = store.BO_QUA / store.DANG_MO", (store.BO_QUA, store.DANG_MO) == ("bo-qua", "mo"))
+c("blocked_paths: mảng khác chỉ thấy tín hiệu của mảng đó", store.blocked_paths(("phai-tra",), NAY)
+	== {"phai-tra.p": "mo"}, store.blocked_paths(("phai-tra",), NAY))
+c("blocked_paths: không mảng nào → {} (không truy vấn IN rỗng)", store.blocked_paths([], NAY) == {}
+	and store.blocked_paths(["", None], NAY) == {})
+bp2 = store.blocked_paths(["cong-no", "phai-tra"], D(2026, 10, 28, 0, 1))
+c("hôm sau (28/10): bo-qua tới 27/10 hết hạn → cong-no.han không còn chặn; hai mảng cùng lúc",
+	"cong-no.han" not in bp2 and bp2.get("phai-tra.p") == "mo" and bp2.get("cong-no.bq.v") == "bo-qua", bp2)
+dat("bp.bq", status="mo")
+c("đổi bo-qua → mo: cong-no.bq.v thành 'mo', cong-no.k vẫn 'mo' (không còn ai bỏ qua)",
+	(store.blocked_paths(["cong-no"], NAY).get("cong-no.bq.v"), store.blocked_paths(["cong-no"], NAY).get(
+	"cong-no.k")) == ("mo", "mo"))
+xoa()
+
 print("A9. rerank: đỏ trước, priority cao trước, first_seen cũ trước, rồi signal_key")
 xoa()
 store.rerank()
@@ -617,6 +657,8 @@ BANG = [
 	("kiem-ke", "overview", "kho_kk", "get_overview", {}),
 	("nhap-tp", "overview", "kho_nhap", "get_overview", {}),
 	("van-chuyen", "overview", "vc", "get_overview", {}),
+	# D13: tháng TRƯỚC hôm nay (27/10 → 2026-09) — chỉ quy tắc cước đọc, không gửi mô hình (registry.NO_SEND)
+	("van-chuyen", "overview_truoc", "vc", "get_overview", {"thang": "2026-09"}),
 	("cong-no", "receivables", "cn", "get_receivables", {}),
 	("phai-tra", "payables", "cn", "get_payables", {}),
 	("nhan-su", "overview", "ns", "get_overview", {}),
@@ -705,8 +747,15 @@ c("không import requests / đọc khoá API", "requests" not in src and "bc_ai_
 
 print("B2. CALLS đúng bảng §3: tên method, tên tham số, mặc định (đối chiếu chữ ký thật), mảng của _guard")
 goi = [(s, n, *d.split("."), f(datetime.date(2026, 10, 27))) for s, n, d, f in collect.CALLS]
-c("CALLS = 23 lời gọi, đúng thứ tự và tham số của bảng đặc tả", goi == BANG, [x for x in goi if x not in BANG])
-c("23 cặp (mảng, tên) không trùng", len({(s, n) for s, n, *_ in BANG}) == 23 == len(collect.CALLS))
+c("CALLS = 24 lời gọi (23 của bảng đặc tả + vc tháng trước), đúng thứ tự và tham số", goi == BANG,
+	[x for x in goi if x not in BANG])
+c("24 cặp (mảng, tên) không trùng", len({(s, n) for s, n, *_ in BANG}) == 24 == len(collect.CALLS))
+c("khối không gửi mô hình (registry.NO_SEND) = đúng van-chuyen.overview_truoc, và nó có trong CALLS",
+	registry.NO_SEND == {("van-chuyen", "overview_truoc")} and registry.NO_SEND <= {(s, n) for s, n, *_ in BANG})
+f_truoc = next((f for s, n, d, f in collect.CALLS if (s, n) == ("van-chuyen", "overview_truoc")), None)
+c("tháng trước: 27/10/2026 → 2026-09; 01/11 → 2026-10; 15/01/2026 → 2025-12 (qua năm); 31/03 → 2026-02",
+	f_truoc is not None and [f_truoc(datetime.date(*x))["thang"] for x in ((2026, 10, 27), (2026, 11, 1), (2026, 1, 15), (2026, 3, 31))]
+	== ["2026-09", "2026-10", "2025-12", "2026-02"])
 c("mảng trong pack = mọi mảng của các nhóm gọi mô hình (trừ he-thong); không thoi-gian-thuc, không tro-ly",
 	{s for s, *_ in goi} == {s for g, d in registry.GROUPS.items() if g != registry.HE_THONG for s in d["sections"]}
 	and not {s for s, *_ in goi} & {"thoi-gian-thuc", "tro-ly"})
@@ -723,7 +772,8 @@ for s, n, m, f, kw in BANG:
 		sai.append((m, f, str(e)))
 		continue
 	con_lai = {k: p.default for k, p in sg.parameters.items() if k not in kw and k != "refresh"}
-	if con_lai != MAC_DINH.get((m, f), {}) or sg.parameters["refresh"].default != 0:
+	if con_lai != {k: v for k, v in MAC_DINH.get((m, f), {}).items() if k not in kw} \
+			or sg.parameters["refresh"].default != 0:
 		sai.append((m, f, con_lai))
 c("tham số truyền khớp chữ ký thật; tham số bỏ trống có đúng mặc định đã đọc trong code", not sai, sai)
 
@@ -742,7 +792,7 @@ try:
 finally:
 	for (m, f), fn in goc.items():
 		setattr(api(m), f, fn)
-c("gọi đúng 23 method của bảng, theo thứ tự, MỌI lời gọi refresh=1, tham số theo tên (không vị trí)",
+c("gọi đúng 24 lời gọi của bảng, theo thứ tự, MỌI lời gọi refresh=1, tham số theo tên (không vị trí)",
 	da_goi == [(m, f, (), {"refresh": 1, **kw}) for s, n, m, f, kw in BANG], [x for x in da_goi][:30])
 c("không gọi live.get_snapshot (thoi-gian-thuc) hay method nào ngoài bảng", ("live", "get_snapshot") in goc
 	and not [x for x in da_goi if (x[0], x[1]) not in {(m, f) for s, n, m, f, kw in BANG}])
@@ -751,7 +801,7 @@ for s, n, m, f, kw in BANG:
 	mong.setdefault(s, {})[n] = {"tu": f"{m}.{f}"}
 c("pack[mảng][tên] = payload của đúng method đó", pack == mong, pack)
 
-print("B3. Trên DB có số (seed gộp), dưới Administrator: đủ 23 khối với payload thật")
+print("B3. Trên DB có số (seed gộp), dưới Administrator: đủ 24 khối với payload thật")
 import seed_ui2  # noqa: E402,F401  (reset + seed SX, công nợ, ATTP, vận chuyển, nhân sự, bán hàng)
 
 frappe.session.user = ADMIN
@@ -841,7 +891,7 @@ c("mọi khối trong pack đều vừa tính (meta.cached = False)", [(s, n) fo
 	if (pd.get("meta") or {}).get("cached") is not False] == [])
 frappe.session.user = VIEWER
 nguoi_xem = {(m, f): getattr(api(m), f)(**kw) for s, n, m, f, kw in BANG}
-c("sau collect, người xem mở màn (gọi mặc định, không refresh) trúng cache ở CẢ 23 method",
+c("sau collect, người xem mở màn (gọi mặc định, không refresh) trúng cache ở CẢ 24 lời gọi",
 	[k2 for k2, v in nguoi_xem.items() if (v.get("meta") or {}).get("cached") is not True] == [])
 c("… kể cả khi màn gọi không tham số: kd.get_daily(), sx.get_daily_summary(), kd.get_top_products()",
 	all(x["meta"]["cached"] is True for x in (api("kd").get_daily(), api("sx").get_daily_summary(),
@@ -860,9 +910,14 @@ c("today = 15/09/2026 → ngay.daily + sx-tet.daily của tháng 9; 15/09 bán 1
 	(d["meta"]["month"], d["meta"]["year"], pack["sx-tet"]["daily"]["meta"]["month"],
 	next(r for r in d["rows"] if r["date"] == "2026-09-15")["sales"]) == (9, 2026, 9, 155 * M), d["meta"])
 c("… khối không nhận tháng vẫn theo hôm nay (kiem-ke 2026-10)", pack["kiem-ke"]["overview"]["meta"]["thang"] == "2026-10")
+c("… vc tháng trước theo `today`: 15/09 → van-chuyen.overview_truoc tháng 2026-08, overview vẫn 2026-10",
+	(pack["van-chuyen"]["overview_truoc"]["meta"]["thang"], pack["van-chuyen"]["overview"]["meta"]["thang"])
+	== ("2026-08", "2026-10"), pack["van-chuyen"]["overview_truoc"].get("meta"))
 pack = collect.build(today=datetime.date(2025, 12, 31))
 c("today là date, năm khác: 12/2025", (pack["ngay"]["daily"]["meta"]["year"], pack["ngay"]["daily"]["meta"]["month"],
 	pack["sx-tet"]["daily"]["meta"]["year"]) == (2025, 12, 2025))
+c("… vc tháng trước = 2025-11", pack["van-chuyen"]["overview_truoc"]["meta"]["thang"] == "2025-11",
+	pack["van-chuyen"]["overview_truoc"].get("meta"))
 frappe.utils.FAKE_TODAY = datetime.date(2026, 11, 3)
 pack = collect.build()
 c("today bỏ trống = hôm nay của máy chủ (03/11/2026 → tháng 11), không khối nào lỗi",
@@ -925,7 +980,7 @@ frappe.session.user = VIEWER
 frappe.LOGGED.clear()
 dem_clear.update(collect=0, khac=0)
 pack = collect.build()
-c("người xem + ẩn cong-no, attp: đúng 3 mục _error (receivables, attp.overview, attp.report), 20 mục còn lại có số",
+c("người xem + ẩn cong-no, attp: đúng 3 mục _error (receivables, attp.overview, attp.report), 21 mục còn lại có số",
 	loi_cua(pack) == [("attp", "overview"), ("attp", "report"), ("cong-no", "receivables")]
 	and pack["attp"] == {"overview": {"_error": True}, "report": {"_error": True}}
 	and bo_meta(pack["phai-tra"]["payables"]) == bo_meta(tot["phai-tra"]["payables"]), loi_cua(pack))
@@ -936,11 +991,11 @@ c("… 3 lần clear_last_message, 3 dòng Error Log chỉ ghi PermissionError",
 	if "bc.ai collect" in str(x)), (dem_clear, frappe.LOGGED))
 frappe.session.user = ADMIN
 pack = collect.build()
-c("Administrator qua _guard kể cả mảng đang ẩn: đủ 23 khối có số", loi_cua(pack) == []
+c("Administrator qua _guard kể cả mảng đang ẩn: đủ 24 khối có số", loi_cua(pack) == []
 	and pack["cong-no"]["receivables"]["kpis"]["receivable"] == 220 * M, loi_cua(pack))
 frappe.session.user = "nguoi-la@example.com"            # không có vai BC Viewer / System Manager
 pack = collect.build()
-c("người không có quyền: cả 23 mục _error, vẫn không ném lỗi", len(loi_cua(pack)) == 23
+c("người không có quyền: cả 24 mục _error, vẫn không ném lỗi", len(loi_cua(pack)) == 24
 	and all(pd == {"_error": True} for dd in pack.values() for pd in dd.values()), loi_cua(pack))
 frappe.session.user = VIEWER
 single("BC Settings", hidden_sections="")

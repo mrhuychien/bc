@@ -136,7 +136,7 @@ ins("II", section="nhan-su", sections_used="", rank=4, needs_check=1, first_seen
 ins("IJ", section="ngay", sections_used="ngay", rank=0, first_seen=D(2026, 10, 15, 9, 0))
 
 VIEW_KEYS = {"id", "section", "section_label", "group", "group_label", "severity", "title", "body", "advice", "route",
-	"source", "status", "days", "first_seen", "last_seen", "review_verdict"}
+	"source", "status", "days", "first_seen", "last_seen", "review_verdict", "stale"}
 ADMIN_KEYS = VIEW_KEYS | {"documents", "admin_note", "review_note", "needs_check", "signal_key", "rule", "mute_until",
 	"audience", "sections_used"}
 
@@ -155,9 +155,11 @@ c("người xem: closed=1 bị bỏ qua", ids(ai.get_feed(closed=1)) == ids(f))
 # đỏ: A, D = 2; vàng: B, I, C, J = 4
 c("người xem: counts", f["counts"] == {"do": 2, "vang": 4}, f["counts"])
 c("người xem: badge = counts", ai.get_badge(refresh=1) == {"do": 2, "vang": 4})
-c("người xem: khoá mỗi nhận định đúng 16 trường", all(set(x) == VIEW_KEYS for x in f["insights"]),
+c("người xem: khoá mỗi nhận định đúng 17 trường", all(set(x) == VIEW_KEYS for x in f["insights"]),
 	[sorted(set(x) ^ VIEW_KEYS) for x in f["insights"]][:1])
 c("người xem: không có số bị lọc ở mức trên", set(f) == {"meta", "brief", "counts", "insights"}, set(f))
+c("chưa có lượt ok: không thẻ nào stale, stale_count 0", not any(x.get("stale") for x in f["insights"])
+	and f["meta"].get("stale_count") == 0, f["meta"])
 a = f["insights"][1]
 c("trường của A", (a["section"], a["section_label"], a["group"], a["group_label"], a["severity"], a["advice"],
 	a["route"], a["source"], a["status"], a["review_verdict"], a["title"]) == ("cong-no", "Phải thu", "tai-chinh",
@@ -175,7 +177,7 @@ c("quản trị: đúng tập + thứ tự", ids(g) == ["IB", "IA", "IE", "II", 
 # counts chỉ trên đang mở: đỏ A E D = 3 (F bo-qua không đếm); vàng B I C J = 4
 c("quản trị: counts", g["counts"] == {"do": 3, "vang": 4}, g["counts"])
 c("quản trị: badge = counts", ai.get_badge() == {"do": 3, "vang": 4})
-c("quản trị: khoá đúng 25 trường", all(set(x) == ADMIN_KEYS for x in g["insights"]))
+c("quản trị: khoá đúng 26 trường", all(set(x) == ADMIN_KEYS for x in g["insights"]))
 ga = g["insights"][1]
 c("quản trị: trường riêng của A", (ga["documents"], ga["admin_note"], ga["review_note"], ga["needs_check"],
 	ga["signal_key"], ga["rule"], ga["mute_until"], ga["audience"], ga["sections_used"]) == (
@@ -230,7 +232,7 @@ frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET audience = 'lanh-dao' WHERE name != 'I
 
 print("5. meta")
 m = ai.get_feed()["meta"]
-c("chưa có lượt nào: last_run/last_ok None, stale", (m["last_run"], m["last_ok"], m["as_of"], m["stale"]) ==
+c("chưa có lượt nào: last_run/last_ok None, stale", (m["last_run"], m["last_ok"], m["as_of"], m.get("stale")) ==
 	(None, None, None, True), m)
 c("ai_on: bật + có khoá", m["ai_on"] is True and m["running"] is False, m)
 insert(RUN, "R1", run_type="ngay", step="tong", started=D(2026, 10, 26, 8, 0), finished=D(2026, 10, 26, 8, 30),
@@ -245,9 +247,9 @@ m = ai.get_feed()["meta"]
 c("last_run / last_ok / as_of", (m["last_run"], m["last_ok"], m["as_of"]) == (D(2026, 10, 27, 5, 30),
 	D(2026, 10, 26, 8, 30), D(2026, 10, 26, 8, 30)), m)
 # 27/10 10:30 − 26/10 08:30 = 26 giờ đúng → chưa cũ (cũ = HƠN 26 giờ)
-c("stale: đúng 26 giờ → chưa cũ", m["stale"] is False)
+c("stale: đúng 26 giờ → chưa cũ", m.get("stale") is False)
 frappe.utils.FAKE_NOW_TIME = datetime.time(10, 30, 1)
-c("stale: 26 giờ 1 giây → cũ", ai.get_feed()["meta"]["stale"] is True)
+c("stale: 26 giờ 1 giây → cũ", ai.get_feed()["meta"].get("stale") is True)
 frappe.utils.FAKE_NOW_TIME = datetime.time(10, 30, 0)
 single("BC Settings", ai_enabled=0)
 c("ai_on: tắt → False", ai.get_feed()["meta"]["ai_on"] is False)
@@ -258,6 +260,42 @@ frappe.conf["bc_ai_anthropic_key"] = SECRET
 frappe.cache().set_value(jobs.LOCK_KEY, 1)
 c("running: khoá chạy → True", ai.get_feed()["meta"]["running"] is True)
 frappe.cache().delete_value(jobs.LOCK_KEY)
+
+print("5b. Thẻ cũ (stale): lượt ok gần nhất không làm mới")
+# Lượt tổng ok mới nhất = R1 started 26/10 08:00 (R2 27/10 05:30 là loi — không tính).
+frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET last_seen = %s WHERE name = 'IC'", (D(2026, 10, 25, 5, 30),))
+frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET last_seen = %s WHERE name = 'IJ'", (D(2026, 10, 26, 8, 0),))
+frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET last_seen = %s WHERE name = 'ID'", (D(2026, 10, 26, 9, 0),))
+frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET last_seen = %s WHERE name IN ('IF', 'IG')", (D(2026, 10, 1, 5, 30),))
+as_(VIEWER)
+fs = ai.get_feed()
+sv = {x["id"]: x.get("stale") for x in fs["insights"]}
+# IC 25/10 < 26/10 08:00 → cũ; IJ = đúng started → chưa cũ; ID 26/10 09:00 (sau R1, trước R2 loi) → chưa cũ
+c("stale: last_seen trước started lượt ok mới nhất → True, bằng / sau → False",
+	sv == {"IB": False, "IA": False, "II": False, "ID": False, "IC": True, "IJ": False}, sv)
+c("stale: meta.stale_count người xem = 1", fs["meta"].get("stale_count") == 1, fs["meta"])
+as_(ADMIN)
+ga5 = ai.get_feed(closed=1)
+sa = {x["id"]: x.get("stale") for x in ga5["insights"]}
+# IF bo-qua, IG dong: last_seen cũ nhưng không mở → không stale
+c("stale quản trị: chỉ IC; bo-qua / dong không tính", [k for k, v in sa.items() if v] == ["IC"]
+	and sa["IF"] is False and sa["IG"] is False and ga5["meta"].get("stale_count") == 1, sa)
+c("stale: set_status trả cùng cờ", ai.set_status("IC", "dang-xu-ly").get("stale") is True
+	and ai.set_status("IC", "bo-qua").get("stale") is False)
+ai.set_status("IC", "mo")
+single("BC Settings", hidden_sections="ton-kho")
+as_(VIEWER)
+c("stale_count đếm sau lọc mảng ẩn (IC ton-kho ẩn → 0)", ai.get_feed()["meta"].get("stale_count") == 0)
+single("BC Settings", hidden_sections="")
+as_(ADMIN)
+c("stale_count quản trị vẫn 1 khi ẩn mảng (quản trị thấy hết)", ai.get_feed()["meta"].get("stale_count") == 1)
+insert(RUN, "R0", run_type="ngay", step="tong", started=D(2026, 10, 25, 5, 0), finished=D(2026, 10, 25, 5, 10),
+	status="ok", provider=None, cost_usd=0, tokens_in=0, tokens_out=0)
+c("so với lượt ok MỚI NHẤT (R1), không phải lượt ok cũ hơn", ai.get_feed()["meta"].get("stale_count") == 1)
+frappe.db.sql(f"DELETE FROM `tab{RUN}` WHERE name = 'R0'")
+frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET last_seen = %s WHERE name IN ('IC', 'IJ', 'ID', 'IF', 'IG')",
+	(D(2026, 10, 27, 5, 30),))
+c("làm mới lại → không còn stale", ai.get_feed(closed=1)["meta"].get("stale_count") == 0)
 
 print("6. Người xem bị chặn mọi method quản trị (§9.9)")
 as_(VIEWER)
@@ -413,6 +451,21 @@ c("gọi đúng provider / model / schema / max_tokens 2048", (a_[0], a_[1], a_[
 	"additionalProperties": False}, 2048), (a_[:2], k_))
 fin = store.calls[-1][1]
 # cost = (100×3 + 50×15) / 1e6 = 1050 / 1e6 = 0.00105
+single("BC Settings", ai_claude_model="")
+ad0 = ai.get_admin()
+# ô model trống → bc.ai.daily_model() = model mặc định (đúng model lượt chạy gọi) → có giá
+c("model trống: get_admin models.claude = mặc định, price_known theo mặc định",
+	(ad0["models"]["claude"], ad0["budget"]["claude"]["price_known"]) == (bc.ai.DEFAULT_CLAUDE_MODEL, True),
+	(ad0["models"], ad0["budget"]))
+LLM_CALLS.clear()
+t0 = ai.test_connection("claude")
+c("model trống: Thử kết nối gọi model mặc định", (t0["model"], LLM_CALLS[-1][0][1] if LLM_CALLS else None,
+	store.calls[-2][1]["model"]) == (bc.ai.DEFAULT_CLAUDE_MODEL,) * 3, (t0, store.calls[-2:]))
+single("BC Settings", ai_claude_model="claude-khac-1")
+ad0 = ai.get_admin()
+c("model khác chưa khai giá → price_known False", (ad0["models"]["claude"], ad0["budget"]["claude"]["price_known"]) ==
+	("claude-khac-1", False))
+single("BC Settings", ai_claude_model=MODEL)
 c("Run ok: tokens + chi phí", (fin["status"], fin["tokens_in"], fin["tokens_out"], fin["cost_usd"], fin["name"]) ==
 	("ok", 100, 50, 0.00105, "RUN-1"), fin)
 
@@ -458,6 +511,32 @@ out += [ai.get_feed(), ai.get_badge()]
 c("khoá không có trong mọi kết quả", all(SECRET not in json.dumps(x, default=str) for x in out))
 c("khoá không có trong tham số finish_run / log_error", SECRET not in json.dumps(store.calls, default=str)
 	and SECRET not in json.dumps(frappe.LOGGED, default=str))
+# Khoá dán lẫn xuống dòng: máy chủ coi như chưa có khoá nhưng màn quản trị phải nói đúng lý do, không lộ mảnh khoá nào
+print("12. khoá khai sai dạng")
+as_(ADMIN)
+DAU, DUOI = SECRET[:12], "Tk9RvDUOIkhoaBIMAT0123456789"
+frappe.conf["bc_ai_anthropic_key"] = DAU + "\n" + DUOI
+store.calls.clear()
+LLM_CALLS.clear()
+set_call(lambda *a, **k: {"data": {"ok": True}, "tokens_in": 1, "tokens_out": 1, "model": MODEL})
+ad2 = ai.get_admin()
+c("khoá sai dạng: keys.claude False, keys_bad.claude True", ad2["keys"]["claude"] is False
+	and ad2["keys_bad"] == {"claude": True, "openai": False}, (ad2["keys"], ad2.get("keys_bad")))
+t = ai.test_connection("claude")
+c("khoá sai dạng: Thử kết nối nói rõ lý do, không gọi mô hình", t == {"ok": False, "model": MODEL,
+	"error": ai.KHOA_SAI_DANG} and not LLM_CALLS and "sai dạng" in ai.KHOA_SAI_DANG, (t, len(LLM_CALLS)))
+c("khoá sai dạng: Run khong-khoa, cùng lời", store.calls[-1][1]["status"] == "khong-khoa"
+	and store.calls[-1][1]["error"] == ai.KHOA_SAI_DANG, store.calls)
+c("khoá sai dạng: không mảnh khoá nào trong kết quả / Run / log", all(m not in json.dumps([ad2, t, store.calls,
+	frappe.LOGGED], default=str) for m in (DAU, DUOI)))
+frappe.conf["bc_ai_anthropic_key"] = SECRET
+ad3 = ai.get_admin()
+c("khoá đúng dạng: keys_bad đều False", ad3["keys"]["claude"] is True
+	and ad3["keys_bad"] == {"claude": False, "openai": False}, ad3.get("keys_bad"))
+frappe.conf.pop("bc_ai_anthropic_key")
+c("không khai khoá: keys_bad False (chưa có ≠ sai dạng)", ai.get_admin()["keys_bad"]["claude"] is False)
+frappe.conf["bc_ai_anthropic_key"] = SECRET
+
 llm.call = call_cam
 try:
 	llm.call("claude", MODEL, "", "", "x", {})

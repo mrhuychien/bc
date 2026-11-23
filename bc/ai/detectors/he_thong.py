@@ -7,7 +7,10 @@ Gói số CHỈ chứa số + tên method / tên job: KHÔNG traceback, KHÔNG n
 
 Cửa sổ "24 giờ" = (now − 24 giờ, now]: bản ghi đúng 24 giờ trước KHÔNG tính.
 - error_log: tong = số Error Log trong 24 giờ; tb_ngay = số Error Log trong 7 ngày TRƯỚC đó (now − 8
-  ngày, now − 24 giờ] chia 7 (1 số lẻ); nhom = 5 method nhiều nhất [{method, so}] (cắt 120 ký tự).
+  ngày, now − 24 giờ] chia 7 (1 số lẻ); nhom = 5 nhãn nhiều nhất [{method, so}]. Cột `method` của v16 là TIÊU ĐỀ
+  log (thường là str(exception) — có thể chứa email, tên khách, số điện thoại) → KHÔNG bao giờ vào pack nguyên văn:
+  _nhan() rút về nhãn an toàn (tên Python có chấm: lớp lỗi …Error / Exception / Warning / Exit / Interrupt, hoặc
+  ≥ 2 đoạn bắt đầu bằng tên app đã cài), còn lại "(khác)", trống "(không ghi)"; đếm theo nhãn bằng Python.
   Không đọc cột error.
 - job_that_bai: Scheduled Job Log status Failed trong 24 giờ → tong, so_loai, loai = 5 job nhiều nhất
   [{job, so}].
@@ -15,7 +18,7 @@ Cửa sổ "24 giờ" = (now − 24 giờ, now]: bản ghi đúng 24 giờ trư�
 - hang_doi: Σ count của frappe.utils.background_jobs.get_queues() → cho, so_hang. Redis lỗi → ném lỗi →
   bộ chạy ghi {"_error": True} (quy tắc không chạy).
 - backup_cu: file mới nhất (mtime) trong get_backups_path() → co_ban, gio (số giờ tới now, 1 số lẻ), moi_nhat
-  (ISO). Thư mục thiếu / không file → co_ban False, gio None (= chưa có bản sao lưu nào → đỏ).
+  (ISO). mtime đổi sang giờ theo múi của SITE (get_system_timezone — như now_datetime của v16), không theo múi máy. Thư mục thiếu / không file → co_ban False, gio None (= chưa có bản sao lưu nào → đỏ).
 - dia_day: shutil.disk_usage(get_site_path()) → pct (đã dùng / tổng × 100, 1 số lẻ), con_trong_gb.
 - dang_nhap_sai: Activity Log operation Login status Failed trong 24 giờ, theo user → so_tk, tong, max_lan,
   lan (số lần mỗi tài khoản, giảm dần, ≤ 20; KHÔNG tên). Tên tài khoản (chỉ tài khoản User có thật) giữ trong
@@ -32,7 +35,9 @@ from __future__ import annotations
 import datetime
 import math
 import os
+import re
 import shutil
+from zoneinfo import ZoneInfo
 
 import frappe
 
@@ -44,6 +49,12 @@ TEN_MAX = 120           # cắt tên method / job
 LAN_MAX = 20            # số tài khoản tối đa trong danh sách số lần đăng nhập sai
 SAN_LOI = 10            # ht.error_log: tổng 24 giờ tối thiểu mới xét
 KHONG_GHI = "(không ghi)"
+KHAC = "(khác)"         # tiêu đề Error Log không phải tên Python an toàn
+NHAN_MAX = 80
+_TEN_PY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*")
+_CAT = re.compile(r"[:(\[\s]")
+_DUOI_LOI = ("Error", "Exception", "Warning", "Exit", "Interrupt")
+APP_MAC_DINH = ("frappe", "erpnext", "bc")
 MODEL_LOI = ("loi", "het-credit")
 KHONG_GOI = ("tong", "ai")
 _TK: dict = {"moc": None, "tk": []}     # [(user, số lần)] của lượt detector gần nhất — KHÔNG vào pack
@@ -57,6 +68,27 @@ def _moc(ctx):
 def _ten(v) -> str:
 	s = str(v or "").strip()
 	return s[:TEN_MAX] if s else KHONG_GHI
+
+
+def _apps() -> set:
+	try:
+		return {str(a) for a in frappe.get_installed_apps()} or set(APP_MAC_DINH)
+	except Exception:
+		return set(APP_MAC_DINH)
+
+
+def _nhan(v, apps) -> str:
+	"""Tiêu đề Error Log → nhãn an toàn: chỉ tên lớp lỗi / tên method của app đã cài, còn lại "(khác)"."""
+	s = str(v or "").strip()
+	if not s:
+		return KHONG_GHI
+	dau = _CAT.split(s, 1)[0]
+	if not dau or len(dau) > NHAN_MAX or not _TEN_PY.fullmatch(dau):
+		return KHAC
+	doan = dau.split(".")
+	if doan[-1].endswith(_DUOI_LOI) or (len(doan) >= 2 and doan[0] in apps):
+		return dau
+	return KHAC
 
 
 def _dem(doctype: str, where: str, args: dict) -> int:
@@ -73,9 +105,13 @@ def d_error_log(ctx):
 	tong = _dem("Error Log", "creation > %(tu)s AND creation <= %(now)s", a)
 	truoc = _dem("Error Log", "creation > %(tu7)s AND creation <= %(tu)s", a)
 	rows = frappe.db.sql("""SELECT IFNULL(method, '') AS m, COUNT(*) AS n FROM `tabError Log`
-		WHERE creation > %(tu)s AND creation <= %(now)s GROUP BY m ORDER BY n DESC, m ASC LIMIT 5""", a)
-	return {"tong": tong, "tb_ngay": round(truoc / 7.0, 1),
-		"nhom": [{"method": _ten(m), "so": frappe.utils.cint(n)} for m, n in rows][:TOP]}
+		WHERE creation > %(tu)s AND creation <= %(now)s GROUP BY m""", a)
+	apps, dem = _apps(), {}
+	for m, n in rows:      # gộp theo NHÃN (tiêu đề thô không ra khỏi hàm này)
+		k = _nhan(m, apps)
+		dem[k] = dem.get(k, 0) + frappe.utils.cint(n)
+	nhom = sorted(dem.items(), key=lambda x: (-x[1], x[0]))[:TOP]
+	return {"tong": tong, "tb_ngay": round(truoc / 7.0, 1), "nhom": [{"method": k, "so": n} for k, n in nhom]}
 
 
 @detector("job_that_bai")
@@ -119,9 +155,17 @@ def d_backup_cu(ctx):
 				moi = t if moi is None or t > moi else moi
 	if moi is None:
 		return {"co_ban": False, "gio": None, "moi_nhat": None}
-	luc = datetime.datetime.fromtimestamp(moi)
+	luc = _gio_site(moi)
 	return {"co_ban": True, "gio": round((now - luc).total_seconds() / 3600.0, 1),
 		"moi_nhat": luc.isoformat(sep=" ", timespec="seconds")}
+
+
+def _gio_site(ts: float) -> datetime.datetime:
+	"""Dấu thời gian → giờ ngây thơ theo múi của site (cùng gốc với now_datetime); lỗi múi → giờ máy."""
+	try:
+		return datetime.datetime.fromtimestamp(ts, ZoneInfo(frappe.utils.get_system_timezone())).replace(tzinfo=None)
+	except Exception:
+		return datetime.datetime.fromtimestamp(ts)
 
 
 @detector("dia_day")
@@ -206,7 +250,7 @@ def r_error_log(pack, cfg):
 	nhom = resolve(pack, f"{b}.nhom", None)
 	paths = [f"{b}.tong", f"{b}.tb_ngay"]
 	if isinstance(nhom, list) and nhom and isinstance(nhom[0], dict) and _chu(nhom[0].get("method")) \
-			and _so(nhom[0].get("so")) is not None:
+			and nhom[0].get("method") not in (KHAC, KHONG_GHI) and _so(nhom[0].get("so")) is not None:
 		detail = (f"Nhiều nhất là {ph(f'{b}.nhom[0].method', 'chu')} với {ph(f'{b}.nhom[0].so', 'so')} lần, "
 			"quản trị cần xem Error Log trước khi lỗi ảnh hưởng người dùng.")
 	else:

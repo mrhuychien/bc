@@ -584,6 +584,9 @@
 .bc-ai-tech { font-size: .7rem; color: var(--bc-text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .bc-ai-toggle { display: inline-flex; align-items: center; gap: .45rem; font-size: .8rem; font-weight: 600; color: var(--bc-text-2); cursor: pointer; }
 .bc-filter-bar .bc-ai-toggle { flex-direction: row; font-size: .8rem; }
+.bc-ai-tools { margin-top: .75rem; align-items: center; justify-content: flex-start; }
+.bc-ai-tools .bc-ai-toggle span { white-space: nowrap; }
+.bc-ai-stale-line { margin-top: .6rem; font-size: .84rem; font-weight: 600; color: #92400e; }
 /* #/ai */
 .bc-ai-kv { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; }
 .bc-ai-kv > div { display: flex; justify-content: space-between; align-items: center; gap: .5rem; font-size: .84rem; color: var(--bc-text-2);

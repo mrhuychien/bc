@@ -114,6 +114,16 @@ async function troLyCommon(page, admin, tag) {
         ? (at === `Trợ lý chưa chạy từ ${lastOk} — số dưới đây có thể đã cũ.` && await alert.evaluate((e) => e.classList.contains('bc-ai-alert-do')))
         : !alert, at);
     check(`${tag}: meta.stale = ${FRESH ? 'false' : 'true'} ở lượt ${PASS}`, feed.meta.stale === !FRESH);
+    // Thẻ cũ (lượt ok gần nhất không làm mới): seed có 1 việc như vậy ở cả hai lượt (fresh A4, stale B2)
+    const nCu = ins.filter((x) => x.stale).length;
+    const cuId = FRESH ? 'A4' : 'B2';
+    const cu = ins.find((x) => x.id === cuId);
+    const line = await page.$('#tl-stale .bc-alert');
+    const lt = line ? flat(await line.textContent()) : '';
+    check(`${tag}: thẻ ${cuId} cũ — stale, badge "Số ngày ${FRESH ? '25/10' : '24/10'} — chưa cập nhật được"; dòng dưới banner "${nCu} việc chưa cập nhật được" = meta.stale_count`,
+        cu?.stale === true && nCu === 1 && feed.meta.stale_count === nCu && lt.startsWith(`${nCu} việc chưa cập nhật được ở lượt chạy gần nhất`)
+        && flat(await page.textContent(`[data-ai-card="${cuId}"] [data-b="cu"]`)) === `Số ngày ${FRESH ? '25/10' : '24/10'} — chưa cập nhật được`
+        && ins.filter((x) => x.id !== cuId).every((x) => x.stale === false), JSON.stringify({ lt, nCu, sc: feed.meta.stale_count, cu }));
     // Bản tin
     const bi = await page.$$eval('[data-brief]', (els) => els.map((e) => ({ id: e.dataset.brief, t: e.textContent })));
     const exB = (feed.brief?.items || []).slice(0, 5);
@@ -137,6 +147,7 @@ async function troLyCommon(page, admin, tag) {
         const meta = `${x.days} ngày · ${x.section_label} · ${x.source === 'ai' ? 'AI' : 'Quy tắc'}`;
         const goOk = x.route.startsWith('#/') ? (info.go && info.go.href === x.route && info.go.t.startsWith(`Xem ở màn ${x.section_label}`)) : info.go === null;
         const bx = [];
+        if (x.stale) bx.push(`Số ngày ${x.last_seen.slice(8, 10)}/${x.last_seen.slice(5, 7)} — chưa cập nhật được`);
         if (x.status === 'dang-xu-ly') bx.push('Đang xử lý');
         if (x.review_verdict === 'nghi-ngo') bx.push('Cần kiểm chứng');
         if (admin && x.status === 'bo-qua') bx.push(x.mute_until ? `Đang bỏ qua đến ${x.mute_until.slice(8, 10)}/${x.mute_until.slice(5, 7)}/${x.mute_until.slice(0, 4)}` : 'Đang bỏ qua hẳn');
@@ -271,6 +282,18 @@ async function adminTroLy(browser, vpage) {
             await gotoTroLy(page, AB);
             const feed = await troLyCommon(page, true, tag);
             await overflowOk(page, `${tag} #/tro-ly`);
+            if (!mobile) {
+                // Công tắc "Xem cả việc đã đóng": một dòng với nhãn, thẳng mép trái dưới thẻ bản tin, có khoảng cách
+                const g = await page.evaluate(() => {
+                    const r = (e) => e && e.getBoundingClientRect();
+                    const l = r(document.querySelector('#tl-tools .bc-ai-toggle')), i = r(document.querySelector('#tl-closed'));
+                    const sp = r(document.querySelector('#tl-tools .bc-ai-toggle span')), b = r(document.querySelector('#tl-brief .bc-ai-brief'));
+                    return l && i && sp && b ? { lh: l.height, dl: l.left - b.left, gap: l.top - b.bottom, iy: i.top + i.height / 2, sy: sp.top + sp.height / 2,
+                        sh: sp.height, right: sp.left >= i.right } : null;
+                });
+                check(`${tag}: công tắc "Xem cả việc đã đóng" một dòng với nhãn, thẳng mép trái dưới bản tin`, g && g.lh <= 30 && g.sh <= 24
+                    && Math.abs(g.iy - g.sy) <= 3 && g.right && Math.abs(g.dl) <= 1 && g.gap >= 8, JSON.stringify(g));
+            }
             const ins = feed.insights;
             for (const x of ins) {
                 const acts = await page.$$eval(`[data-ai-card="${x.id}"] [data-act]`, (els) => els.map((e) => e.dataset.act));
@@ -402,8 +425,17 @@ async function adminAi(browser) {
             const nRuns = await page.$$eval('#ai-runs tbody tr', (els) => els.length);
             check(`${tag}: dòng lượt chạy = get_admin().runs (${d.runs.length})`, nRuns === d.runs.length, nRuns);
             const runsText = flat(await page.textContent('#ai-runs'));
+            // Chi phí: dòng không gọi model (không nhà cung cấp / 0 token — tong, ai bỏ qua) → "—"; có token mà chưa khai giá → cảnh báo
+            const cells = await page.$$eval('#ai-runs tbody tr', (els) => els.map((e) => e.querySelector('[data-cost]')?.dataset.cost || 'usd'));
+            const warnTxt = await page.$$eval('#ai-runs tbody tr', (els) => els.map((e) => e.textContent.includes('chưa khai giá')));
+            const exCells = d.runs.map((r) => (!r.provider || (!Number(r.tokens_in) && !Number(r.tokens_out)) ? 'none' : (Number(r.cost_known) ? 'usd' : 'unpriced')));
+            const tong = d.runs.filter((r) => r.step === 'tong');
+            check(`${tag}: chi phí — dòng tổng hợp / bước AI bỏ qua hiện "—" (không "chưa khai giá"), ${exCells.filter((c) => c === 'unpriced').length} dòng có token chưa khai giá`,
+                JSON.stringify(cells) === JSON.stringify(exCells) && JSON.stringify(warnTxt) === JSON.stringify(exCells.map((c) => c === 'unpriced')) && tong.length > 0 && tong.every((r) => Number(r.cost_known) === 0)
+                && d.runs.some((r) => r.step === 'ai') && exCells.filter((c, i) => d.runs[i].step === 'tong' || d.runs[i].step === 'ai').every((c) => c === 'none'),
+                JSON.stringify({ cells, warnTxt, exCells }));
             if (FRESH) {
-                check(`${tag}: lượt chạy — trạng thái tiếng Việt, lỗi hiện nguyên chữ, "chưa khai giá" khi cost_known 0`,
+                check(`${tag}: lượt chạy — trạng thái tiếng Việt, lỗi hiện nguyên chữ, "chưa khai giá" khi có token mà cost_known 0`,
                     runsText.includes('Hết credit') && runsText.includes('Tài khoản hết <credit> & dừng') && runsText.includes('chưa khai giá')
                     && runsText.includes('Thành công') && await page.$$eval('#ai-runs td credit', (e) => e.length) === 0, runsText.slice(0, 300));
                 const cost = await page.evaluate(() => (0.0585).toLocaleString('vi-VN', { minimumFractionDigits: 4, maximumFractionDigits: 4 }));

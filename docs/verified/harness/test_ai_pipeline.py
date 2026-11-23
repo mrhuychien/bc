@@ -72,11 +72,10 @@ TREES = {rel(p): ast.parse(open(p, encoding="utf-8").read()) for p in FILES}
 c("thấy đủ các module chính của bc/ai", {"collect.py", "pipeline.py", "llm/__init__.py", "llm/anthropic.py",
 	"rules/cn.py", "detectors/he_thong.py"} <= set(TREES), sorted(TREES))
 
-# 1. collect.py chỉ import frappe, bc.api.*, bc.ai (nếu có), thư viện chuẩn.
+# 1. collect.py chỉ import frappe, bc.api.*, thư viện chuẩn (đặc tả §3 — KHÔNG bc.ai.*; soát rộng ở test_ai_tinh.py).
 bad = [m for m in imports_of(TREES["collect.py"]) if m.startswith(".") or not (m.split(".")[0] == "frappe"
-	or m == "bc.api" or m.startswith("bc.api.") or m == "bc.ai" or m.startswith("bc.ai.")
-	or m.split(".")[0] in sys.stdlib_module_names)]
-c("collect.py: import chỉ frappe / bc.api.* / bc.ai / thư viện chuẩn", not bad, bad)
+	or m == "bc.api" or m.startswith("bc.api.") or m.split(".")[0] in sys.stdlib_module_names)]
+c("collect.py: import chỉ frappe / bc.api.* / thư viện chuẩn", not bad, bad)
 
 # 2. Chỉ bc/ai/llm/* import requests, đọc bc_ai_*_key, đọc frappe.conf.
 NGOAI_LLM = {k: t for k, t in TREES.items() if not k.startswith("llm/")}
@@ -752,12 +751,12 @@ _ri = render.render_insight
 dem_ri = {"n": 0}
 
 
-def _ri_hong(raw, pack, sections, mask=None):
+def _ri_hong(raw, pack, sections, mask=None, kinds=None):
 	if "cong-no" in sections:
 		dem_ri["n"] += 1
 		if dem_ri["n"] == 2:
 			raise ZeroDivisionError("hỏng giữa chừng")
-	return _ri(raw, pack, sections, mask)
+	return _ri(raw, pack, sections, mask, kinds=kinds)
 
 
 render.render_insight = _ri_hong
@@ -971,5 +970,296 @@ eq("đề bài (user) không lưu ở đâu", [m[:30] for m in mau_user if any(m
 	or any(m in str(r) for r in LOG)], [])
 eq("system prompt không lưu ở đâu", any(mau_sys in x for x in TAT_CA) or any(mau_sys in str(r) for r in LOG), False)
 eq("không một lần ra mạng trong cả bộ thử", MANG, [])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("L. Model hằng ngày một nơi (D15); che tên mặc định khi ô chưa từng lưu (P6); gói gửi đi bỏ NO_SEND; kieu (D8)")
+import bc.api.vc as _vc  # noqa: E402
+import bc.api.ai as API  # noqa: E402
+
+_gov = _vc.get_overview
+VC_GOI = []
+
+
+def _gov_ghi(*a, **k):
+	VC_GOI.append(dict(k))
+	return _gov(*a, **k)
+
+
+xoa_run()
+cai(ai_enabled=1, ai_claude_model="   ")          # chỉ dấu cách = để trống
+bo_cai("ai_mask_parties")                         # chưa từng lưu (site cũ chưa migrate)
+_vc.get_overview = _gov_ghi
+out = chay()
+_vc.get_overview = _gov
+c("(tiền đề) ô ai_mask_parties không có dòng trong tabSingles; ô model chỉ có dấu cách", not frappe.db.sql(
+	"SELECT 1 FROM `tabSingles` WHERE doctype = 'BC Settings' AND field = 'ai_mask_parties'")
+	and frappe.db.sql("SELECT value FROM `tabSingles` WHERE doctype = 'BC Settings' AND field = 'ai_claude_model'")
+	[0][0].strip() == "")
+eq("model trống → mọi lời gọi dùng bc.ai.daily_model() = claude-sonnet-5-5", {g["model"] for g in GOI},
+	{"claude-sonnet-5-5"})
+eq("… dòng Run ghi đúng model đó (màn quản trị và lượt chạy nói cùng một model)", {r.model for r in con(out["run"])},
+	{"claude-sonnet-5-5"})
+# Mọi tên đối tác: hồ sơ Customer / Supplier + tên chép trên hoá đơn đã duyệt (khách chỉ có trên hoá đơn cũng là khách).
+TEN_HD = sorted({x for q in ("SELECT customer, customer_name FROM `tabSales Invoice` WHERE docstatus = 1",
+	"SELECT supplier, supplier_name FROM `tabPurchase Invoice` WHERE docstatus = 1") for r in frappe.db.sql(q)
+	for x in r if x} | set(TEN))
+c("(tiền đề) có tên để soát: hồ sơ + tên trên hoá đơn (NPP Hà Nội, Co.op Mart …)", len(TEN_HD) >= 12
+	and "NPP Hà Nội" in TEN_HD, TEN_HD)
+eq("che tên chưa từng lưu = BẬT: không tên khách / NCC nào trong user", [(g["nhom"], x) for g in GOI for x in TEN_HD
+	if x in g["user"]], [])
+c("… mà đề bài vẫn có mã giả (che thật, không phải bỏ khối)", any("KH#" in g["user"] for g in GOI))
+eq("collect gọi vc.get_overview của tháng này VÀ tháng trước (2026-09)", sorted(str(k.get("thang")) for k in VC_GOI),
+	["2026-09", "None"])
+g_vc = next(g for g in GOI if g["nhom"] == "van-chuyen")
+eq("gói vận chuyển gửi đi: overview (+ _ai số quy tắc tự tính), KHÔNG overview_truoc (registry.NO_SEND)",
+	sorted(g_vc["obj"]["pack"]["van-chuyen"]), ["_ai", "overview"])
+eq("không đề bài nào nhắc overview_truoc", [g["nhom"] for g in GOI if "overview_truoc" in g["user"]], [])
+g_tc = next(g for g in GOI if g["nhom"] == "tai-chinh")
+kieu = g_tc["obj"].get("kieu") or {}
+c("tai-chinh: 'kieu' có kiểu đúng của số (overdue_pct pct, overdue tien, overdue_customers so)",
+	(kieu.get("cong-no.receivables.kpis.overdue_pct"), kieu.get("cong-no.receivables.kpis.overdue"),
+	kieu.get("cong-no.receivables.kpis.overdue_customers")) == ("pct", "tien", "so"), kieu)
+c("… chỉ path của mảng trong gói nhóm này (cong-no / phai-tra)", kieu and all(p.split(".")[0] in ("cong-no", "phai-tra")
+	for p in kieu), sorted(kieu)[:5])
+bo_cai("ai_claude_model")
+cai(ai_mask_parties=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("M. Sang tháng: cảnh báo trả cước KHÔNG tự đóng ngày 1 (D13 — collect lấy thêm tháng trước)")
+cai(ai_enabled=0)
+xoa_run()
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 31)
+chay()
+CUOC = ("vc.cuoc_canh_bao:tra_bat_thuong", "vc.cuoc_canh_bao:tra_chuyen_huy", "vc.cuoc_canh_bao:sua_tay")
+eq("31/10: ba cảnh báo cước đang mở", [R(k).status for k in CUOC], ["mo", "mo", "mo"])
+frappe.utils.FAKE_TODAY = datetime.date(2026, 11, 1)
+frappe.utils.FAKE_NOW_TIME = datetime.time(5, 30)
+out = chay()
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 27)
+frappe.utils.FAKE_NOW_TIME = datetime.time(10, 30)
+c("01/11 05:30: quy tắc cước CHẠY được (có số tháng trước), không nằm trong not_run",
+	"vc.cuoc_canh_bao" not in out["not_run"], out["not_run"])
+eq("… trả cước bất thường / chuyến huỷ đã chi: vẫn mở, last_seen 01/11 05:30 (tháng trước góp số)",
+	[(R(k).status, R(k).last_seen) for k in CUOC[:2]], [("mo", D(2026, 11, 1, 5, 30))] * 2)
+c("… lời nói rõ 'tính cả tháng này và tháng trước'", all("tháng này và tháng trước" in (R(k).body or "")
+	for k in CUOC[:2]), [R(k).body for k in CUOC[:2]])
+eq("… cước sửa tay vẫn theo tháng: tháng 11 chưa có → dong", R(CUOC[2]).status, "dong")
+cai(ai_enabled=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("N. Mảng đang ẩn (P10, D5): lượt chạy dưới người xem vẫn thu số; mô hình không thấy; lời AI theo mọi mảng đã thấy")
+xoa_run()
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE rule = 'ai'")
+luu()
+cai(hidden_sections="cong-no")
+frappe.session.user = "viewer@example.com"
+
+
+def tc_an(obj):
+	return [ins(S(obj, "cn.phai_tra_qua_han"), "Phải trả quá hạn", "Phải thu ròng {{cong-no.receivables.kpis.net|tien}}."),
+		ins(None, "Quỹ", "Quỹ hiện có {{phai-tra.payables.cash.total|tien}}.", priority=2)]
+
+
+out = chay(**{"tai-chinh": tl(tc_an)})
+c("user trả về người xem sau lượt chạy", frappe.session.user == "viewer@example.com", frappe.session.user)
+eq("lượt chạy dưới người xem, cong-no ĐANG ẨN: mọi quy tắc chạy được (collect dưới Administrator)", out["not_run"], {})
+eq("… ba tín hiệu cong-no vẫn mở và vừa được thấy lại lúc 10:30", [(R(k).status, R(k).last_seen) for k in
+	("cn.qua_han_ty_le", "cn.vuot_han_muc", "cn.dso_cao")], [("mo", D(2026, 10, 27, 10, 30))] * 3)
+g_tc = next(g for g in GOI if g["nhom"] == "tai-chinh")
+eq("tai-chinh: gói gửi đi chỉ phai-tra; tín hiệu gửi đi chỉ cn.phai_tra_qua_han", (list(g_tc["obj"]["pack"]),
+	[t["rule"] for t in g_tc["obj"]["tin_hieu"]]), (["phai-tra"], ["cn.phai_tra_qua_han"]))
+eq("không đề bài nào có số / path / khoá của mảng cong-no", [g["nhom"] for g in GOI if "cong-no" in g["user"]
+	or "receivables" in g["user"]], [])
+eq("lời AI trích số của mảng đang ẩn → loại (giữ lời quy tắc, needs_check 1)", (R("cn.phai_tra_qua_han").source,
+	R("cn.phai_tra_qua_han").needs_check), ("quy-tac", 1))
+fq = R("ai:phai-tra.payables.cash.total")
+eq("tự do của mảng đang hiện: tạo, sections_used chỉ phai-tra (gói chỉ có phai-tra)", fq and (fq.status,
+	set(fq.sections_used.splitlines())), ("mo", {"phai-tra"}))
+frappe.session.user = "Administrator"
+ad = {i["id"] for i in API.get_feed()["insights"]}
+frappe.session.user = "viewer@example.com"
+vw = API.get_feed()["insights"]
+c("quản trị thấy tín hiệu cong-no; người xem không thấy thẻ nào của cong-no", R("cn.qua_han_ty_le").name in ad
+	and not [i for i in vw if i["section"] == "cong-no"], [i["title"] for i in vw if i["section"] == "cong-no"])
+
+# Lời AI viết khi cong-no còn hiện → quản trị ẩn cong-no SAU lượt chạy → người xem không còn thấy lời đó.
+cai(hidden_sections="")
+
+
+def tc_hien(obj):
+	return [ins(S(obj, "cn.phai_tra_qua_han"), "Tiền hàng NCC quá hạn",
+		"Còn {{phai-tra.payables.ap.due.overdue_total|tien}} chưa trả, khách lớn đang chậm trả nên tiền về chậm."),
+		ins(None, "Quỹ", "Quỹ hiện có {{phai-tra.payables.cash.total|tien}}.", priority=2)]
+
+
+out = chay(**{"tai-chinh": tl(tc_hien)})
+p2, fq = R("cn.phai_tra_qua_han"), R("ai:phai-tra.payables.cash.total")
+eq("lời AI (không placeholder cong-no) gắn sections_used = mọi mảng của gói đã gửi (cong-no + phai-tra)",
+	(p2.source, set(p2.sections_used.splitlines())), ("ai", {"cong-no", "phai-tra"}))
+eq("tự do cũng vậy", set(fq.sections_used.splitlines()), {"cong-no", "phai-tra"})
+cai(hidden_sections="cong-no")                    # quản trị ẩn SAU lượt chạy, chưa chạy lại
+frappe.session.user = "Administrator"
+ad = {i["id"] for i in API.get_feed()["insights"]}
+frappe.session.user = "viewer@example.com"
+vw = {i["id"] for i in API.get_feed()["insights"]}
+c("người xem: không còn thấy lời AI viết khi đã thấy số cong-no (tín hiệu + tự do)", p2.name not in vw
+	and fq.name not in vw, vw & {p2.name, fq.name})
+c("quản trị vẫn thấy cả hai", {p2.name, fq.name} <= ad)
+out = chay(**{"tai-chinh": tl(tc_hien)})          # lượt sau (cong-no vẫn ẩn) viết lại → hiện lại
+vw = {i["id"] for i in API.get_feed()["insights"]}
+eq("lượt sau viết lại khi cong-no ẩn: sections_used chỉ phai-tra → người xem thấy lại", (set(R("cn.phai_tra_qua_han")
+	.sections_used.splitlines()), p2.name in vw, fq.name in vw), ({"phai-tra"}, True, True))
+cai(hidden_sections="")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("O. Một lượt đầy đủ trên dữ liệu khó: tiêu đề Error Log (S1), tên cũ trên hoá đơn (S2), tên NCC giữa câu (S3),")
+print("   mã của nhóm khác (S4), sai kiểu số (N2), chủ đề bỏ qua quay lại qua lời tự do (N4)")
+BI_MAT = ["tran.thi.b@hgc.vn", "0912345678", "Nguyễn Văn Tèo", "tran.thi.b", "Duplicate entry", "lehoa@x.vn",
+	"NPP Hà Nội", "NPP Thăng Long", "Cát Vàng Sông Hồng"]
+for i, (t, n) in enumerate((("(1062, \"Duplicate entry 'tran.thi.b@hgc.vn' for key 'email'\")", 3),
+		("frappe.exceptions.ValidationError: Khách Nguyễn Văn Tèo vượt hạn mức, gọi 0912345678", 2),
+		("tran.thi.b locked", 2), ("KeyError: 'lehoa@x.vn'", 1), ("frappe.exceptions.ValidationError", 1))):
+	for j in range(n):
+		insert("Error Log", method=t[:140], error="Traceback (most recent call last): ...",
+			creation=D(2026, 10, 27, 9, i * 5 + j))
+# Đổi tên khách kiểu ERPNext: Link si.customer đổi, si.customer_name (ảnh chụp) giữ tên cũ.
+insert("Customer", name="NPP Thăng Long", customer_name="NPP Thăng Long")
+frappe.db.sql("UPDATE `tabSales Invoice` SET customer = 'NPP Thăng Long' WHERE customer = 'NPP Hà Nội'")
+# Nguồn cát ATTP là một NCC có thật: tên nằm GIỮA câu "Nguồn: …".
+insert("Supplier", name="NCC-CAT-01", supplier_name="Công ty Cát Vàng Sông Hồng")
+insert("SX Nhat Ky Cat", ngay="2026-10-20", viec="Nhập cát", ncc_cat="NCC-CAT-01", ten_ncc="Công ty Cát Vàng Sông Hồng",
+	doi_nguon=1, kln="", luu_lo_mau=0, so_cu=0, creation=D(2026, 10, 20, 8, 0))
+insert("SX Nhat Ky Cat", ngay="2026-10-21", viec="Rang khô đưa dùng", ncc_cat="NCC-CAT-01",
+	ten_ncc="Công ty Cát Vàng Sông Hồng", doi_nguon=0, so_cu=0, creation=D(2026, 10, 21, 8, 0))
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"status": "bo-qua", "mute_until": None})   # bỏ qua hẳn
+luu()
+MA = {}
+
+
+def kd_o(obj):
+	rows = obj["pack"]["tong-quan"]["top_customers"]["rows"]
+	MA["kd"] = rows[0]["customer"]
+	return [ins(None, "Khách lớn nhất", "Khách " + rows[0]["customer"]
+		+ " mua nhiều nhất từ đầu năm: {{tong-quan.top_customers.rows[0].amount|tien}}.", priority=3)]
+
+
+def tc_o(obj):
+	MA["tc"] = obj["pack"]["cong-no"]["receivables"]["top_overdue"][0]["customer"]
+	return [ins(S(obj, "cn.dso_cao"), "Khách quá hạn", "Có {{cong-no.receivables.kpis.overdue_customers|pct}} khách."),
+		ins(None, "Nợ quá hạn cao", "Nợ quá hạn chiếm {{cong-no.receivables.kpis.overdue_pct|pct}}.", priority=5),
+		ins(None, "Phải trả quá hạn", "Phải trả quá hạn {{phai-tra.payables.ap.due.overdue_total|tien}}.", priority=4),
+		ins(None, "Quỹ", "Quỹ hiện có {{phai-tra.payables.cash.total|tien}}.", priority=3)]
+
+
+def ns_o(obj):
+	t = obj["tin_hieu"][0]
+	MA["ns_user"] = json.dumps(obj, ensure_ascii=False)
+	return [ins(t["id"], "Nhân sự", t["loi_quy_tac"].split(" — ")[0] + ". Khách " + MA["tc"] + " cũng cần lưu ý.")]
+
+
+def attp_o(obj):
+	m = re.search(r"Nguồn:? (NCC#\d+)", json.dumps(obj, ensure_ascii=False))
+	MA["attp"] = m and m.group(1)
+	t = obj["tin_hieu"][0]
+	MA["attp_rule"] = t["rule"]
+	return [ins(t["id"], "Nguồn cát", t["loi_quy_tac"].split(" — ")[0] + ". Nguồn cát " + str(MA["attp"])
+		+ " vừa đổi, cần kiểm kim loại nặng.")]
+
+
+xoa_run()
+out = chay(**{"kinh-doanh": tl(kd_o), "tai-chinh": tl(tc_o), "nhan-su": tl(ns_o), "attp": tl(attp_o)})
+U = {g["nhom"]: g["user"] for g in GOI}
+eq("(tiền đề) đủ 7 nhóm được gọi", list(U), NHOM)
+eq("S1/S2/S3: không e-mail / SĐT / tên trong tiêu đề Error Log, không tên khách cũ / mới, không tên NCC cát trong user",
+	[(n, x) for n, u in U.items() for x in BI_MAT if x in u], [])
+c("S1: he-thong vẫn gửi nhóm lỗi dưới nhãn an toàn (tên lớp lỗi / '(khác)')", '"(khác)"' in U["he-thong"]
+	and "ValidationError" in U["he-thong"], U["he-thong"][:300])
+c("S3: câu ATTP có nguồn cát mang mã giả NCC#…", bool(MA.get("attp")), MA.get("attp"))
+TAT_CA = cot(RUN) + cot(INSIGHT)
+eq("S1: không chuỗi nào của tiêu đề Error Log trong BC AI Run / Insight", [x for x in ("tran.thi.b", "0912345678",
+	"Nguyễn Văn Tèo", "lehoa@x.vn", "Duplicate entry") if any(x in y for y in TAT_CA)], [])
+fk = R("ai:tong-quan.top_customers.rows.amount")
+c("S2: lời lưu có TÊN THẬT của khách lớn nhất (mã giả đã đổi lại), không còn mã", fk is not None and "KH#" not in fk.body
+	and any(x in fk.body for x in ("NPP Hà Nội", "NPP Thăng Long")), fk and fk.body)
+at = frappe.db.sql(f"SELECT body, source FROM `tab{INSIGHT}` WHERE rule = %s AND source = 'ai'", (MA.get("attp_rule"),),
+	as_dict=True)
+c("S3: lời ATTP lưu có tên NCC thật 'Công ty Cát Vàng Sông Hồng', không còn mã", at and "Công ty Cát Vàng Sông Hồng"
+	in at[0].body and "NCC#" not in at[0].body, at)
+c("S4: (tiền đề) mã khách của nhóm tai-chinh không có trong đề bài nhan-su", MA.get("tc") and MA["tc"].startswith("KH#")
+	and MA["tc"] not in MA.get("ns_user", ""), MA.get("tc"))
+ns_ai = frappe.db.sql(f"SELECT signal_key, source, needs_check, body FROM `tab{INSIGHT}` WHERE section = 'nhan-su' "
+	"AND needs_check = 1", as_dict=True)
+eq("S4: lời nhan-su nhắc mã của nhóm khác → loại (lời quy tắc, needs_check 1), không thành tên thật",
+	[(r.source, r.needs_check) for r in ns_ai], [("quy-tac", 1)])
+eq("S4: tên thật của mã đó (Đại lý Minh Phát) không nằm trong lời nhân sự nào", [r.signal_key for r in
+	frappe.db.sql(f"SELECT signal_key, body, title FROM `tab{INSIGHT}` WHERE section = 'nhan-su'", as_dict=True)
+	if "Minh Phát" in (r.body or "") + (r.title or "")], [])
+eq("N2: số đếm (overdue_customers) viết |pct → loại", (R("cn.dso_cao").source, R("cn.dso_cao").needs_check),
+	("quy-tac", 1))
+eq("N4: tự do trên số của chủ đề đang bỏ qua (overdue_pct) → không tạo", R("ai:cong-no.receivables.kpis.overdue_pct"),
+	None)
+eq("N4: tự do chỉ lặp tín hiệu quy tắc đang mở (phải trả quá hạn) → không tạo", R(
+	"ai:phai-tra.payables.ap.due.overdue_total"), None)
+eq("N4: tự do khác (quỹ) vẫn nhận", R("ai:phai-tra.payables.cash.total").status, "mo")
+cc = {r.step: r for r in con(out["run"])}
+eq("dòng tai-chinh: rejected 2 (sai kiểu + chủ đề bỏ qua; lặp tín hiệu không tính), insights_ai 1",
+	(cc["tai-chinh"].rejected, cc["tai-chinh"].insights_ai), (2, 1))
+eq("cn.qua_han_ty_le vẫn bo-qua", R("cn.qua_han_ty_le").status, "bo-qua")
+frappe.session.user = "viewer@example.com"
+vw = API.get_feed()["insights"]
+eq("người xem: không thẻ nào nói tỷ lệ nợ quá hạn 54,5%", [i["title"] for i in vw if "54,5" in i["title"] + i["body"]],
+	[])
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"status": "mo"})
+luu()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("P. Quy tắc ném lỗi / lời không dựng được (P7): tín hiệu đang mở GIỮ nguyên, quy tắc vào not_run")
+cai(ai_enabled=0)
+xoa_run()
+chay()
+truoc = R("cn.dso_cao")
+eq("(tiền đề) cn.dso_cao đang mở", truoc.status, "mo")
+RD = registry.RULES["cn.dso_cao"]
+_fn = RD.fn
+
+
+def _ne(pack, cfg):
+	raise ZeroDivisionError("quy tắc hỏng")
+
+
+RD.fn = _ne
+out = chay()
+RD.fn = _fn
+sau = R("cn.dso_cao")
+eq("quy tắc ném lỗi: not_run[cn.dso_cao] = loi", out["not_run"].get("cn.dso_cao"), "loi")
+eq("… tín hiệu cũ vẫn mở, lời giữ nguyên (không đóng như đã hết)", (sau.status, sau.title, sau.closed_on),
+	("mo", truoc.title, None))
+c("… dòng tổng ok, error kể cn.dso_cao", tong(out["run"]).status == "ok" and "cn.dso_cao" in (tong(out["run"]).error
+	or ""), tong(out["run"]).error)
+
+
+def _sai_kieu(pack, cfg):
+	out = list(_fn(pack, cfg))
+	for s in out:
+		s.title = "{{cong-no.receivables.top_overdue[0].customer|tien}} trả chậm"    # chuỗi mà ghi |tien
+	return out
+
+
+RD.fn = _sai_kieu
+out = chay()
+RD.fn = _fn
+sau = R("cn.dso_cao")
+eq("lời quy tắc không dựng được (sai kiểu): not_run[cn.dso_cao] = loi-loi", out["not_run"].get("cn.dso_cao"), "loi-loi")
+eq("… tín hiệu cũ vẫn mở, lời cũ giữ", (sau.status, sau.title, sau.closed_on), ("mo", truoc.title, None))
+out = chay()
+eq("quy tắc lành lại: chạy bình thường, vẫn mở", (out["not_run"].get("cn.dso_cao"), R("cn.dso_cao").status),
+	(None, "mo"))
+cai(ai_enabled=1)
+eq("không một lần ra mạng (cả phần L–P)", MANG, [])
 
 c.done()

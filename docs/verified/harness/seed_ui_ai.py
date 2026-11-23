@@ -77,7 +77,8 @@ def seed(kind):
 		ins("A2", section="ton-kho", severity="do", status="dang-xu-ly", rank=2, route="javascript:alert(1)",
 			first_seen=D(2026, 10, 24, 5, 30))
 		ins("A3", section="tong-quan", source="ai", rank=3, needs_check=1, title="Doanh số tháng giảm")
-		ins("A4", section="van-chuyen", rank=4, route="")
+		# lượt ok 27/10 05:30 không làm mới A4 (quy tắc không chạy được) → thẻ "Số ngày 25/10 — chưa cập nhật được"
+		ins("A4", section="van-chuyen", rank=4, route="", last_seen=D(2026, 10, 25, 5, 30))
 		ins("A5", section="nhan-su", rank=5)
 		ins("A6", section="attp", severity="do", rank=6)
 		ins("A7", section="ngay", rank=0, first_seen=D(2026, 10, 27, 5, 30))
@@ -97,6 +98,8 @@ def seed(kind):
 			("R3", dict(run_type="ngay", step="kho-sx", run_id="R1", provider="claude", model="claude-sonnet-5-5",
 				started=D(2026, 10, 27, 5, 33), finished=D(2026, 10, 27, 5, 33), status="het-credit",
 				error="Tài khoản hết <credit> & dừng")),
+			("R6", dict(run_type="ngay", step="ai", run_id="R5", provider="claude", started=D(2026, 10, 26, 5, 35),
+				finished=D(2026, 10, 26, 5, 35), status="tat")),
 			("R4", dict(run_type="tay", step="test", provider="claude", model="claude-x-moi", started=D(2026, 10, 26, 9, 0),
 				finished=D(2026, 10, 26, 9, 0), status="ok", tokens_in=20, tokens_out=5, cost_known=0)),
 			("R5", dict(run_type="ngay", step="tong", started=D(2026, 10, 26, 5, 30), finished=D(2026, 10, 26, 5, 41),
@@ -104,16 +107,20 @@ def seed(kind):
 		]
 	else:
 		ins("B1", section="cong-no", rank=1, title="Quá hạn nhích lên")
-		ins("B2", section="ton-kho", rank=2, source="ai")
+		ins("B2", section="ton-kho", rank=2, source="ai", last_seen=D(2026, 10, 24, 5, 30))   # trước lượt ok 25/10 → cũ
 		ins("B3", section="he-thong", audience="quan-tri", rank=3, route="", title="Hàng đợi chậm")
 		runs = [
 			("R1", dict(run_type="ngay", step="tong", started=D(2026, 10, 25, 5, 30), finished=D(2026, 10, 25, 5, 40),
 				status="ok", signals=3)),
 			("R2", dict(run_type="ngay", step="tong", started=D(2026, 10, 26, 5, 30), finished=D(2026, 10, 26, 5, 31),
 				status="loi", error="lỗi đọc số")),
+			("R3", dict(run_type="ngay", step="ai", run_id="R1", provider="claude", started=D(2026, 10, 25, 5, 35),
+				finished=D(2026, 10, 25, 5, 35), status="tat")),
 		]
 	for name, f in runs:
-		base = dict(provider=None, model=None, run_id=None, tokens_in=0, tokens_out=0, cost_usd=0, cost_known=1,
+		# Như pipeline ghi: dòng không gọi model (tong, ai bỏ qua, lỗi trước khi gọi) không truyền chi phí → cost_known 0
+		base = dict(provider=None, model=None, run_id=None, tokens_in=0, tokens_out=0, cost_usd=0,
+			cost_known=0 if f.get("step") in ("tong", "ai") or not f.get("tokens_in") else 1,
 			signals=0, insights_ai=0, rejected=0, error=None)
 		base.update(f)
 		insert(RUN, name, **base)

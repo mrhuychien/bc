@@ -4,7 +4,8 @@
 
 Luật khoá: đọc bằng frappe.conf.get(...) NGAY TRONG hàm cần dùng; không gán biến module, không nằm trong dict trả về,
 không nằm trong message lỗi / log. Mọi LLMError tự làm sạch message lúc tạo (clean): xoá mọi chuỗi trùng khoá đang
-khai + mọi chuỗi có dạng khoá `sk-…`, RỒI mới cắt 300 ký tự (cắt trước thì nửa khoá nằm ở mép sẽ lọt). Lỗi ra khỏi
+khai (cả dạng repr và từng mảnh dài của khoá khai sai có dấu cách / xuống dòng) + mọi chuỗi có dạng khoá Anthropic
+(tiền tố s, k, gạch ngang), RỒI mới cắt 300 ký tự (cắt trước thì nửa khoá nằm ở mép sẽ lọt). Lỗi ra khỏi
 call() được ném NGOÀI khối except (không kéo theo ngoại lệ gốc — lời của thư viện HTTP có thể chứa khoá), vết lỗi
 chỉ còn khung của call() và khung đó đã bỏ các biến mang đề bài / gói số.
 Module khác cần lưu / ghi log một chuỗi lỗi bất kỳ của bước AI: đưa qua clean() trước.
@@ -24,8 +25,28 @@ PROVIDERS = {"claude": "bc_ai_anthropic_key", "openai": "bc_ai_openai_key"}   # 
 KINDS = ("no_key", "credit", "rate", "http", "timeout", "schema", "refusal")
 MAX_MESSAGE = 300
 MASK = "***"
-# Mọi thứ trông như khoá API (khoá cũ, khoá của site khác, khoá bị cắt cụt) — không bắt nhầm "task-…", "risk-…".
-_KEY_LIKE = re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_\-]{8,}")
+# Mọi thứ trông như khoá API (khoá cũ, khoá của site khác, khoá bị cắt cụt) — không bắt nhầm chữ thường có cùng hai
+# chữ cái đứng trước gạch ngang ở giữa từ (task…, risk…). Viết [k] để gói phần mềm không chứa nguyên chuỗi tiền tố.
+_KEY_LIKE = re.compile(r"(?<![A-Za-z0-9])s[k]-[A-Za-z0-9_\-]{8,}")
+MIN_FRAGMENT = 6   # mảnh của khoá khai sai (tách theo khoảng trắng) dài từ chừng này trở lên cũng bị xoá
+
+
+def key_ok(key) -> bool:
+	"""Khoá (đã gọt hai đầu) khác rỗng và chỉ gồm ký tự in được 0x21–0x7E — có dấu cách / xuống dòng / ký tự lạ ở
+	giữa → coi như chưa khai (thư viện HTTP sẽ ném lỗi chép nguyên khoá)."""
+	k = str(key or "").strip()
+	return bool(k) and all(0x21 <= ord(ch) <= 0x7E for ch in k)
+
+
+def _key_forms(k: str) -> list:
+	"""Mọi dạng của khoá có thể nằm trong lời lỗi, dài trước ngắn sau: nguyên văn, đã gọt, dạng repr (xuống dòng thành
+	hai ký tự \\n), rồi từng mảnh ≥ MIN_FRAGMENT ký tự tách theo khoảng trắng."""
+	if not k:
+		return []
+	forms = {k, k.strip(), repr(k)[1:-1], repr(k.strip())[1:-1]}
+	forms |= {m for m in k.split() if len(m) >= MIN_FRAGMENT}
+	forms |= {repr(m)[1:-1] for m in k.split() if len(m) >= MIN_FRAGMENT}
+	return sorted((f for f in forms if f), key=len, reverse=True)
 
 
 def clean(text) -> str:
@@ -37,9 +58,8 @@ def clean(text) -> str:
 			k = str(frappe.conf.get(name) or "")
 		except Exception:   # ngoài ngữ cảnh site (không có conf): vẫn còn lớp xoá theo mẫu ở dưới
 			k = ""
-		for v in (k, k.strip()):   # khoá khai thừa dấu cách / xuống dòng: xoá cả hai dạng
-			if v:
-				s = s.replace(v, MASK)
+		for v in _key_forms(k):   # khoá khai thừa / lẫn dấu cách, xuống dòng: xoá mọi dạng
+			s = s.replace(v, MASK)
 	return _KEY_LIKE.sub(MASK, s)[:MAX_MESSAGE]
 
 
@@ -68,9 +88,18 @@ def run_status(kind: str) -> str:
 
 
 def has_key(provider: str) -> bool:
-	"""Site có khai khoá của provider không (chỉ trả có / không)."""
+	"""Site có khai khoá DÙNG ĐƯỢC của provider không (chỉ trả có / không). Khoá có ký tự ngoài 0x21–0x7E sau khi gọt
+	hai đầu (dán bị xuống dòng, có dấu cách ở giữa) → False: lượt chạy báo khong-khoa."""
 	name = PROVIDERS.get(provider)
-	return bool(name and str(frappe.conf.get(name) or "").strip())
+	return bool(name and key_ok(frappe.conf.get(name)))
+
+
+def key_malformed(provider: str) -> bool:
+	"""Site CÓ khai khoá của provider nhưng sai dạng (dấu cách / xuống dòng / ký tự lạ ở giữa) — để màn quản trị nói
+	rõ lý do thay vì "chưa có khoá". Chỉ trả có / không."""
+	name = PROVIDERS.get(provider)
+	k = str(frappe.conf.get(name) or "").strip() if name else ""
+	return bool(k) and not key_ok(k)
 
 
 # ─── Kiểm đầu ra theo schema (phần JSON Schema mà structured outputs nhận) ───────────────────────────────────
@@ -133,6 +162,8 @@ def _dispatch(provider: str, model: str, system: str, user: str, schema_name: st
 	if provider not in PROVIDERS:
 		raise LLMError("http", "nhà cung cấp mô hình không được hỗ trợ")
 	if not has_key(provider):   # trước mọi lời gọi mạng
+		if str(frappe.conf.get(PROVIDERS[provider]) or "").strip():
+			raise LLMError("no_key", f"{PROVIDERS[provider]} khai sai dạng (có dấu cách / xuống dòng / ký tự lạ)")
 		raise LLMError("no_key", f"chưa khai {PROVIDERS[provider]} trong site_config")
 	if provider != "claude":   # OpenAI (phản biện) là P2
 		raise LLMError("http", "chưa hỗ trợ")

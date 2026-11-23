@@ -214,13 +214,22 @@ eq("gộp 1 tín hiệu: 6 khách, tổng 505tr", (list(sig), tinh(s, pk, "so_kh
 ten = [registry.resolve(pk, p) for p, k in registry.placeholders(s.detail) if k == "chu"]
 eq("thân nêu 5 khách nợ quá hạn nhiều nhất, đúng thứ tự", ten, ["Khách Lớn Hai", "Khách Ba", "Khách Bốn", "Khách Năm",
 	"Khách Sáu"])
-eq("tiêu đề không có tên", [k for _p, k in registry.placeholders(s.title)], ["so", "so", "tien"])
+eq("tiêu đề không có tên, không có tiền (D12: số tiền không phải phần quá 90 ngày)",
+	[k for _p, k in registry.placeholders(s.title)], ["so", "so"])
 # Danh sách không xếp sẵn: quy tắc tự xếp theo nợ quá hạn
 run, sig, pk = mot(rc(top=[kh("Khách Năm", 70 * TR, 150), kh("Khách Ba", 110 * TR, 200)]), K)
 eq("tự xếp theo nợ quá hạn giảm dần", [registry.resolve(pk, p) for p, k in registry.placeholders(sig[K].detail)
 	if k == "chu"], ["Khách Ba", "Khách Năm"])
 run, sig, pk = mot(rc(top=[kh(None, 70 * TR, 150)]), K)
-eq("tên trống → vẫn báo, thân không nêu tên", (sig[K].severity, registry.placeholders(sig[K].detail)), ("vang", []))
+eq("tên trống → vẫn báo, thân không nêu tên", (sig[K].severity, [k for _p, k in registry.placeholders(sig[K].detail)
+	if k == "chu"]), ("vang", []))
+# D12 (N6): NPP-C nợ quá hạn 100tr ở mọi tuổi (chỉ 1tr quá 149 ngày) → lời nói đúng số đó là gì.
+run, sig, pk = mot(rc(top=[kh("NPP-C", 100 * TR, 149)]), K)
+eq("D12: lời nói rõ tổng là nợ quá hạn ở mọi tuổi nợ, tiêu đề không có tiền", loi(sig[K], pk),
+	"1 khách có hoá đơn quá hạn trên 90 ngày | Tổng nợ quá hạn ở mọi tuổi nợ của các khách này là 100 triệu, nhiều "
+	"nhất NPP-C 100 triệu; cần thu hồi gấp trước khi thành nợ khó đòi.")
+c("D12: không câu nào gắn tiền với 'trên 90 ngày'", not re.search(r"(quá hạn )?trên \S+ ngày,? tổng", loi(sig[K], pk)),
+	loi(sig[K], pk))
 eq("top rỗng / None / không phải list → chạy, không báo", (muc(rc(top=[]), K), muc(rc(top="x"), K)), (None, None))
 pk = rc()
 pk["cong-no"]["receivables"]["top_overdue"] = None

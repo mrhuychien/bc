@@ -455,7 +455,7 @@ print("\n— lint: lời rất dài / dị dạng vẫn soát xong nhanh (không
 DAI = [
 	("chuỗi chữ số bằng chữ không có đơn vị", "một hai ba bốn năm sáu bảy tám chín mười " * 1000, []),
 	("mã nối gạch rất dài", "A" + "-123" * 10000, ["123"]),       # quá 40 ký tự đầu thì không còn là mã
-	("rất nhiều số nhỏ", "1 " * 20000, []),
+	("rất nhiều số nhỏ", "1 " * 20000, ["1 " * 19999 + "1"]),     # D7: dãy số rời cách dấu cách là MỘT số trần
 	("rất nhiều ngày", "5/11 " * 8000, []),
 ]
 for nhan, text, want in DAI:
@@ -526,15 +526,16 @@ eq("khách thứ hai, NCC", (che["cong-no"]["receivables"]["top_overdue"][1]["cu
 	("KH#0002", "NCC#0001", "NCC#0001"))
 eq("số, ngày, None, bool giữ nguyên", (t0["overdue"], t0["oldest"], che["cong-no"]["receivables"]["kpis"]["trong"],
 	che["cong-no"]["receivables"]["kpis"]["co"]), (250_500_000, datetime.date(2026, 7, 8), None, True))
-eq("chuỗi chỉ CHỨA tên (chuỗi con), khác hoa thường: không thay; bằng tên sau khi bỏ khoảng trắng hai đầu: thay; "
-	"chuỗi trong list / tuple lồng: thay", che["cong-no"]["ghi_chu"],
-	[ABC + " - chi nhánh Hà Nội", "Giao cho " + ABC, ABC.lower(), "KH#0002", ["lồng", ("KH#0002", 5)]])
+# D3: tên nằm GIỮA câu (đứng riêng thành từ) cũng được thay; khác hoa thường thì không
+eq("chuỗi CHỨA tên đứng riêng thành từ: thay (D3); khác hoa thường: không thay; bằng tên sau khi bỏ khoảng trắng hai "
+	"đầu: thay; chuỗi trong list / tuple lồng: thay", che["cong-no"]["ghi_chu"],
+	["KH#0002 - chi nhánh Hà Nội", "Giao cho KH#0002", ABC.lower(), "KH#0002", ["lồng", ("KH#0002", 5)]])
 eq("khoá dict KHÔNG thay (path phải như nhau trên hai bản), giá trị thì thay", che["cong-no"]["theo_khach"],
 	{ABC: {"no": 5}, "CUST-0001": "KH#0001"})
 gui = json.dumps({k: v for k, v in che.items()}, ensure_ascii=False, default=str)
 c("§9.5: tên / mã khách, NCC không còn trong giá trị gửi mô hình",
 	all(json.dumps(x, ensure_ascii=False) not in gui for x in (LAN_ANH, "CUST-0002", "SUP-0001", BAO_BI))
-	and gui.count(ABC) == 3, gui[:300])      # ABC còn đúng 3 lần: 2 chuỗi con + 1 khoá dict (đã kiểm ở trên)
+	and gui.count(ABC) == 1, gui[:300])      # ABC còn đúng 1 lần: khoá dict (D3: chuỗi con đứng riêng cũng bị thay)
 eq("cùng path: bản gốc ra tên thật, bản che ra mã giả", (registry.resolve(goc, f"{R}.top_overdue[0].customer_name"),
 	registry.resolve(che, f"{R}.top_overdue[0].customer_name")), (LAN_ANH, "KH#0001"))
 eq("unmask mọi mã đã biết", M.unmask("KH#0001 và KH#0002, trả (NCC#0001). KH#0001"),
@@ -566,8 +567,10 @@ eq("trùng tên hiển thị: chuỗi về mã của đối tác đứng TRƯỚ
 	M2.mask(["Trùng Tên", "C-2", "C-3", "S-1"]), ["KH#0002", "KH#0002", "KH#0003", "NCC#0001"])
 eq("… và mã nào cũng hoàn nguyên về đúng tên hiển thị", M2.unmask("KH#0002 / KH#0003 / NCC#0001"),
 	"Trùng Tên / Trùng Tên / Trùng Tên")
+# D4: mã chỉ hoàn nguyên được SAU khi đã gửi (mask phát ra) → mask trước, unmask sau
 eq("thiếu tên hiển thị → dùng chuỗi của đối tác; chuỗi rỗng / None / không phải chuỗi bỏ qua",
-	(M2.unmask("NCC#0002"), M2.mask(["S-2", "", None, 7])), ("S-2", ["NCC#0002", "", None, 7]))
+	(M2.mask(["S-2", "", None, 7]), M2.unmask("NCC#0002")), (["NCC#0002", "", None, 7], "S-2"))
+M2.mask(["X-1", "X-2"])
 eq("mã tự đặt (không theo dạng XX#số): vẫn hoàn nguyên, mã dài không bị mã ngắn ăn mất",
 	(M2.unmask("ĐT-A và ĐT-A-B."), M2.strip("ĐT-A-B,ĐT-A")), ("Mã Tự Đặt và Mã Tự Đặt Dài.", " , "))
 eq("mã tự đặt dính chữ phía trước / sau: không phải mã", M2.unmask("ĐT-AX, XĐT-A, ĐT-A1"), "ĐT-AX, XĐT-A, ĐT-A1")
@@ -674,23 +677,30 @@ for doi, want, nhan in LOI_INSIGHT:
 r = ri(body=f"Giao lần đầu {{{{{R}.kpis.overdue_pct|pct}}}} tỷ lệ còn thấp; {{{{{R}.kpis.over_limit|so}}}} khách, "
 	f"{{{{{R}.kpis.over_limit|so}}}} trường hợp.")
 eq("'tỷ lệ', 'khách', 'trường hợp' sau placeholder số không phải đơn vị nhân", (r["ok"], r["errors"]), (True, []))
-r = ri(body=f"Phải thu cuối quý 3 {{{{{R}.kpis.total|tien}}}}, top 5 {{{{{R}.top_overdue[0].customer_name|chu}}}}.")
-eq("chữ số + dấu cách + placeholder tien / chu: không phải ghép số", (r["ok"], r["body"]),
-	(True, f"Phải thu cuối quý 3 1,6 tỷ, top 5 {LAN_ANH}."))
+r = ri(body=f"Phải thu cuối quý 4, top 5 {{{{{R}.top_overdue[0].customer_name|chu}}}}.")
+eq("chữ số + dấu cách + placeholder chu (tên): không phải ghép số", (r["ok"], r["body"]),
+	(True, f"Phải thu cuối quý 4, top 5 {LAN_ANH}."))
+# D7: số rời + dấu cách trước placeholder số bị loại với MỌI kiểu số ("quý 3 1,6 tỷ" đọc như "31,6 tỷ")
+r = ri(body=f"Phải thu cuối quý 3 {{{{{R}.kpis.total|tien}}}}.")
+c("D7: chữ số + dấu cách + placeholder tien → loại", r["ok"] is False
+	and f"so-tran:3 {{{{{R}.kpis.total|tien}}}}" in r["errors"], str(r["errors"]))
 # over_limit = 3. Ngày (11 đứng sau "/"), năm (4 chữ số), mã (900 dính chữ), giờ (30 đứng sau ":") KHÔNG phải đầu nhóm nghìn
 r = ri(body=f"Đến 5/11 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 {{{{{R}.kpis.over_limit|so}}}} khách; "
-	f"mã SR900 {{{{{R}.kpis.over_limit|so}}}} lần; lúc 5:30 {{{{{R}.kpis.over_limit|so}}}} đơn.")
+	f"mã SR900 {{{{{R}.kpis.over_limit|so}}}} phiếu; lúc 5:30 {{{{{R}.kpis.over_limit|so}}}} đơn.")
 eq("ngày / năm / mã / giờ đứng trước placeholder so không phải số ghép", (r["ok"], r["errors"], r["body"]),
-	(True, [], "Đến 5/11 3 khách vượt hạn mức; năm 2026 3 khách; mã SR900 3 lần; lúc 5:30 3 đơn."))
+	(True, [], "Đến 5/11 3 khách vượt hạn mức; năm 2026 3 khách; mã SR900 3 phiếu; lúc 5:30 3 đơn."))
 # Hai số THẬT đặt cạnh nhau có dấu phân cách rõ ("3/5"), chu dính so, so cách tien: không tạo ra con số nào mới
 r = ri(body=f"{{{{{R}.kpis.over_limit|so}}}}/{{{{{R}.kpis.qua_120|so}}}} khách đã trả; "
-	f"{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}} lần trễ; "
-	f"nhóm {{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}.")
-eq("'{{a|so}}/{{b|so}}', chu dính so, so cách tien: không phải số ghép", (r["ok"], r["errors"], r["body"]),
-	(True, [], "3/5 khách đã trả; Công ty ABC3 lần trễ; nhóm 3 33 triệu."))
-r = ri(body=f"Nợ của KH#0001,{{{{{R}.top_overdue[0].overdue|tien}}}} đã quá hạn; KH#0002 {{{{{R}.kpis.over_limit|so}}}} lần trễ.")
+	f"{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}} đơn trễ.")
+eq("'{{a|so}}/{{b|so}}', chu (tên) dính so: không phải số ghép", (r["ok"], r["errors"], r["body"]),
+	(True, [], "3/5 khách đã trả; Công ty ABC3 đơn trễ."))
+# D7: hai placeholder số cách nhau bởi khoảng trắng bất kỳ (kể cả so + tien) bị loại
+r = ri(body=f"Nhóm {{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}.")
+c("D7: so cách tien một dấu cách → loại", r["ok"] is False
+	and f"so-tran:{{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}" in r["errors"], str(r["errors"]))
+r = ri(body=f"Nợ của KH#0001,{{{{{R}.top_overdue[0].overdue|tien}}}} đã quá hạn; KH#0002 {{{{{R}.kpis.over_limit|so}}}} đơn trễ.")
 eq("chữ số trong mã giả HỢP LỆ đứng sát placeholder không phải số ghép", (r["ok"], r["body"]),
-	(True, f"Nợ của {LAN_ANH},251 triệu đã quá hạn; {ABC} 3 lần trễ."))
+	(True, f"Nợ của {LAN_ANH},251 triệu đã quá hạn; {ABC} 3 đơn trễ."))
 # Khoá "31_60": nếu lint chạy trên lời CHƯA bỏ placeholder thì ".31_60" thành dãy 4 chữ số "3160" → bị bắt nhầm.
 # 7.000.000 → one(7,0) = "7" → "7 triệu"
 r = ri(body=f"Có {{{{{R}.kpis.qua_120|so}}}} khách quá hạn lâu, nhóm trễ vừa {{{{{R}.aging.31_60|tien}}}}, "
@@ -704,8 +714,10 @@ eq("gom đủ mọi loại lỗi", r["errors"], [f"path:{R}.kpis.x", "so-tran:2 
 
 dai = "Nợ quá hạn tăng " + "rất " * 60 + "nhanh"       # 16 + 240 + 5 = 261 ký tự
 r = ri(title=dai)
-eq("tiêu đề dài → cắt còn đúng 200 ký tự, kết bằng …, vẫn ok", (len(r["title"]), r["title"][:16], r["title"][-1], r["ok"]),
-	(200, "Nợ quá hạn tăng ", "…", True))
+# N11 / D7: tiêu đề của MÔ HÌNH dài quá 200 ký tự sau khi thay số → lỗi "dai" (không cắt rồi nhận); vẫn trả bản cắt
+eq("tiêu đề mô hình dài → lỗi 'dai' (không ok); bản trả về cắt ở khoảng trắng ≤ 200 ký tự, kết bằng …",
+	(len(r["title"]) <= 200, r["title"][:16], r["title"][-1], r["title"][-2] != " ", r["ok"], "dai" in r["errors"]),
+	(True, "Nợ quá hạn tăng ", "…", True, False, True))
 r = ri(title="A" * 200)
 eq("tiêu đề đúng 200 ký tự giữ nguyên", r["title"], "A" * 200)
 r = ri(title="  Nợ quá hạn\n  tăng nhanh ", body="\n  Cần thu hồi sớm.\nƯu tiên khách lớn.  \n")
@@ -719,6 +731,7 @@ eq("cắt SAU khi hoàn nguyên tên (không để lọt quá 200)", r["title"],
 r = ri(title="B" * 194 + " KH#0001 nợ")
 eq("mã giả vắt qua mốc cắt: hoàn nguyên TRƯỚC rồi mới cắt (không để sót mẩu 'KH#0')", r["title"], "B" * 194 + " Tạp…")
 MK = redact.Mask([("KH#0001", "Đại lý  Hai\tCách", {"C-1"})])
+MK.mask("C-1")          # D4: mã đã gửi mới hoàn nguyên được
 r = render.render_insight({"title": "KH#0001 quá hạn", "body": f"{{{{{R}.kpis.rong|chu}}}} Cần thu hồi sớm.",
 	"advice": ["Phòng Kế toán làm việc với KH#0001."]}, PACK, NHOM, MK)
 eq("khoảng trắng do tên thật / giá trị rỗng mang vào: tiêu đề + khuyến nghị gộp một dấu cách, thân bỏ đầu cuối",
@@ -832,6 +845,208 @@ eq("Mask rỗng (tắt che) → giữ nguyên", redact.Mask().mask_text("Đã g�
 eq("chỉ toàn tên ngắn → giữ nguyên", redact.Mask([("KH#0001", "An", {"An"})]).mask_text("gọi An"), "gọi An")
 eq("lời đã che hoàn nguyên được", MT.unmask(MT.mask_text("Đã gọi Hùng Phát hôm qua")), "Đã gọi Hùng Phát hôm qua")
 eq("gọi lại lần hai cho cùng kết quả", MT.mask_text("Hùng Phát và Công ty Hùng Phát"), "KH#0002 và KH#0001")
+
+# ══ 7c. Vòng sửa sau soát chéo: D4 (mã đã gửi), D7 (lint), D8 (kiểu số) ═══════
+print("\n— D8 (N2): placeholder số phải đúng kiểu thật của giá trị (kinds) —")
+PK = copy.deepcopy(PACK)
+PK["cong-no"]["receivables"]["kpis"]["he_so"] = 1.5          # tên khoá không đoán được → không xét
+
+
+def rk(body, kinds, title="Công nợ", mask=None, pack=None):
+	"""render_insight với kinds; bản trước sửa không có tham số kinds → coi như nhận (ok, không lỗi)."""
+	try:
+		return render.render_insight({"title": title, "body": body, "advice": []}, pack or PK, NHOM, mask, kinds=kinds)
+	except TypeError:
+		return {"ok": True, "errors": [], "title": title, "body": body, "advice": []}
+
+
+KIEU_SAI = [
+	(f"Khách vượt hạn mức chiếm {{{{{R}.kpis.over_limit|pct}}}} tổng khách.", f"kieu:{R}.kpis.over_limit",
+		"số đếm (over_limit) viết thành %"),
+	(f"Có {{{{{R}.kpis.overdue_pct|so}}}} khách quá hạn.", f"kieu:{R}.kpis.overdue_pct", "% (overdue_pct) viết thành số đếm"),
+	(f"Nợ vượt hạn mức {{{{{R}.kpis.over_limit|tien}}}}.", f"kieu:{R}.kpis.over_limit", "số đếm viết thành tiền"),
+	(f"Có {{{{{R}.kpis.total|so}}}} khách.", f"kieu:{R}.kpis.total", "tiền (total) viết thành số đếm"),
+	(f"Tỷ lệ nợ {{{{{R}.kpis.dso|pct}}}}.", f"kieu:{R}.kpis.dso", "số ngày (dso) viết thành %"),
+	(f"Khách lớn nhất nợ {{{{{R}.top_overdue[0].overdue|so}}}}.", f"kieu:{R}.top_overdue[0].overdue",
+		"path có chỉ số: xét theo tên khoá sau khi bỏ chỉ số"),
+	(f"Hoá đơn mua quá hạn chiếm {{{{phai-tra.payables.ap.due.overdue_count|pct}}}}.",
+		"kieu:phai-tra.payables.ap.due.overdue_count", "*_count viết thành %"),
+]
+for body, want, nhan in KIEU_SAI:
+	r = rk(body, {})
+	c(f"D8: loại — {nhan} → {want}", r["ok"] is False and want in r["errors"], f"{r['ok']} {r['errors']}")
+r = rk(f"Nhóm 31–60 ngày {{{{{R}.aging.31_60|so}}}}.", {f"{R}.aging.31_60": "tien"})
+c("D8: path có trong kinds (kind_map) → phải đúng kiểu đó", r["ok"] is False and f"kieu:{R}.aging.31_60" in r["errors"],
+	str(r["errors"]))
+r = rk(f"Khách lớn nhất nợ {{{{{R}.top_overdue[0].overdue|so}}}}.", {f"{R}.top_overdue.overdue": "so"})
+eq("D8: kinds thắng tên khoá (path đã bỏ chỉ số)", (r["ok"], r["errors"]), (True, []))
+r = rk(f"Hệ số {{{{{R}.kpis.he_so|so}}}}, tức {{{{{R}.kpis.he_so|pct}}}}; nhóm 31–60 ngày {{{{{R}.aging.31_60|tien}}}}.", {})
+eq("D8: khoá không đoán được tên → không xét kiểu", (r["ok"], r["errors"]), (True, []))
+r = rk(f"Nợ quá hạn {{{{{R}.kpis.overdue|tien}}}}, chiếm {{{{{R}.kpis.overdue_pct|pct}}}}; {{{{{R}.kpis.over_limit|so}}}} khách "
+	f"vượt hạn mức, DSO {{{{{R}.kpis.dso|so}}}} ngày.", {})
+eq("D8: đúng kiểu → nhận", (r["ok"], r["errors"]), (True, []))
+r = render.render_insight({"title": "Công nợ", "body": f"Chiếm {{{{{R}.kpis.over_limit|pct}}}}.", "advice": []}, PK, NHOM, None)
+eq("D8: kinds=None (mặc định) giữ như cũ — không xét kiểu", (r["ok"], r["errors"]), (True, []))
+f = render.fill(f"{{{{{R}.kpis.over_limit|pct}}}}", PK, NHOM) if True else None
+eq("D8: fill(kinds=None) không xét kiểu", f.errors, [])
+try:
+	f = render.fill(f"{{{{{R}.kpis.over_limit|pct}}}}", PK, NHOM, kinds={})
+	got = f.errors
+except TypeError:
+	got = "không có tham số kinds"
+eq("D8: fill(kinds={}) xét theo tên khoá", got, [f"kieu:{R}.kpis.over_limit"])
+# Tên lá của GÓI SỐ THẬT (seed_ui2 qua collect.build + detector + _ai) → kiểu (mẫu đại diện; đủ danh sách trong báo cáo)
+LA_THAT = {
+	"cong-no.receivables.kpis.overdue": "tien", "cong-no.receivables.kpis.overdue_pct": "pct",
+	"cong-no.receivables.kpis.overdue_customers": "so", "cong-no.receivables.kpis.over_limit": "so",
+	"cong-no.receivables.kpis.dso.dso": "so", "cong-no.receivables.kpis.dso.window_days": "so",
+	"cong-no.receivables.kpis.unallocated": "tien", "cong-no.receivables.mt.buckets.b2": "tien",
+	"cong-no.receivables.top_overdue.max_days": "so", "cong-no.receivables.mt.invoice_count": "so",
+	"phai-tra.payables.ap.due.overdue_count": "so", "phai-tra.payables.ap.due.rows.days_to_due": "so",
+	"phai-tra.payables.cash.total": "tien", "tong-quan.summary.meta.growth.sales": "pct",
+	"tong-quan.summary.rows.return_rate": "pct", "tong-quan.summary.rows.sales": "tien",
+	"san-pham.top_products.rows.growth_pct": "pct", "san-pham.top_products.rows.qty": "so",
+	"han-dung.overview.am.no_rate_rows": "so", "han-dung.overview.han.tong.qty_no_rate": "so",
+	"ton-kho.overview.health.stranded_value_rows": "so", "ton-kho.overview.health.stranded_value": "tien",
+	"ton-kho.overview.value.totals.items_in_stock": "so", "ton-kho.overview.value.totals.value_sellable": "tien",
+	"ton-kho.trend.nxt.months.groups.tet.flows.mua": "tien", "van-chuyen.overview.giao.total": "so",
+	"van-chuyen.overview.giao.ty_le_giao": "pct", "van-chuyen.overview.cuoc.tra_chuyen_huy_tien": "tien",
+	"van-chuyen.overview.cuoc.moi_chuyen": "tien", "van-chuyen.overview.chuyen.chuyen_moi_ngay": "so",
+	"van-chuyen.overview.su_co.mo_qua_n": "so", "kiem-ke.overview.kho.tong.qua_90": "so",
+	"kiem-ke.overview.kk_sx.gt_thieu": "tien", "nhan-su.overview.luong.bo_phan.thuc_nhan": "tien",
+	"nhan-su.overview.bhxh.ty_le": "pct", "he-thong.dia_day.pct": "pct", "he-thong.hang_doi.so_hang": "so",
+	# không đoán (để trống — không xét): đếm / tiền mà tên không nói rõ
+	"he-thong.error_log.tong": None, "van-chuyen.overview.cuoc.tong": None, "nhan-su.overview.bhxh.rui_ro": None,
+	"attp.overview.dem.do": None, "ngay.daily.meta.year": None, "van-chuyen.overview.cuoc.tra_bat_thuong": None,
+}
+sai = {p: (getattr(render, "kieu_theo_ten", lambda x: "?")(p), k) for p, k in LA_THAT.items()
+	if getattr(render, "kieu_theo_ten", lambda x: "?")(p) != k}
+eq("D8: tên khoá của lá số thật → đúng kiểu (mẫu đại diện của gói số seed_ui2)", sai, {})
+kpi_lech = [(p, k) for p, k, _l in registry.KPIS if getattr(render, "kieu_theo_ten", lambda x: k)(p) not in (None, k)]
+eq("D8: luật tên khoá không trái với kiểu khai trong registry.KPIS", kpi_lech, [])
+
+print("\n— D7 (S7, N3): đơn vị / dấu / số dính quanh placeholder số (kể cả chu trông như số) —")
+PS = {"san-pham": {"top_products": {"rows": [{"item_code": "12345", "item_name": "Bánh đậu xanh 300g", "boxes": 250,
+	"ty_le": "55,6%"}]}}, "tong-quan": {"summary": {"rows": [{"sales": 3.4e9, "invoices": 37}]}}}
+P0 = "san-pham.top_products.rows[0]"
+
+
+def rs(body):
+	return render.render_insight({"title": "Tiêu đề", "body": body, "advice": []}, PS, {"san-pham", "tong-quan"},
+		redact.Mask())
+
+
+GHEP_MOI = [
+	(f"Doanh số đạt {{{{{P0}.item_code|chu}}}} tỷ.", "chu trông như số + 'tỷ' (S7)"),
+	(f"Tỷ lệ trả hàng lên {{{{{P0}.item_code|chu}}}}% so với cùng kỳ.", "chu trông như số + '%' (S7)"),
+	(f"Còn {{{{{P0}.item_code|chu}}}}{{{{{P0}.item_code|chu}}}} hộp.", "hai chu trông như số dính nhau (S7)"),
+	(f"Đạt {{{{{P0}.ty_le|chu}}}} 5 lượt.", "chu '55,6%' + số rời phía sau"),
+	(f"Chiếm {{{{{P0}.boxes|so}}}}% tổng doanh số.", "so + '%'"),
+	(f"Thiệt hại {{{{{P0}.boxes|so}}}} đ mỗi ngày.", "so + ' đ'"),
+	(f"Thiệt hại {{{{{P0}.boxes|so}}}} đồng.", "so + ' đồng'"),
+	(f"Khoảng {{{{{P0}.boxes|so}}}} USD.", "so + ' USD'"),
+	(f"Chiếm {{{{{P0}.boxes|so}}}} phần trăm.", "so + 'phần trăm'"),
+	(f"Gấp {{{{{P0}.boxes|so}}}} lần quý trước.", "so + 'lần'"),
+	(f"Tăng {{{{tong-quan.summary.rows[0].sales|tien}}}} (tỷ).", "tien + '(tỷ)'"),
+	(f"Chiếm {{{{{P0}.boxes|so}}}}<b>%</b>.", "so + thẻ HTML + '%'"),
+	(f"Chiếm {{{{{P0}.boxes|so}}}}&#37;.", "so + thực thể HTML '%'"),
+	(f"Có {{{{{P0}.boxes|so}}}}M khách.", "chữ nhân dính sau ('M')"),
+	(f"Có {{{{{P0}.boxes|so}}}}E3 hộp.", "'E3' dính sau"),
+	(f"Có {{{{{P0}.boxes|so}}}} 00 hộp.", "nhóm 2 chữ số cách sau"),
+	(f"Giảm -{{{{tong-quan.summary.rows[0].sales|tien}}}}.", "dấu '-' trước placeholder"),
+	(f"Lệch −{{{{{P0}.boxes|so}}}} hộp.", "dấu trừ '−' trước placeholder"),
+	(f"Tăng +{{{{{P0}.boxes|so}}}} hộp.", "dấu '+' trước placeholder"),
+	(f"Sai số ±{{{{{P0}.boxes|so}}}} hộp.", "'±' trước placeholder"),
+	(f"Gấp ×{{{{{P0}.boxes|so}}}}.", "'×' trước placeholder"),
+	(f"Có 1\u200b{{{{{P0}.boxes|so}}}} hộp.", "chữ số + ký tự vô hình + placeholder (dính)"),
+	(f"Có {{{{{P0}.boxes|so}}}}\u200b4 hộp.", "placeholder + ký tự vô hình + chữ số (dính)"),
+	(f"Có {{{{{P0}.boxes|so}}}}\t{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp.", "hai placeholder cách tab"),
+	(f"Có 1\t{{{{{P0}.boxes|so}}}} hộp.", "chữ số + tab + placeholder so"),
+	(f"Có 12 {{{{tong-quan.summary.rows[0].sales|tien}}}}.", "số rời + dấu cách + placeholder tien"),
+]
+for body, nhan in GHEP_MOI:
+	r = rs(body)
+	c(f"D7: loại — {nhan}", r["ok"] is False and any(e.startswith("so-tran:") for e in r["errors"]),
+		f"{r['ok']} {r['errors']} {r['body']!r}")
+GIU_MOI = [
+	f"Mã {{{{{P0}.item_name|chu}}}} bán {{{{{P0}.boxes|so}}}} hộp, đạt {{{{{P0}.ty_le|chu}}}} chỉ tiêu.",
+	f"Doanh số ({{{{tong-quan.summary.rows[0].sales|tien}}}}) từ {{{{tong-quan.summary.rows[0].invoices|so}}}} hoá đơn.",
+	f"Từ {{{{{P0}.boxes|so}}}}-{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp; mã KK-{{{{{P0}.boxes|so}}}}.",
+	f"Đến 5/11 {{{{{P0}.boxes|so}}}} hộp, trong 7 ngày, quý 4.",
+]
+for body in GIU_MOI:
+	r = rs(body)
+	c(f"D7: giữ — {body[:60]}…", r["ok"] is True, f"{r['errors']} {r['body']!r}")
+
+print("\n— D7 (N8): lint bắt thêm đơn vị không dấu / tiếng Anh / cách bằng ngoặc, HTML; số có chữ thường đứng trước —")
+LINT_MOI = [
+	("Nợ quá hạn khoảng 2 ty dong", "2 ty dong"), ("Chiếm 35 phan tram", "35 phan tram"),
+	("khoang 35 trieu moi khach", "35 trieu"), ("Còn 4 nghin hộp", "4 nghin"), ("Còn 4 ngan hộp", "4 ngan"),
+	("Nợ 5 ti", "5 ti"), ("đạt 35 percent", "35 percent"), ("đạt 35 pct", "35 pct"), ("2 million", "2 million"),
+	("3 billion", "3 billion"), ("2 mio", "2 mio"), ("3 bn", "3 bn"), ("tương đương 35M", "35M"), ("hoặc 2B.", "2B"),
+	("50K đơn", "50K"), ("Kế toán thu 12 (tỷ) trong 7 ngày", "12 (tỷ"), ("Nợ 12-tỷ", "12-tỷ"),
+	("Nợ <b>12</b> tỷ", "12 tỷ"), ("Nợ 12&nbsp;tỷ", "12 tỷ"), ("Chiếm 12&#37;", "12%"),
+	("nợ đ350000000", "350000000"), ("Nợ x1250", "1250"), ("Nợ A100", "100"), ("khoảng 10^9", "10^9"),
+	("khoảng 4E3 hộp", "4E3"), ("tổng 1 2 5 0 đơn", "1 2 5 0"), ("Chiếm 三十五%", "三十五%"),
+	("Có 1\u200b250 khách", "1250"),
+]
+for text, want in LINT_MOI:
+	got = render.lint(text)
+	c(f"D7: lint bắt — {text!r} → {want!r}", want in got, str(got))
+LINT_GIU = ["năm 2026", "ngày 5/11", "mã SR900", "phiếu KK-2026-002", "trong 7 ngày", "quý 4", "3 ty le", "Top 5 Mart",
+	"PNTP-X120", "KKE-TP10", "TON-TRAD1", "HAN-SINV-90", "KKE-SR-26", "SE-NL-X8", "TET1", "X12", "LO-TET-01",
+	"công ty Ba Tiến", "hàng ty vi", "trong 7 (bảy) ngày", "Bước 1.\n2. Gọi khách", "5 khách, 12 đơn"]
+for text in LINT_GIU:
+	c(f"D7: lint giữ — {text!r}", render.lint(text) == [], str(render.lint(text)))
+t0 = time.monotonic()
+dai = ("Nợ quá hạn của nhóm khách 12 đơn, mã SR900, ngày 5/11, công ty ABC tăng. " * 1200)[:80000]
+got = render.lint(dai)
+dt = time.monotonic() - t0
+c(f"D7: lint 80.000 ký tự lời thường < 5 s ({dt:.2f} s), sạch", dt < 5 and got == [], f"{dt:.2f} s {got[:3]}")
+t0 = time.monotonic()
+got = render.lint(("Nợ 2 ty dong, 35M, x1250, 1 2 5 0 đơn; " * 3000)[:80000])
+dt = time.monotonic() - t0
+c(f"D7: lint 80.000 ký tự đầy số trần < 5 s ({dt:.2f} s)", dt < 5 and len(got) >= 4, f"{dt:.2f} s {got[:4]}")
+t0 = time.monotonic()
+r = rs((f"Có {{{{{P0}.boxes|so}}}} hộp và {{{{{P0}.item_name|chu}}}} " * 1000)[:80000])
+dt = time.monotonic() - t0
+c(f"D7: render_insight thân 80.000 ký tự nhiều placeholder < 5 s ({dt:.2f} s)", dt < 5, f"{dt:.2f} s")
+
+print("\n— N11: tiêu đề quá dài —")
+r = rk("Cần thu hồi sớm.", None, title="Nợ " + "rất " * 46 + f"lớn, tổng {{{{{R}.kpis.unallocated|so}}}} đồng chưa phân bổ hết")
+c("N11: tiêu đề MÔ HÌNH dài quá 200 ký tự sau khi thay số → lỗi 'dai' (không cắt rồi nhận)",
+	r["ok"] is False and "dai" in r["errors"], f"{r['ok']} {r['errors']}")
+rr = render.render_rule("A " * 95 + f"tổng {{{{{R}.kpis.total|so}}}} đồng chưa thu", "Chi tiết.", PK)
+c("N11: tiêu đề QUY TẮC vẫn cắt (ok), nhưng không bao giờ giữa một con số", rr["ok"] and len(rr["title"]) <= 200
+	and rr["title"].endswith("…") and not any(ch.isdigit() for ch in rr["title"]), repr(rr["title"][-30:]))
+rr = render.render_rule("B" * 196 + "1.600.000 đồng", "Chi tiết.", PK)
+c("N11: không có khoảng trắng nào → lùi qua chữ số ở cuối", rr["title"] == "B" * 196 + "…", repr(rr["title"][-12:]))
+# "1,6" kết thúc ở ký tự 197, cắt ở ký tự 199 rơi giữa "tỷ" → bỏ cả "1,6" (không để "1,6…" mất đơn vị)
+rr = render.render_rule("Nợ " + "x" * 185 + " tổng 1,6 tỷ đồng chưa thu", "Ct.", PK)
+eq("N11: số đứng ngay trước chỗ cắt bị bỏ cùng đơn vị (không còn '1,6…' / '1,6 t…')", rr["title"],
+	"Nợ " + "x" * 185 + " tổng…")
+
+print("\n— D4 (S4): chỉ mã ĐÃ GỬI mới thành tên thật; mã khác bị lint bắt —")
+M4 = redact.Mask([("KH#0001", LAN_ANH, {"CUST-0001", LAN_ANH}), ("KH#0002", ABC, {"CUST-0002", ABC}),
+	("NCC#0001", BAO_BI, {"SUP-0001", BAO_BI})])
+getattr(M4, "begin", lambda: None)()
+gui4 = M4.mask({"top": [{"customer": "CUST-0001"}]})
+r = render.render_insight({"title": "KH#0001 quá hạn", "body": "KH#0002 và NCC#0001 cũng cần lưu ý.", "advice": []},
+	PACK, NHOM, M4)
+c("D4: mã có trong bảng nhưng KHÔNG gửi trong đề bài này → bị loại (không hoàn nguyên thành tên người khác)",
+	r["ok"] is False and "so-tran:KH#0002" in r["errors"] and "so-tran:NCC#0001" in r["errors"]
+	and ABC not in r["body"] and BAO_BI not in r["body"], f"{r['errors']} {r['body']!r}")
+r = render.render_insight({"title": "KH#0001 quá hạn", "body": "Cần thu hồi sớm.", "advice": []}, PACK, NHOM, M4)
+eq("D4: mã đã gửi → tên thật", (r["ok"], r["title"]), (True, f"{LAN_ANH} quá hạn"))
+getattr(M4, "begin", lambda: None)()
+r = render.render_insight({"title": "KH#0001 quá hạn", "body": "Cần thu hồi sớm.", "advice": []}, PACK, NHOM, M4)
+c("D4: begin() quên mã của đề bài trước → mã cũ thành mã lạ", r["ok"] is False and "so-tran:KH#0001" in r["errors"],
+	f"{r['errors']}")
+M5 = redact.Mask([("KH#0001", LAN_ANH, {"CUST-0001"})])
+eq("D4: Mask chưa begin(), chưa phát mã nào → unmask / strip không đổi mã", (M5.unmask("KH#0001"), M5.strip("KH#0001")),
+	("KH#0001", "KH#0001"))
+M5.mask_text("gọi CUST-0001")
+eq("D4: mã phát ra qua mask_text cũng tính là đã gửi", M5.unmask("KH#0001 nợ"), f"{LAN_ANH} nợ")
 
 # ══ 8. Luật tĩnh ══════════════════════════════════════════════════════════════
 print("\n— luật tĩnh: render thuần (không DB), không module nào đụng mạng / khoá —")

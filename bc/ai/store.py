@@ -248,6 +248,40 @@ def open_for_llm(sections, limit: int) -> list:
 		for r in rows[:limit]]
 
 
+BO_QUA, DANG_MO = "bo-qua", "mo"     # giá trị của blocked_paths
+
+
+def blocked_paths(sections, now) -> dict:
+	"""Path (đã bỏ chỉ số mảng) mà nhận định TỰ DO của mô hình không được nêu lại, của các Insight có section ∈
+	sections → {path: "bo-qua" | "mo"}:
+	- "bo-qua": Insight (mọi rule, kể cả "ai") đang bo-qua còn hạn (mute_until trống hoặc ≥ ngày của `now`) — quản
+	  trị đã tắt chủ đề này, nhận định tự do trên cùng số là lách lệnh tắt;
+	- "mo": tín hiệu quy tắc (rule ≠ "ai") đang mo / dang-xu-ly — nhận định tự do chỉ lặp lại tín hiệu đó.
+	Một path có cả hai → "bo-qua"."""
+	from bc.ai.registry import strip_index
+
+	sections = tuple(_uniq(sections))
+	if not sections:
+		return {}
+	today = getdate(now)
+	rows = frappe.db.sql(f"""SELECT rule, status, mute_until, paths FROM `tab{INSIGHT}`
+		WHERE section IN %(sections)s AND (status = 'bo-qua' OR (status IN %(open)s AND IFNULL(rule, '') != 'ai'))""",
+		{"sections": sections, "open": OPEN}, as_dict=True)
+	out: dict = {}
+	for r in rows:
+		if r.status == "bo-qua":
+			if not _con_han(r, today):
+				continue
+			loai = BO_QUA
+		else:
+			loai = DANG_MO
+		for p in _load(r.paths):
+			p = strip_index(cstr(p)).strip()
+			if p and out.get(p) != BO_QUA:
+				out[p] = loai
+	return out
+
+
 # ─── Lời AI ──────────────────────────────────────────────────────────────────
 def apply_ai(name: str, *, title: str, body: str, advice: list, severity: str, priority: int, paths: list,
 		sections_used: list, now) -> None:

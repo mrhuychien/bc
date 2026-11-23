@@ -17,6 +17,8 @@ import os
 import re
 import shutil
 import tempfile
+import time
+from zoneinfo import ZoneInfo
 
 from seed import Check, insert, reset
 from paths import BC_ROOT
@@ -84,8 +86,8 @@ def el(when, method):
 	insert("Error Log", creation=when, modified=when, method=method, error=TB, seen=0)
 
 
-# 24 giờ: kd ×5 (một cái đúng lúc now), sx ×4, method NULL ×1, a, b, c ×1 → 13; nhóm: kd 5, sx 4, rồi hoà 1 theo tên:
-# '' (NULL → "(không ghi)"), a, b → top 5 = kd, sx, (không ghi), a, b.
+# 24 giờ: kd ×5 (một cái đúng lúc now), sx ×4, method NULL ×1, a, b, c ×1 → 13; nhóm theo NHÃN (D1): bc.api.kd 5,
+# sx.job 4 (sx là app đã cài của site giả), a / b / c không phải tên an toàn → "(khác)" 3, NULL → "(không ghi)" 1.
 for i in range(4):
 	el(t(hours=-i - 1), "bc.api.kd")
 el(NOW, "bc.api.kd")
@@ -100,8 +102,74 @@ for i in range(33):                                  # + 33 cái trong (19/10 10
 el(t(days=-8), "bien.8ngay")                         # đúng 8 ngày trước → ngoài cả hai cửa sổ
 d = HT.d_error_log(CTX)
 eq("error_log: tong 13, tb = 34 / 7 = 4,857 → 4,9; top 5 nhóm theo số rồi tên", d, {"tong": 13, "tb_ngay": 4.9,
-	"nhom": [{"method": "bc.api.kd", "so": 5}, {"method": "sx.job", "so": 4}, {"method": "(không ghi)", "so": 1},
-	{"method": "a", "so": 1}, {"method": "b", "so": 1}]})
+	"nhom": [{"method": "bc.api.kd", "so": 5}, {"method": "sx.job", "so": 4}, {"method": "(khác)", "so": 3},
+	{"method": "(không ghi)", "so": 1}]})
+
+# D1: tiêu đề Error Log của v16 là str(exception) / dòng cuối traceback → chỉ nhãn an toàn vào pack.
+BI_MAT = ("tran.thi.b", "hgc.vn", "Minh Phát", "0912345678", "le.van.c", "Phúc Lộc", "0903", "congty", "Duplicate",
+	"locked", "khoá", "Traceback", "SECRET", "cust_9")
+TIEU_DE = [
+	("(1062, \"Duplicate entry 'tran.thi.b@hgc.vn' for key 'email'\")", 3),
+	("frappe.exceptions.ValidationError: Khách hàng Đại lý Minh Phát vượt hạn mức, liên hệ 0912345678", 2),
+	("frappe.exceptions.ValidationError", 1),
+	("KeyError: 'le.van.c@hgc.vn'", 2),
+	("Không tìm thấy Khách hàng: Đại lý Phúc Lộc (0903 123 456)", 1),
+	("User nguyen.van.a@congty.vn bị khoá", 1),
+	("tran.thi.b locked", 2),
+	("Đại lý Minh Phát", 1),
+	("0912345678", 1),
+	("erpnext.selling.doctype.x.make\nTraceback (most recent call last): SECRET", 1),
+	("bc.api.kd.get_overview(cust_9)", 1),
+	("bc." + "a" * 80 + ".x", 1),                 # dài quá 80 ký tự → (khác)
+	("Sx[cust_9]", 1),
+	("tran.thi.b", 1),
+]
+frappe.db.sql("DELETE FROM `tabError Log`")
+for ti, n in TIEU_DE:
+	for i in range(n):
+		el(t(hours=-1, minutes=-i), ti)
+d = HT.d_error_log(CTX)
+eq("D1: tiêu đề có email / tên khách / số điện thoại / bộ SQL / tài khoản → nhãn an toàn", d, {"tong": 19,
+	"tb_ngay": 0.0, "nhom": [{"method": "(khác)", "so": 12}, {"method": "frappe.exceptions.ValidationError", "so": 3},
+	{"method": "KeyError", "so": 2}, {"method": "bc.api.kd.get_overview", "so": 1},
+	{"method": "erpnext.selling.doctype.x.make", "so": 1}]})
+eq("D1: gói số không còn mảnh tiêu đề nào", [x for x in BI_MAT if x in json.dumps(d, ensure_ascii=False)], [])
+eq("D1: nhãn từng loại", [HT._nhan(x, {"frappe", "bc"}) for x in (None, "", "  ", "ValueError", "a.b.CustomException",
+	"bc.tasks.daily", "frappe", "SystemExit", "KeyboardInterrupt", "x.DeprecationWarning", "khach.hang", "bc.x y",
+	"bc.x:y", "bc.x[0]", "bc..x", "1bc.x")], ["(không ghi)", "(không ghi)", "(không ghi)", "ValueError",
+	"a.b.CustomException", "bc.tasks.daily", "(khác)", "SystemExit", "KeyboardInterrupt", "x.DeprecationWarning", "(khác)",
+	"bc.x", "bc.x", "bc.x", "(khác)", "(khác)"])
+_apps_goc = frappe.get_installed_apps
+frappe.get_installed_apps = lambda *a, **k: 1 / 0
+try:
+	eq("D1: get_installed_apps lỗi → chỉ frappe / erpnext / bc", [HT._nhan(x, HT._apps()) for x in ("sx.job",
+		"bc.api.kd", "erpnext.x", "frappe.y")], ["(khác)", "bc.api.kd", "erpnext.x", "frappe.y"])
+finally:
+	frappe.get_installed_apps = _apps_goc
+_p = {H: {"error_log": d}}
+_r = chay(_p, only=("ht.error_log",))
+eq("D1: nhóm đầu là (khác) → lời không nêu tên nhóm, không mảnh tiêu đề",
+	[render.fill(x.title + " | " + x.detail, _p).text for x in _r.signals],
+	["Lỗi hệ thống trong ngày qua: 19 lần, trung bình 0 lần | Quản trị cần xem Error Log trước khi lỗi ảnh hưởng "
+	"người dùng."])
+frappe.db.sql("DELETE FROM `tabError Log`")
+el(t(hours=-1), "KeyError: 'le.van.c@hgc.vn'")
+eq("D1: một dòng lỗi (quy tắc không nổ) vẫn không lộ email", HT.d_error_log(CTX)["nhom"], [{"method": "KeyError", "so": 1}])
+# trả lại dữ liệu ca chung cho phần C
+frappe.db.sql("DELETE FROM `tabError Log`")
+for i in range(4):
+	el(t(hours=-i - 1), "bc.api.kd")
+el(NOW, "bc.api.kd")
+for i in range(4):
+	el(t(minutes=-30 * (i + 1)), "sx.job")
+for m in (None, "c", "b", "a"):
+	el(t(hours=-20), m)
+el(t(minutes=1), "tuong.lai")
+el(t(hours=-24), "bien.24h")
+for i in range(33):
+	el(t(days=-2, hours=-i * 3), "cu")
+el(t(days=-8), "bien.8ngay")
+eq("dữ liệu ca chung trả lại như trước", HT.d_error_log(CTX)["tong"], 13)
 
 # Scheduled Job Log: Failed trong 24 giờ: bc.tasks.daily ×2, frappe.x ×1; Complete không tính; Failed đúng 24 giờ trước
 # và Failed 2 ngày trước không tính.
@@ -187,9 +255,10 @@ eq("thư mục rỗng → chưa có bản nào", HT.d_backup_cu(CTX)["co_ban"], 
 
 
 def bk(name, hours):
+	"""File sao lưu cũ `hours` giờ — NOW là giờ ngây thơ theo múi của SITE (như now_datetime v16)."""
 	p = os.path.join(BK, name)
 	open(p, "w").close()
-	ts = (NOW - datetime.timedelta(hours=hours)).timestamp()
+	ts = (NOW.replace(tzinfo=ZoneInfo(frappe.utils.get_system_timezone())) - datetime.timedelta(hours=hours)).timestamp()
 	os.utime(p, (ts, ts))
 
 
@@ -199,6 +268,39 @@ os.makedirs(os.path.join(BK, "thu_muc_con"))         # thư mục con (mtime = b
 eq("bản mới nhất đúng 26 giờ", HT.d_backup_cu(CTX), {"co_ban": True, "gio": 26.0, "moi_nhat": "2026-10-26 08:30:00"})
 bk("c-files.tar", 26.1)
 eq("thêm bản cũ hơn không đổi kết quả", HT.d_backup_cu(CTX)["gio"], 26.0)
+
+# D11: giờ của file đổi sang múi của site — máy chạy UTC / Los Angeles / cùng múi đều ra 20 giờ, không báo.
+BK2 = os.path.join(TMP, "bk2")
+os.makedirs(os.path.join(BK2, "private", "backups"))
+_tz_goc = os.environ.get("TZ")
+_site_goc = frappe.FAKE_SITE_PATH
+frappe.FAKE_SITE_PATH = BK2
+_f = os.path.join(BK2, "private", "backups", "x-database.sql.gz")
+open(_f, "w").close()
+_ts = (NOW.replace(tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")) - datetime.timedelta(hours=20)).timestamp()
+os.utime(_f, (_ts, _ts))
+_kq = {}
+try:
+	for tz in ("UTC", "America/Los_Angeles", "Asia/Ho_Chi_Minh"):
+		os.environ["TZ"] = tz
+		time.tzset()
+		_d = HT.d_backup_cu(CTX)
+		_kq[tz] = (_d["gio"], _d["moi_nhat"], muc_all({H: {"backup_cu": _d}}, "ht.backup_cu"))
+	eq("D11: file 20 giờ tuổi, máy ở UTC / Los Angeles / Hồ Chí Minh → 20 giờ, không báo", _kq,
+		{tz: (20.0, "2026-10-26 14:30:00", {}) for tz in ("UTC", "America/Los_Angeles", "Asia/Ho_Chi_Minh")})
+	_z = frappe.utils.FAKE_SYSTEM_TZ
+	frappe.utils.FAKE_SYSTEM_TZ = "Khong/Co"           # múi sai → giờ máy (máy đang ở Hồ Chí Minh)
+	try:
+		eq("D11: tên múi sai → dùng giờ máy, không ném lỗi", HT.d_backup_cu(CTX)["gio"], 20.0)
+	finally:
+		frappe.utils.FAKE_SYSTEM_TZ = _z
+finally:
+	if _tz_goc is None:
+		os.environ.pop("TZ", None)
+	else:
+		os.environ["TZ"] = _tz_goc
+	time.tzset()
+	frappe.FAKE_SITE_PATH = _site_goc
 
 Usage = collections.namedtuple("Usage", "total used free")
 DU = {"u": Usage(1000, 851, 149), "goi": []}

@@ -61,9 +61,17 @@ function groups(list) {
     return [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key));
 }
 
+/** "2026-10-25 05:30:00" → "25/10". */
+function fmtDM(s) {
+    const d = String(s || '').slice(0, 10).split('-');
+    return d.length === 3 ? `${d[2]}/${d[1]}` : '';
+}
+
 // ─── Thẻ nhận định ──────────────────────────────────────────────────────────
 function badges(x, admin) {
     const b = [];
+    // Lượt chạy ok gần nhất không làm mới việc này (quy tắc không chạy được) — số là số của ngày last_seen.
+    if (x.stale) b.push(`<span class="bc-badge bc-badge-warning" data-b="cu">${escapeHtml(`Số ngày ${fmtDM(x.last_seen)} — chưa cập nhật được`)}</span>`);
     if (x.status === 'dang-xu-ly') b.push('<span class="bc-badge bc-badge-primary" data-b="xu-ly">Đang xử lý</span>');
     if (x.review_verdict === 'nghi-ngo') b.push('<span class="bc-badge bc-badge-warning" data-b="kiem-chung">Cần kiểm chứng</span>');
     if (admin) {
@@ -129,6 +137,9 @@ function paintHead(f) {
     fill('tl-mode', m.ai_on ? 'AI' : 'Quy tắc');
     fill('tl-alert', m.stale ? `<div class="bc-alert bc-ai-alert-do" role="alert">${m.last_ok
         ? `Trợ lý chưa chạy từ ${escapeHtml(fmtDT(m.last_ok))} — số dưới đây có thể đã cũ.` : 'Trợ lý chưa chạy lần nào.'}</div>` : '');
+    const nCu = (f.insights || []).filter((x) => x.stale).length;
+    fill('tl-stale', nCu ? `<div class="bc-alert bc-ai-stale-line" role="status">${fmtNum(nCu)} việc chưa cập nhật được ở lượt chạy gần nhất
+        — số trên các thẻ đó là số của ngày ghi trên thẻ.</div>` : '');
     const b = f.brief;
     const items = b && Array.isArray(b.items) ? b.items.slice(0, 5) : [];
     fill('tl-brief', b && items.length ? `<div class="bc-card bc-ai-brief">
@@ -186,6 +197,7 @@ async function load(isCurrent) {
     } catch (err) {
         if (!alive()) return;
         fill('tl-brief', '');
+        fill('tl-stale', '');
         fill('tl-chips', '');
         fill('tl-list', errorState(err));
     }
@@ -258,8 +270,9 @@ export async function render({ container, isCurrent }) {
             <span class="bc-view-banner-badge" id="tl-mode">…</span>
         </div>
         <div id="tl-alert"></div>
+        <div id="tl-stale"></div>
         <div id="tl-brief">${skeleton(120)}</div>
-        ${isAdmin() ? '<div class="bc-filter-bar" id="tl-tools"></div>' : ''}
+        ${isAdmin() ? '<div class="bc-filter-bar bc-ai-tools" id="tl-tools"></div>' : ''}
         <div id="tl-chips"></div>
         <div id="tl-list" class="bc-ai-list"></div>
         <div class="bc-note bc-mt-3">${escapeHtml(NOTE)}</div></div>`;

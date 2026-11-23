@@ -13,6 +13,12 @@ Bước 5–6 lỗi bất kỳ chỉ ghi vào BC AI Run — KHÔNG làm hỏng b
 hiện tín hiệu với lời theo quy tắc. Không lưu, không log đề bài hay gói số. Lời AI chỉ được lưu sau khi máy chủ thay
 số và kiểm (bc.ai.render).
 
+Đề bài một nhóm: KHÔNG gồm mảng đang ẩn với người xem (số lẫn tín hiệu; quy tắc vẫn chạy trên đủ gói), không gồm khối
+registry.NO_SEND; mã giả đặt lại cho từng nhóm (mask.begin — mã không có trong đề bài này thì không thành tên); kèm
+"kieu" (registry.kind_map). Lời AI lưu với sections_used = mảng của placeholder ∪ mọi mảng mô hình đã thấy (ẩn một mảng
+sau lượt chạy → lời đó ẩn với người xem tới lượt sau). Nhận định tự do trên số của chủ đề đang bo-qua → loại; trùng
+tín hiệu quy tắc đang mở → bỏ (store.blocked_paths).
+
 Dòng tổng (step "tong"): status ok = bước quy tắc xong (kể cả khi AI tắt / lỗi); loi = lượt chạy hỏng (error = TÊN
 loại lỗi). error của dòng tổng ok liệt kê quy tắc không chạy được. Bước AI:
 - cả bước bị bỏ → MỘT dòng step "ai" (tat | khong-khoa | vuot-tran; vượt trần vì 30 lượt / ngày thì error "quá số
@@ -34,7 +40,7 @@ import traceback
 import frappe
 from frappe.utils import cint, getdate, now_datetime
 
-from bc.ai import DEFAULT_CLAUDE_MODEL, DEFAULT_MAX_SIGNALS, conf
+from bc.ai import DEFAULT_MAX_SIGNALS, conf, daily_model
 from bc.ai import registry
 from bc.ai.jobs import JOB_TIMEOUT, LOCK_KEY, LOCK_TTL
 
@@ -217,23 +223,41 @@ def _close_all_free(now) -> None:
 		store.sync_ai_free(g["sections"], [], now)
 
 
+def _goi_duoc(pack: dict, sections, an: set) -> dict:
+	"""Bản gói số GỬI mô hình của một nhóm: bỏ mảng đang ẩn với người xem (an), mảng không có số dùng được và các khối
+	registry.NO_SEND (kỳ trước — chỉ quy tắc đọc). Bản sao nông: pack gốc không đổi (render vẫn phân giải trên đó)."""
+	out = {}
+	for s in sections:
+		if s in an or not _co_so(pack.get(s)):
+			continue
+		khoi = {k: v for k, v in pack[s].items() if (s, k) not in registry.NO_SEND}
+		if _co_so(khoi):
+			out[s] = khoi
+	return out
+
+
 def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: float, out: dict) -> None:
 	from bc.ai import budget, llm, prompt, redact, store
+	from bc.api._common import hidden_sections
 
 	today = getdate(now)
-	model = conf("ai_claude_model") or DEFAULT_CLAUDE_MODEL
+	model = daily_model()
 	limit = cint(conf("ai_max_signals")) or DEFAULT_MAX_SIGNALS
 	mask = redact.build(bool(cint(conf("ai_mask_parties", 1))))
 	system = prompt.system_prompt(today)
+	kinds = registry.kind_map(by_name.values())   # kiểu đúng của số (KPIS + lời quy tắc lượt này) — chỉ xét lời mô hình
+	an = hidden_sections()   # bộ quản trị đặt (đọc thẳng tabSingles, không theo người gọi)
 	dung = None    # lý do dừng gọi tiếp (hết credit / mất khoá / vượt trần / hết giờ): nhóm còn lại chỉ đóng lời cũ
 	for group, g in registry.GROUPS.items():
 		sections = g["sections"]
 		if dung:
 			store.sync_ai_free(sections, [], now)
 			continue
-		# lọc theo tín hiệu CỦA LƯỢT NÀY (tín hiệu cũ của quy tắc không chạy được không gửi) rồi mới cắt `limit`
-		rows = [r for r in store.open_for_llm(sections, 10 ** 6) if r["name"] in by_name][:limit]
-		pack_group = {s: pack[s] for s in sections if _co_so(pack.get(s))}
+		# lọc theo tín hiệu CỦA LƯỢT NÀY (tín hiệu cũ của quy tắc không chạy được không gửi) rồi mới cắt `limit`;
+		# mảng đang ẩn: không gửi số, không gửi tín hiệu (giữ lời quy tắc — chỉ quản trị thấy)
+		rows = [r for r in store.open_for_llm(sections, 10 ** 6) if r["name"] in by_name
+			and r["section"] not in an][:limit]
+		pack_group = _goi_duoc(pack, sections, an)
 		if not rows and (group == registry.HE_THONG or not pack_group):
 			store.sync_ai_free(sections, [], now)    # nhóm không có gì để nói → không tốn lượt gọi
 			continue
@@ -251,22 +275,23 @@ def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: f
 		row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
 		frappe.db.commit()   # dòng của lượt gọi còn lại dù phần sau bị rollback
 		st = _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
-			out)
+			out, kinds)
 		frappe.db.commit()
 		if st in ("het-credit", "khong-khoa"):
 			dung = st
 
 
 def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
-		out) -> str:
+		out, kinds=None) -> str:
 	"""Một lượt gọi cho một nhóm + gắn lời → status của dòng Run (đã chốt). Không ném."""
 	from bc.ai import llm, prompt, store
 
 	res = None
 	try:
 		by_id = {f"S{i}": r for i, r in enumerate(rows, 1)}
+		mask.begin()   # chỉ mã giả phát ra cho ĐỀ BÀI NÀY mới được đổi lại thành tên (mã nhóm trước → mã lạ)
 		tin_hieu = [_ctx(sid, r, by_name[r["name"]], today, mask) for sid, r in by_id.items()]
-		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu))
+		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu), kinds=kinds)
 		# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
 		res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
 			timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
@@ -274,7 +299,11 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		ti, to = cint(res.get("tokens_in")), cint(res.get("tokens_out"))
 		served = res.get("model") or model
 		data = res.get("data")
-		acc, rej = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now)
+		# mảng mô hình đã thấy = mảng của gói gửi đi + mảng của tín hiệu gửi đi (lời AI gắn với TẤT CẢ: ẩn một mảng
+		# sau lượt chạy thì lời AI của nhóm đó ẩn với người xem tới lượt sau)
+		da_thay = [*pack_group, *(r["section"] for r in rows)]
+		acc, rej = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now,
+			kinds=kinds, da_thay=da_thay)
 	except llm.LLMError as e:
 		st = llm.run_status(e.kind)
 		# Lượt bị từ chối / cắt cụt / sai schema vẫn bị tính tiền → ghi token + chi phí nếu máy chủ đã trả lời.
@@ -336,12 +365,21 @@ def _ctx(sid: str, row: dict, sig, today, mask) -> dict:
 		"trang_thai": row["status"], "ghi_chu_quan_tri": mask.mask_text(row.get("admin_note") or "")}
 
 
-def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now) -> tuple:
-	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại)."""
+def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now, kinds=None, da_thay=()) -> tuple:
+	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại).
+
+	sections: mọi mảng của nhóm (nhận định tự do cũ của chúng không được nêu lại → đóng). da_thay: mảng mô hình đã
+	thấy trong lượt gọi (gói + tín hiệu gửi đi; không gồm mảng đang ẩn) → lời chỉ được trích số của các mảng này, và
+	sections_used của MỌI lời AI lưu cộng thêm chúng (lời không placeholder vẫn có thể kể số của mảng khác). Trống →
+	mọi mảng của nhóm. kinds: kiểu đúng của số (registry.kind_map) — lời sai kiểu bị loại. Nhận định tự do trên path
+	đang bo-qua (store.blocked_paths) → loại; chỉ lặp một tín hiệu quy tắc đang mở → bỏ qua lặng lẽ."""
 	from bc.ai import render, store
 
 	acc = rej = 0
 	da_gan, free = set(), {}
+	thay = list(dict.fromkeys(str(s) for s in da_thay if s))
+	duoc = {s for s in sections if s in thay} if thay else set(sections)
+	chan = store.blocked_paths(duoc, now)
 	ds = data.get("insights")
 	for ins in (ds if isinstance(ds, list) else []):
 		if not isinstance(ins, dict):
@@ -356,10 +394,10 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now)
 			if not row or sid in da_gan:      # S lạ / trùng → lấy cái đầu
 				continue
 			da_gan.add(sid)
-			r = render.render_insight(raw, pack, set(sections), mask)
+			r = render.render_insight(raw, pack, duoc, mask, kinds=kinds)
 			if r["ok"]:
 				store.apply_ai(row["name"], title=r["title"], body=r["body"], advice=r["advice"], severity=sev,
-					priority=prio, paths=r["paths"], sections_used=r["sections_used"], now=now)
+					priority=prio, paths=r["paths"], sections_used=[*r["sections_used"], *thay], now=now)
 				acc += 1
 			else:
 				store.mark_rejected(row["name"])
@@ -367,19 +405,25 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now)
 			continue
 		if group == registry.HE_THONG:       # nhóm hệ thống không nhận nhận định tự do
 			continue
-		r = render.render_insight(raw, pack, set(sections), mask)
+		r = render.render_insight(raw, pack, duoc, mask, kinds=kinds)
 		body = raw["body"] if isinstance(raw["body"], str) else ""
 		dau = next((p for p, _ in registry.placeholders(body)), None) or (r["paths"][0] if r["paths"] else None)
 		if not r["ok"] or not dau:            # nhận định tự do phải trích ít nhất một số trong gói
 			rej += 1
 			continue
-		key = ("ai:" + registry.strip_index(dau))[:140]
+		goc = registry.strip_index(dau)
+		if chan.get(goc) == store.BO_QUA:     # chủ đề quản trị đã bỏ qua → không cho quay lại qua lời tự do
+			rej += 1
+			continue
+		if goc in chan:                       # trùng tín hiệu quy tắc đang mở → thừa
+			continue
+		key = ("ai:" + goc)[:140]
 		if key in free:
 			continue
 		sec = registry.section_of(dau)
 		free[key] = {"key": key, "section": sec, "route": f"#/{sec}", "severity": sev, "priority": prio,
 			"title": r["title"], "body": r["body"], "advice": r["advice"], "paths": r["paths"],
-			"sections_used": r["sections_used"]}
+			"sections_used": list(dict.fromkeys([*r["sections_used"], *thay]))}
 	chon = sorted(free.values(), key=lambda x: (x["severity"] != "do", -x["priority"]))[:MAX_FREE]
 	store.sync_ai_free(sections, chon, now)
 	return acc + len(chon), rej

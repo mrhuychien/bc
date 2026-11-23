@@ -12,6 +12,9 @@ Không gọi mạng, không đọc khoá. Đầu ra mô hình theo schema `ghi_n
   phần tử giữ MAX_LIST đầu, dict cha ghi "_cat": {tên danh sách: số bị cắt}; JSON > MAX_CHARS ký tự → cắt đôi tiếp
   danh sách DÀI NHẤT (tính theo số ký tự JSON — cắt ít dòng nhất mà giảm được nhiều nhất) tới khi vừa, có ghi chú.
   `tin_hieu` chỉ giữ đúng các khoá đã chốt (SIGNAL_KEYS) — nơi gọi lỡ kèm chứng từ / tên Insight cũng không gửi đi.
+- `kieu` (khi nơi gọi đưa kinds = registry.kind_map(...)): {path đã bỏ chỉ số: tien | so | pct}, chỉ path thuộc mảng
+  có trong gói của nhóm, sắp theo path; tính vào trần MAX_CHARS (không bị cắt).
+- Mã giả trong đề bài chỉ viết dạng chữ "KH#…" — không mã nào trong system prompt có thể là mã thật.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ SCHEMA: dict = {
 MAX_LIST = 30           # danh sách dài hơn → giữ 30 đầu, ghi "_cat": số bị cắt ở dict cha
 MAX_CHARS = 120_000     # JSON một nhóm dài hơn → cắt tiếp danh sách dài nhất
 MAX_CONTEXT = 4000      # ai_context dài hơn → cắt (đề bài gửi lại ở MỌI lượt gọi)
+KIEU_SO = ("tien", "so", "pct")   # kiểu số được gửi trong "kieu" (như registry.SO_KIEU)
 SIGNAL_KEYS = ("id", "rule", "muc", "loi_quy_tac", "paths", "so_ngay", "trang_thai", "ghi_chu_quan_tri")
 
 _VAI_TRO = """Bạn là trợ lý phân tích số liệu cho Ban lãnh đạo công ty. Mỗi sáng bạn đọc số liệu của MỘT nhóm báo \
@@ -66,6 +70,7 @@ thống, khuyến nghị giao cho quản trị.
 - "pack": số liệu của nhóm, đúng như lãnh đạo thấy trên màn hình báo cáo: {mảng: {tên khối: số liệu}}. Khối "_ai" \
 trong một mảng chứa số do quy tắc tính sẵn (đếm, tổng). Danh sách dài đã bị cắt bớt: khoá "_cat" ghi số phần tử bị \
 cắt của từng danh sách — chỉ để biết là còn nữa, không trích số từ "_cat", không suy diễn về phần bị cắt.
+- "kieu" (nếu có): {path: kiểu} — kiểu đúng của các con số trong pack, path viết không kèm [chỉ số].
 - "tin_hieu": mỗi tín hiệu có "id" (S1, S2…), "rule" (mã quy tắc), "muc" ("do" = đỏ, "vang" = vàng), "loi_quy_tac" \
 (lời của quy tắc, còn placeholder — dùng lại được), "paths" (các số quy tắc đã dùng), "so_ngay" (tín hiệu đã kéo \
 dài bao nhiêu ngày), "trang_thai" ("mo" hoặc "dang-xu-ly"), "ghi_chu_quan_tri" (ghi chú của quản trị, nếu có).
@@ -91,13 +96,17 @@ _PLACEHOLDER = """PLACEHOLDER — cách duy nhất để đưa một con số, m
 bắt đầu từ tên mảng; phần tử của danh sách ghi [chỉ số], đếm từ 0. Chỉ dùng path có thật trong pack của lượt này.
 - Kiểu: tien = số tiền (đồng) · so = số lượng, số đếm, số ngày · pct = tỷ lệ phần trăm (giá trị trong pack đã ở \
 thang phần trăm) · ngay = ngày · chu = tên, nhãn dạng chữ.
+- Kiểu của con số phải đúng nghĩa của nó. Khi path của placeholder (bỏ phần [chỉ số]) có trong "kieu" thì kiểu \
+phải đúng y như "kieu" ghi; path không có trong "kieu" thì chọn theo nghĩa của khoá: số đếm, số ngày → so; tỷ lệ \
+→ pct; số tiền → tien. Sai kiểu sẽ bị loại.
 - Máy chủ thay placeholder bằng số thật đã định dạng và đã kèm đơn vị (tiền ra dạng "… tỷ", "… triệu", "… đ"; tỷ lệ \
 kèm dấu %). Không viết thêm đơn vị sau placeholder, không viết lại con số bằng chữ.
 - Ví dụ (path chỉ để minh hoạ cú pháp): pack có {"cong-no": {"receivables": {"kpis": {"overdue_pct": …}, \
 "top_overdue": [{"overdue": …}, …]}}} thì viết: "Nợ quá hạn chiếm {{cong-no.receivables.kpis.overdue_pct|pct}} phải \
 thu, khoản lớn nhất {{cong-no.receivables.top_overdue[0].overdue|tien}}."
-- Tên khách hàng, nhà cung cấp trong pack đã được thay bằng mã dạng KH#0001, NCC#0001. Cần nhắc tới thì chép nguyên \
-mã đó (máy chủ đổi lại thành tên) hoặc dùng placeholder kiểu chu; không bịa mã, không đoán tên thật.
+- Tên khách hàng, nhà cung cấp trong pack đã được thay bằng mã giả: chữ KH# hoặc NCC# rồi một dãy chữ số (dưới \
+đây viết tắt là KH#… và NCC#…). Cần nhắc tới thì chép nguyên mã có trong pack của lượt này (máy chủ đổi lại thành \
+tên) hoặc dùng placeholder kiểu chu; không bịa mã, không đoán tên thật — mã không có trong pack sẽ bị loại.
 - Tên riêng có chữ số (tên mặt hàng ghi khối lượng, mã chứng từ, tên tiêu chuẩn) cũng phải đưa vào bằng \
 placeholder kiểu chu — viết tay sẽ bị loại.
 - Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số ("hai tỷ", "gấp đôi", "một nửa", "hai phần ba số \
@@ -213,15 +222,26 @@ def _lists(obj, path: str, out: list) -> list:
 	return out
 
 
-def build_user(group: str, pack_group: dict, signals: list, max_chars: int = MAX_CHARS) -> tuple:
+def _kieu(kinds, pack_group) -> dict:
+	"""{path: kiểu} gửi kèm: chỉ kiểu số (tien | so | pct), chỉ path có đoạn đầu là một mảng của gói nhóm, sắp theo path."""
+	mang = {str(k) for k in (pack_group or {})}
+	return {str(p): kinds[p] for p in sorted(kinds, key=str)
+		if kinds[p] in KIEU_SO and str(p).split(".", 1)[0] in mang}
+
+
+def build_user(group: str, pack_group: dict, signals: list, max_chars: int = MAX_CHARS, kinds=None) -> tuple:
 	"""JSON `user` của một nhóm → (chuỗi JSON, ghi_chú: list[str] về việc cắt).
 
 	pack_group = {mảng: {tên: payload}} của nhóm, ĐÃ mã giả (nơi gọi che trước). signals = [{"id": "S1", "rule", "muc",
-	"loi_quy_tac", "paths", "so_ngay", "trang_thai", "ghi_chu_quan_tri"}]. JSON: {"nhom", "pack", "tin_hieu"}, khoá
-	sắp ổn định, ensure_ascii False. Dài quá max_chars → cắt tiếp danh sách dài nhất tới khi vừa, ghi vào ghi_chú."""
+	"loi_quy_tac", "paths", "so_ngay", "trang_thai", "ghi_chu_quan_tri"}]. JSON: {"nhom", "pack", "tin_hieu"} (+ "kieu"
+	khi kinds khác None), khoá sắp ổn định, ensure_ascii False. kinds = {path đã bỏ chỉ số: kiểu} (registry.kind_map)
+	→ "kieu" chỉ giữ path thuộc mảng của gói này, tính vào trần. Dài quá max_chars → cắt tiếp danh sách dài nhất tới khi
+	vừa, ghi vào ghi_chú."""
 	pack, _ = truncate(pack_group or {})
 	tin = [{k: s[k] for k in SIGNAL_KEYS if s.get(k) not in (None, "")} for s in (signals or [])]
 	obj = {"nhom": group, "pack": pack, "tin_hieu": tin}
+	if kinds is not None:
+		obj["kieu"] = _kieu(kinds, pack_group)
 	text = _dumps(obj)
 	con = {}   # path của danh sách bị cắt vì quá dài → số phần tử còn lại
 	while len(text) > max_chars:

@@ -9,6 +9,8 @@ Luật:
 - Mọi lời gọi refresh=1: tính lại + ghi cache. Tham số còn lại để ĐÚNG như màn hình gọi lúc mở (tháng này, mùa này)
   nên khoá cache trùng với khoá màn sẽ đọc buổi sáng: kd.get_daily / sx.get_daily_summary nhận năm + tháng của
   `today`; kho_kk / kho_nhap / vc / attp.get_report để mặc định (tháng này); kd.get_top_products nhóm "all".
+  Thêm MỘT lời gọi không có trên màn: vc.get_overview(thang=<tháng trước>) → van-chuyen.overview_truoc (24 lời gọi)
+  — chỉ vc.cuoc_canh_bao đọc; pipeline không gửi khối này cho mô hình (registry.NO_SEND).
 - Một lời gọi lỗi (kể cả _guard chặn, module không import được) → riêng mục đó thành {"_error": True}, các mục khác
   vẫn có số; frappe.clear_last_message() để lời báo lỗi không lọt ra ngoài. Error Log chỉ ghi TÊN loại lỗi + vị trí
   dòng code — KHÔNG ghi lời của lỗi, không traceback kèm biến (lời lỗi / biến có thể chứa số liệu, tên khách).
@@ -39,6 +41,13 @@ def _moi_nhom(today) -> dict:
 	return {"group": "all"}
 
 
+def _thang_truoc(today) -> dict:
+	"""vc.get_overview của tháng TRƯỚC `today` ('YYYY-MM') — cảnh báo cước không tự đóng ngày 1 (registry.NO_SEND:
+	khối này chỉ quy tắc đọc, không gửi mô hình)."""
+	y, m = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
+	return {"thang": f"{y:04d}-{m:02d}"}
+
+
 # (mảng, tên, "module.method" trong bc.api, hàm dựng tham số từ today → dict kwargs)
 CALLS: tuple = (
 	("tong-quan", "summary", "kd.get_summary", _khong),
@@ -59,6 +68,7 @@ CALLS: tuple = (
 	("kiem-ke", "overview", "kho_kk.get_overview", _khong),
 	("nhap-tp", "overview", "kho_nhap.get_overview", _khong),
 	("van-chuyen", "overview", "vc.get_overview", _khong),
+	("van-chuyen", "overview_truoc", "vc.get_overview", _thang_truoc),
 	("cong-no", "receivables", "cn.get_receivables", _khong),
 	("phai-tra", "payables", "cn.get_payables", _khong),
 	("nhan-su", "overview", "ns.get_overview", _khong),

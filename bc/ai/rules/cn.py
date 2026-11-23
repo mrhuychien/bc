@@ -70,7 +70,10 @@ def qua_han_ty_le(pack, cfg):
 @rule("cn.qua_han_lon", section="cong-no", sources=[R], vang=50_000_000, unit="đ",
 	label="Khách nợ quá hạn lâu với số tiền lớn")
 def qua_han_lon(pack, cfg):
-	"""Khách (top 10 quá hạn, ngoài MT) có hoá đơn quá hạn quá 90 ngày và nợ quá hạn ≥ 50 triệu → GỘP 1 tín hiệu."""
+	"""Khách (top 10 quá hạn, ngoài MT) có hoá đơn quá hạn quá 90 ngày và nợ quá hạn ≥ 50 triệu → GỘP 1 tín hiệu.
+
+	`overdue` của payload là nợ quá hạn ở MỌI tuổi nợ của khách (không riêng phần > 90 ngày) → lời nói rõ như vậy,
+	không câu nào ngụ ý số tiền là phần quá 90 ngày."""
 	rows = resolve(pack, f"{R}.top_overdue", None)
 	if not isinstance(rows, list):
 		return []
@@ -90,10 +93,11 @@ def qua_han_lon(pack, cfg):
 	muc = "do" if any(m == "do" for _o, _i, m in hit) else "vang"
 	ten = [f"{ph(f'{R}.top_overdue[{i}].customer', 'chu')} {ph(f'{R}.top_overdue[{i}].overdue', 'tien')}"
 		for _o, i, _m in hit if _chu(rows[i].get("customer"))][:NEU_KHACH]
-	detail = "Cần thu hồi gấp trước khi thành nợ khó đòi."
+	detail = "Tổng nợ quá hạn ở mọi tuổi nợ của các khách này là {{@tong|tien}}"
 	if ten:
-		detail = f"Nhiều nhất là {', '.join(ten)}; cần thu hồi gấp trước khi thành nợ khó đòi."
-	return [cfg.signal(muc, "{{@so_khach|so}} khách nợ quá hạn trên {{@so_ngay|so}} ngày, tổng {{@tong|tien}}",
+		detail += f", nhiều nhất {', '.join(ten)}"
+	detail += "; cần thu hồi gấp trước khi thành nợ khó đòi."
+	return [cfg.signal(muc, "{{@so_khach|so}} khách có hoá đơn quá hạn trên {{@so_ngay|so}} ngày",
 		detail=detail, paths=[f"{R}.top_overdue[{i}].max_days" for _o, i, _m in hit[:NEU_KHACH]],
 		tinh={"so_khach": len(hit), "so_ngay": QUA_NGAY, "tong": round(sum(o for o, _i, _m in hit), 2)})]
 

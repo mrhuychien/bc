@@ -17,7 +17,7 @@ const RUN_STATUS = { 'ok': ['Thành công', 'bc-badge-success'], 'loi': ['Lỗi'
     'het-credit': ['Hết credit', 'bc-badge-danger'], 'vuot-tran': ['Vượt trần chi', 'bc-badge-warning'],
     'tat': ['AI đang tắt', 'bc-badge-muted'], 'khong-khoa': ['Chưa có khoá', 'bc-badge-warning'] };
 const RUN_TYPE = { 'ngay': 'Hằng ngày', 'tuan': 'Hằng tuần', 'tay': 'Chạy tay', 'hoi-dap': 'Hỏi đáp' };
-const STEP = { 'tong': 'Tổng hợp', 'test': 'Thử kết nối', 'review': 'Phản biện' };
+const STEP = { 'tong': 'Tổng hợp', 'ai': 'Bước AI', 'test': 'Thử kết nối', 'review': 'Phản biện' };
 const AUDIENCE = { 'lanh-dao': 'Lãnh đạo', 'quan-tri': 'Quản trị' };
 
 let st = { d: null, polling: false };
@@ -38,17 +38,21 @@ function settingsUrl(d) {
 }
 const yesNo = (on, yes = 'có', no = 'chưa có') =>
     `<span class="bc-badge ${on ? 'bc-badge-success' : 'bc-badge-warning'}">${on ? yes : no}</span>`;
+/** Khoá: có · chưa có · khai sai dạng (dán lẫn dấu cách / xuống dòng — máy chủ coi như chưa có). */
+const keyState = (d, p) => (d.keys_bad?.[p]
+    ? '<span class="bc-badge bc-badge-danger" title="Khoá lẫn dấu cách hoặc xuống dòng — dán lại vào site_config">khai sai dạng</span>'
+    : yesNo(d.keys?.[p]));
 
 // ─── Trạng thái + chi phí ───────────────────────────────────────────────────
 function statusHtml(d) {
     const m = d.models || {};
     return `<div class="bc-ai-kv">
-        <div><span>Khoá Claude</span><b id="ai-key-claude">${yesNo(d.keys?.claude)}</b></div>
+        <div><span>Khoá Claude</span><b id="ai-key-claude">${keyState(d, 'claude')}</b></div>
         <div><span>Model hằng ngày</span><b>${escapeHtml(m.claude || '—')}</b></div>
         <div><span>Model bản tin tuần / tháng</span><b>${escapeHtml(m.claude_deep || '—')}</b></div>
         <div><span>AI viết lời</span><b id="ai-enabled">${d.enabled ? '<span class="bc-badge bc-badge-success">Đang bật</span>'
             : '<span class="bc-badge bc-badge-muted">Đang tắt — chỉ lời quy tắc</span>'}</b></div>
-        <div><span>Khoá OpenAI</span><b id="ai-key-openai">${yesNo(d.keys?.openai)}</b></div>
+        <div><span>Khoá OpenAI</span><b id="ai-key-openai">${keyState(d, 'openai')}</b></div>
         <div><span>Model OpenAI</span><b>${escapeHtml(m.openai || '—')}</b></div>
     </div>
     <div class="bc-flex bc-gap-2 bc-wrap bc-items-center bc-mt-3">
@@ -116,6 +120,12 @@ function rulesHtml(d) {
 // ─── Lượt chạy ───────────────────────────────────────────────────────────────
 function wrapText(t) { return `<div class="bc-ai-cell">${escapeHtml(t)}</div>`; }
 
+/** Chi phí một lượt: không gọi model (không nhà cung cấp / 0 token) → "—"; có token mà chưa khai giá → cảnh báo. */
+function costCell(r) {
+    if (!r.provider || (!Number(r.tokens_in) && !Number(r.tokens_out))) return '<span class="bc-muted" data-cost="none">—</span>';
+    return Number(r.cost_known) ? escapeHtml(usd(r.cost_usd, 4)) : '<span class="bc-txt-warning" data-cost="unpriced">chưa khai giá</span>';
+}
+
 function runsHtml(d) {
     return dataTable({ rows: d.runs || [], pageSize: 20, emptyMessage: 'Chưa có lượt chạy nào', columns: [
         { key: 'started', label: 'Lúc', align: 'left', sortable: false, render: (r) => escapeHtml(fmtDT(r.started)) },
@@ -131,7 +141,7 @@ function runsHtml(d) {
             render: (r) => `${fmtNum(r.signals)} / ${fmtNum(r.insights_ai)} / ${fmtNum(r.rejected)}` },
         { key: 'tokens_in', label: 'Token vào / ra', sortable: false, render: (r) => `${fmtNum(r.tokens_in)} / ${fmtNum(r.tokens_out)}` },
         { key: 'cost_usd', label: 'Chi phí', sortable: false,
-            render: (r) => (Number(r.cost_known) ? escapeHtml(usd(r.cost_usd, 4)) : '<span class="bc-txt-warning">chưa khai giá</span>') },
+            render: costCell },
         { key: 'error', label: 'Lỗi', align: 'left', sortable: false, render: (r) => (r.error ? wrapText(r.error) : '') },
     ] });
 }

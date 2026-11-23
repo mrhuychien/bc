@@ -138,12 +138,64 @@ c("lời thật không chứa tên lái xe / khách / SĐT / ghi chú", not any(
 # Tháng 9: 1 lái xe → cước ẩn tiền (an True); test_vc đã khẳng định payload an
 p9 = {"van-chuyen": {"overview": ai_testlib.goi("vc.get_overview", thang="2026-09")}}
 eq("tháng 9 thật: cước ở chế độ ẩn tiền", p9["van-chuyen"]["overview"]["cuoc"]["an"], True)
+r9 = chay(copy.deepcopy(p9), only=("vc.cuoc_canh_bao",))
+eq("tháng 9 thật, KHÔNG có tháng trước, 0 cảnh báo → không chạy (D13: tránh đóng nhầm)", (r9.not_run, r9.ran),
+	({"vc.cuoc_canh_bao": "khong-chay:thieu-thang-truoc"}, set()))
+p9["van-chuyen"]["overview_truoc"] = ai_testlib.goi("vc.get_overview", thang="2026-08")
 r9 = chay(p9, only=("vc.cuoc_canh_bao",))
-eq("tháng 9 thật: chạy được, không lỗi", (r9.not_run, sorted(r9.ran)), ({}, ["vc.cuoc_canh_bao"]))
+eq("tháng 9 thật + tháng 8 thật: chạy được, không lỗi, không báo", (r9.not_run, sorted(r9.ran), r9.signals),
+	({}, ["vc.cuoc_canh_bao"], []))
+
+# D13 (N7): tháng 10 + tháng 9 thật (tháng 9 ẩn tiền) → vẫn 3 khoá; tiền chuyến huỷ KHÔNG nêu vì tháng 9 `an`.
+p10 = {"van-chuyen": {"overview": ai_testlib.goi("vc.get_overview"),
+	"overview_truoc": ai_testlib.goi("vc.get_overview", thang="2026-09")}}
+r10 = chay(p10, only=("vc.cuoc_canh_bao",))
+s10 = {s.key: s for s in r10.signals}
+eq("D13: tháng 10 + tháng 9 thật → 3 khoá như cũ", sorted(s10), ["vc.cuoc_canh_bao:sua_tay",
+	"vc.cuoc_canh_bao:tra_bat_thuong", "vc.cuoc_canh_bao:tra_chuyen_huy"])
+eq("D13: tháng trước ẩn tiền → lời chuyến huỷ không nêu tiền, tháng 9 góp 0 → không nói tháng trước",
+	loi(s10["vc.cuoc_canh_bao:tra_chuyen_huy"], p10), "1 chuyến đã huỷ nhưng tiền cước vẫn đã chi | Tiền đã chi cho "
+	"chuyến không chạy, kế toán cần thu hồi hoặc huỷ phiếu chi.")
+# Ngày 1/11: tháng này chưa có chuyến; các chứng từ tháng 10 vẫn sai y nguyên → 2 cảnh báo trạng thái VẪN MỞ.
+_hom_nay = frappe.utils.FAKE_TODAY
+frappe.utils.FAKE_TODAY = _hom_nay.replace(month=11, day=1)
+try:
+	p11 = {"van-chuyen": {"overview": ai_testlib.goi("vc.get_overview"),
+		"overview_truoc": ai_testlib.goi("vc.get_overview", thang="2026-10")}}
+finally:
+	frappe.utils.FAKE_TODAY = _hom_nay
+eq("1/11 thật: tháng 11 chưa có cảnh báo nào", [p11["van-chuyen"]["overview"]["meta"]["thang"]] + [
+	p11["van-chuyen"]["overview"]["cuoc"][k] for k in ("tra_bat_thuong", "tra_chuyen_huy", "sua_tay")],
+	["2026-11", 0, 0, 0])
+r11 = chay(p11, only=("vc.cuoc_canh_bao",))
+s11 = {s.key: s for s in r11.signals}
+eq("D13: 1/11 → chuyến trả cước bất thường và chuyến huỷ đã chi VẪN báo; sửa tay theo tháng thì hết",
+	(r11.not_run, sorted(s11)), ({}, ["vc.cuoc_canh_bao:tra_bat_thuong", "vc.cuoc_canh_bao:tra_chuyen_huy"]))
+eq("D13: 1/11 → lời nói tháng này và tháng trước, nêu tiền 777đ (không tháng nào ẩn tiền)",
+	[loi(s11[k], p11) for k in sorted(s11)], [
+	"1 chuyến ghi đã trả cước mà phiếu chi chưa duyệt | Tính cả tháng này và tháng trước, phiếu chi chưa duyệt hoặc "
+	"đã huỷ thì sổ sách không khớp tiền đã trả, kế toán cần kiểm lại.",
+	"1 chuyến đã huỷ nhưng tiền cước vẫn đã chi | Tính cả tháng này và tháng trước, tiền cước đã chi cho các chuyến "
+	"này là 777 đ, kế toán cần thu hồi hoặc huỷ phiếu chi."])
+_p = copy.deepcopy(p11)
+del _p["van-chuyen"]["overview_truoc"]
+r11b = chay(_p, only=("vc.cuoc_canh_bao",))
+eq("D13: 1/11 mà thiếu tháng trước → không chạy (tín hiệu cũ giữ nguyên), không đóng", (r11b.not_run, r11b.ran,
+	r11b.signals), ({"vc.cuoc_canh_bao": "khong-chay:thieu-thang-truoc"}, set(), []))
 
 
 # ═══ Pack dựng tay ═══════════════════════════════════════════════════════════
-def vp(qua_n=0, chua_xep=0, mot_phan=0, ld=None, mo_qua_n=0, cuoc=None, can=None):
+def vp(qua_n=0, chua_xep=0, mot_phan=0, ld=None, mo_qua_n=0, cuoc=None, can=None, truoc=None):
+	"""truoc: cuoc của tháng trước (overview_truoc) ghi đè lên mặc định 0; "XOA" → không có khối tháng trước."""
+	pk = _vp(qua_n, chua_xep, mot_phan, ld, mo_qua_n, cuoc, can)
+	if truoc != "XOA":
+		pk["van-chuyen"]["overview_truoc"] = {"available": True, "meta": {"thang": "2026-09"}, "cuoc": {"available": True,
+			"an": False, "so_chuyen": 20, "so_lai_xe": 6, "tra_bat_thuong": 0, "tra_chuyen_huy": 0, "tra_chuyen_huy_tien": 0.0,
+			"sua_tay": 0, **(truoc or {})}}
+	return pk
+
+
+def _vp(qua_n, chua_xep, mot_phan, ld, mo_qua_n, cuoc, can):
 	return {"van-chuyen": {"overview": {"available": True, "meta": {"thang": "2026-10"},
 		"giao": {"available": True, "total": 50, "cho_qua_han": {"so_ngay": 3, "tu_ngay": 180, "qua_n": qua_n,
 			"rows": [{"hinh_thuc": "Nhất Tín", "cho": qua_n, "qua_n": qua_n}] if qua_n else []},
@@ -216,8 +268,9 @@ print("\nE. vc.cuoc_canh_bao (mỗi cảnh báo > 0 một khoá; ẩn tiền khi
 K = "vc.cuoc_canh_bao"
 run, sig, pk = mot(vp(cuoc={"tra_bat_thuong": 2, "tra_chuyen_huy": 1, "tra_chuyen_huy_tien": 500_000, "sua_tay": 4}), K)
 eq("3 khoá ổn định theo tên trường", sorted(sig), [f"{K}:sua_tay", f"{K}:tra_bat_thuong", f"{K}:tra_chuyen_huy"])
-eq("đủ lái xe: chuyến huỷ nêu tiền", [p for p, _k in registry.placeholders(sig[f"{K}:tra_chuyen_huy"].detail)],
-	[f"{CUOC}.tra_chuyen_huy_tien"])
+eq("đủ lái xe: chuyến huỷ nêu tiền (số quy tắc tính = tháng này + tháng trước 0)",
+	[(k, registry.resolve(pk, p)) for p, k in registry.placeholders(sig[f"{K}:tra_chuyen_huy"].detail)],
+	[("tien", 500_000)])
 run, sig, pk = mot(vp(cuoc={"an": True, "tra_chuyen_huy": 1, "tra_chuyen_huy_tien": None, "tong": None}), K)
 eq("an True: vẫn báo số chuyến, KHÔNG trỏ số tiền nào", (sorted(sig), [p for s in sig.values()
 	for p, k in registry.placeholders(s.title + s.detail) if k == "tien"]), ([f"{K}:tra_chuyen_huy"], []))
@@ -236,6 +289,40 @@ eq("ghi đè vàng 3: sửa tay 3 không, 4 có", (muc(vp(cuoc={"sua_tay": 3}), 
 	muc(vp(cuoc={"sua_tay": 4}), K, {"vang": 3})), (None, [f"{K}:sua_tay"]))
 tat(K, vp(cuoc={"sua_tay": 2}))
 khong_chay(K, CUOC, lambda: vp(cuoc={"sua_tay": 2}))
+# D13: cộng tháng trước cho 2 cảnh báo trạng thái chứng từ; sửa tay vẫn theo tháng.
+run, sig, pk = mot(vp(cuoc={"tra_bat_thuong": 1, "sua_tay": 0}, truoc={"tra_bat_thuong": 2, "tra_chuyen_huy": 3,
+	"tra_chuyen_huy_tien": 300_000, "sua_tay": 9}), K)
+eq("D13: tháng trước cộng vào: bất thường 1 + 2, chuyến huỷ 0 + 3 (tiền 0 + 300 nghìn); sửa tay tháng trước KHÔNG cộng",
+	{k: dict(v.tinh) for k, v in sig.items()}, {f"{K}:tra_bat_thuong": {"so": 3},
+	f"{K}:tra_chuyen_huy": {"so": 3, "tien": 300_000.0}})
+eq("D13: lời nói cả tháng này và tháng trước", sorted(loi(v, pk).split(" | ")[1][:40].strip() for v in sig.values()),
+	["Tính cả tháng này và tháng trước, phiếu", "Tính cả tháng này và tháng trước, tiền c"])
+eq("D13: không path nào trỏ khối tháng trước (khối đó không gửi mô hình)", sorted({p for v in sig.values()
+	for p in v.paths + [q for q, _k in registry.placeholders(v.title + v.detail)] if "overview_truoc" in p}), [])
+run, sig, pk = mot(vp(cuoc={"tra_chuyen_huy": 1, "tra_chuyen_huy_tien": 500}, truoc={"an": True, "tra_chuyen_huy": 0,
+	"tra_chuyen_huy_tien": None}), K)
+eq("D13: tháng trước ẩn tiền → không nêu tiền dù tháng này đủ lái xe", [k for v in sig.values()
+	for _p, k in registry.placeholders(v.title + v.detail)], ["so"])
+run, sig, pk = mot(vp(cuoc={"tra_chuyen_huy": 1, "tra_chuyen_huy_tien": 500}, truoc={"tra_chuyen_huy": 0}), K)
+eq("D13: tháng trước góp 0 → lời như cũ, tiền tháng này", (loi(sig[f"{K}:tra_chuyen_huy"], pk)),
+	"1 chuyến đã huỷ nhưng tiền cước vẫn đã chi | Tiền cước đã chi cho các chuyến này là 500 đ, kế toán cần thu hồi "
+	"hoặc huỷ phiếu chi.")
+for nhan, hong in (("thiếu", "XOA"), ("_error", {"_error": True}), ("available False", {"available": False}),
+		("cuoc _error", {"available": True, "cuoc": {"_error": True}})):
+	def _pk(cuoc, hong=hong):
+		p = vp(cuoc=cuoc, truoc="XOA")
+		if hong != "XOA":
+			p["van-chuyen"]["overview_truoc"] = copy.deepcopy(hong)
+		return p
+	r_a = chay(_pk({"tra_bat_thuong": 1, "tra_chuyen_huy": 2, "sua_tay": 1}), only=(K,))
+	r_b = chay(_pk({"tra_bat_thuong": 1, "tra_chuyen_huy": 0, "sua_tay": 1}), only=(K,))
+	eq(f"D13: tháng trước {nhan} → chạy trên tháng này khi cả 2 cảnh báo đều báo; có cái 0 → không chạy",
+		(sorted(s.key for s in r_a.signals), r_a.not_run, r_b.not_run, r_b.signals),
+		([f"{K}:sua_tay", f"{K}:tra_bat_thuong", f"{K}:tra_chuyen_huy"], {}, {K: "khong-chay:thieu-thang-truoc"}, []))
+eq("D13: tháng trước hỏng, tháng này đủ báo → lời không nói tháng trước", [loi(s, pk2).split(" | ")[1][:20]
+	for pk2 in [vp(cuoc={"tra_bat_thuong": 1, "tra_chuyen_huy": 2}, truoc="XOA")]
+	for s in chay(pk2, only=(K,)).signals], ["Phiếu chi chưa duyệt", "Tiền cước đã chi cho"])
+eq("D13: overview_truoc KHÔNG nằm trong sources", registry.RULES[K].sources, (CUOC,))
 
 
 print("\nF. vc.xe_qua_han (quá hạn đỏ / sắp đến vàng, gộp 1)")
