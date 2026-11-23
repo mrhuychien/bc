@@ -1,0 +1,975 @@
+"""Trợ lý AI — bc.ai.pipeline.run_daily ĐẦU-CUỐI trên bảng thật (đặc tả §2, §5, §9; hợp đồng §1 mục 9–12).
+
+Mọi module THẬT: collect (bc.api.* thật trên seed gộp seed_ui2: SX + công nợ + ATTP + vận chuyển + nhân sự + bán
+hàng), registry + mọi quy tắc + detector hệ thống, store, render, redact, budget, prompt, jobs. Chỉ thay CỬA MẠNG:
+bc.ai.llm.call (has_key, LLMError, clean, run_status vẫn thật; khoá giả đặc biệt trong frappe.conf). Socket ra
+ngoài (AF_INET / AF_INET6, DNS) bị chặn cả bộ thử: lỡ ra mạng là nổ.
+
+Giả lập sát Frappe v16 thật hơn bộ giả chung (chỉ trong file này):
+- GIAO DỊCH THẬT: kết nối MariaDB tắt autocommit; frappe.db.commit / rollback = COMMIT / ROLLBACK thật (bộ giả chung
+  autocommit nên rollback không làm gì — lỗi "dòng tổng mất theo rollback" không bao giờ lộ).
+- frappe.get_traceback như v16 (traceback.format_exception; with_context kèm biến cục bộ như developer_mode) và
+  frappe.log_error như v16 (message rỗng → tự lấy get_traceback(with_context=True)) — để soát lộ khoá / đề bài.
+
+Số kỳ vọng TÍNH TAY từ seed (test_cn: phải thu 220 tr, quá hạn 120 tr, ứng trước 10 tr; test_vc: 28 đơn chờ quá 3
+ngày; …) — phép tính ghi trong comment. Hôm nay giả 27/10/2026 10:30 (đổi ở phần vòng đời).
+
+Chạy: BC_TEST_DB=bc_test_ai_pipeline python3 -B test_ai_pipeline.py
+"""
+import ast
+import datetime
+import json
+import os
+import re
+import socket
+import sys
+import tempfile
+import traceback as _tb
+
+from seed import Check, child, insert, single
+from paths import BC_ROOT
+
+import frappe  # noqa: E402  (giả)
+
+c = Check()
+D = datetime.datetime
+INSIGHT, RUN = "BC AI Insight", "BC AI Run"
+KEY = "sk-ant-api03-KHOAGIA-pipeline-7Qz9XwV2mN"      # khoá giả đặc biệt
+GIA = {"model": "claude-sonnet-5-5", "price_in": 3, "price_out": 15}   # USD / 1 triệu token
+
+
+def eq(label, got, want):
+	c(label, got == want, f"\n      được: {got!r}\n      cần : {want!r}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("A. AST — luật §9 trên toàn cây bc/ai")
+AI_DIR = os.path.join(BC_ROOT, "bc", "ai")
+FILES = sorted(os.path.join(d, f) for d, _s, fs in os.walk(AI_DIR) if "__pycache__" not in d for f in fs
+	if f.endswith(".py"))
+
+
+def rel(p):
+	return os.path.relpath(p, os.path.join(BC_ROOT, "bc", "ai")).replace(os.sep, "/")
+
+
+def imports_of(tree):
+	out = []
+	for n in ast.walk(tree):
+		if isinstance(n, ast.Import):
+			out += [a.name for a in n.names]
+		elif isinstance(n, ast.ImportFrom):
+			out.append("." * n.level + (n.module or ""))
+	return out
+
+
+def strings_of(node):
+	"""Mọi hằng chuỗi (kể cả phần tĩnh của f-string) trong node."""
+	return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+TREES = {rel(p): ast.parse(open(p, encoding="utf-8").read()) for p in FILES}
+c("thấy đủ các module chính của bc/ai", {"collect.py", "pipeline.py", "llm/__init__.py", "llm/anthropic.py",
+	"rules/cn.py", "detectors/he_thong.py"} <= set(TREES), sorted(TREES))
+
+# 1. collect.py chỉ import frappe, bc.api.*, bc.ai (nếu có), thư viện chuẩn.
+bad = [m for m in imports_of(TREES["collect.py"]) if m.startswith(".") or not (m.split(".")[0] == "frappe"
+	or m == "bc.api" or m.startswith("bc.api.") or m == "bc.ai" or m.startswith("bc.ai.")
+	or m.split(".")[0] in sys.stdlib_module_names)]
+c("collect.py: import chỉ frappe / bc.api.* / bc.ai / thư viện chuẩn", not bad, bad)
+
+# 2. Chỉ bc/ai/llm/* import requests, đọc bc_ai_*_key, đọc frappe.conf.
+NGOAI_LLM = {k: t for k, t in TREES.items() if not k.startswith("llm/")}
+lo_req = [k for k, t in NGOAI_LLM.items() if any(m.split(".")[0] == "requests" for m in imports_of(t))]
+c("ngoài llm/: không import requests", not lo_req, lo_req)
+lo_khoa = [k for k, t in NGOAI_LLM.items() if any(re.search(r"bc_ai_\w*key", s) for s in strings_of(t))]
+c("ngoài llm/: không chuỗi bc_ai_anthropic_key / bc_ai_openai_key", not lo_khoa, lo_khoa)
+lo_conf = [k for k, t in NGOAI_LLM.items() for n in ast.walk(t) if isinstance(n, ast.Attribute) and n.attr == "conf"
+	and isinstance(n.value, ast.Name) and n.value.id == "frappe"]
+c("ngoài llm/: không đọc frappe.conf", not lo_conf, lo_conf)
+c("llm/ có đọc khoá (bc_ai_anthropic_key) — luật trên không rỗng nghĩa", any("bc_ai_anthropic_key" in strings_of(t)
+	for k, t in TREES.items() if k.startswith("llm/")))
+
+# 3. rules/*: không frappe.db / get_all / get_list / SQL.
+SQL_RX = re.compile(r"\b(select|insert|update|delete)\b.*\b(from|into|set)\b|`tab", re.I | re.S)
+lo_rule = []
+for k, t in TREES.items():
+	if not k.startswith("rules/"):
+		continue
+	for n in ast.walk(t):
+		if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "frappe" \
+				and n.attr in ("db", "get_all", "get_list", "get_doc", "get_value", "qb"):
+			lo_rule.append((k, n.attr))
+		if isinstance(n, ast.Attribute) and n.attr in ("sql", "sql_list"):
+			lo_rule.append((k, n.attr))
+	lo_rule += [(k, s[:40]) for s in strings_of(t) if SQL_RX.search(s)]
+c("rules/*: không frappe.db / get_all / SQL", not lo_rule, lo_rule)
+c("rules/* có đủ 6 module", {f"rules/{m}.py" for m in ("kd", "kho", "cn", "vc", "ns", "attp")} <= set(TREES))
+
+# 4. detectors/*: chuỗi SQL chỉ SELECT.
+GHI = re.compile(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|REPLACE|CREATE|GRANT)\b", re.I)
+sql_det, lo_det = [], []
+for k, t in TREES.items():
+	if not k.startswith("detectors/"):
+		continue
+	for n in ast.walk(t):
+		if isinstance(n, ast.Call) and getattr(n.func, "attr", "") in ("sql", "sql_list") and n.args:
+			s = " ".join(strings_of(n.args[0]))
+			sql_det.append(s)
+			if GHI.search(s):
+				lo_det.append((k, s[:60]))
+c("detectors/*: có câu SQL để soát (luật không rỗng nghĩa)", len(sql_det) >= 5, len(sql_det))
+c("detectors/*: SQL không INSERT / UPDATE / DELETE / ALTER / DROP / TRUNCATE", not lo_det, lo_det)
+c("detectors/*: mọi câu SQL bắt đầu bằng SELECT", all(s.strip().upper().startswith("SELECT") for s in sql_det),
+	[s[:40] for s in sql_det if not s.strip().upper().startswith("SELECT")])
+
+# 5. Ngoài llm/: không socket / urllib / http / subprocess / requests.
+CAM = ("socket", "urllib", "http", "subprocess", "requests", "httpx", "aiohttp", "ssl", "ftplib", "smtplib")
+lo_net = [(k, m) for k, t in NGOAI_LLM.items() for m in imports_of(t) if m.split(".")[0] in CAM]
+lo_net += [(k, ast.unparse(n)[:50]) for k, t in NGOAI_LLM.items() for n in ast.walk(t) if isinstance(n, ast.Call)
+	and (getattr(n.func, "attr", "") or getattr(n.func, "id", "")) in ("__import__", "import_module")
+	and n.args and isinstance(n.args[0], ast.Constant) and str(n.args[0].value).split(".")[0] in CAM]
+c("ngoài llm/: không mở socket / urllib / http / subprocess", not lo_net, lo_net)
+
+# 6. pyproject.toml: dependencies vẫn rỗng; mọi package có __init__.py.
+pp = open(os.path.join(BC_ROOT, "pyproject.toml"), encoding="utf-8").read()
+m = re.search(r"^dependencies\s*=\s*\[(.*?)\]", pp, re.M | re.S)
+c("pyproject.toml: dependencies = []", bool(m) and m.group(1).strip() == "", m and m.group(0))
+pkg = [d for d, _s, fs in os.walk(AI_DIR) if "__pycache__" not in d and any(f.endswith(".py") for f in fs)]
+thieu = [rel(d) for d in pkg if not os.path.isfile(os.path.join(d, "__init__.py"))]
+c("mọi thư mục package dưới bc/ai có __init__.py", len(pkg) >= 4 and not thieu, (pkg, thieu))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("B. Dựng: seed gộp, giao dịch thật, chặn mạng, khoá giả, mô hình giả")
+import seed_ui2  # noqa: E402,F401  (reset + seed SX, công nợ, ATTP, vận chuyển, nhân sự, bán hàng)
+
+frappe.session.user = "viewer@example.com"
+SITE = tempfile.mkdtemp(prefix="bc_ai_pl_site_")
+os.makedirs(os.path.join(SITE, "private", "backups"))      # thư mục backup RỖNG → ht.backup_cu đỏ (chưa có bản)
+frappe.FAKE_SITE_PATH = SITE
+# Tên hiển thị khác mã: NPP-A = "Đại lý Minh Phát" (cong-no.receivables.top_overdue[0].customer hiện tên này).
+frappe.db.sql("UPDATE `tabCustomer` SET customer_name = 'Đại lý Minh Phát' WHERE name = 'NPP-A'")
+# Khách / NCC thêm: KHÔNG có trong số liệu — vẫn phải không lọt (soát mọi Customer / Supplier của DB).
+insert("Customer", name="KH-XUAN-HOA", customer_name="Siêu thị Xuân Hoa")
+insert("Supplier", name="NCC-HUONG-QUE", supplier_name="Công ty Hương Quê")
+single("BC Settings", ai_enabled=0, ai_mask_parties=1, ai_cap_claude_usd=90)
+child("BC Settings", "BC Settings", "BC AI Model Price", "ai_prices", [GIA])
+# ht.dia_day đọc dung lượng ổ THẬT của máy chạy thử → tắt (đường ghi đè thật của BC Settings) cho kết quả ổn định.
+child("BC Settings", "BC Settings", "BC AI Rule", "ai_rules", [{"rule_key": "ht.dia_day", "disabled": 1}])
+
+# Giao dịch thật.
+frappe.db._cur()
+frappe.db.conn.autocommit(False)
+GD = {"commit": 0, "rollback": 0}
+
+
+def _commit(*a, **k):
+	GD["commit"] += 1
+	frappe.db.conn.commit()
+
+
+def _rollback(*a, **k):
+	GD["rollback"] += 1
+	frappe.db.conn.rollback()
+
+
+frappe.db.commit, frappe.db.rollback = _commit, _rollback
+_commit()
+
+
+def luu():
+	frappe.db.conn.commit()
+
+
+# get_traceback / log_error như v16.
+def _get_tb(with_context=False, *a, **k):
+	et, ev, tb = sys.exc_info()
+	if et is None:
+		return ""
+	s = "".join(_tb.format_exception(et, ev, tb))
+	if with_context:          # developer_mode: kèm biến cục bộ từng khung
+		t = tb
+		while t is not None:
+			try:
+				s += "\n" + repr(dict(t.tb_frame.f_locals))
+			except Exception:  # noqa: BLE001
+				pass
+			t = t.tb_next
+	return s
+
+
+LOG = []
+
+
+def _log_error(title=None, message=None, *a, **k):
+	rec = [title, message, *a, *k.values()]
+	if not message:              # v16 utils/error.py: message rỗng → traceback = get_traceback(with_context=True)
+		rec.append(_get_tb(with_context=True))
+	LOG.append(rec)
+
+
+frappe.get_traceback, frappe.log_error = _get_tb, _log_error
+
+# Chặn mạng: mọi kết nối AF_INET / AF_INET6 và phân giải DNS (MariaDB qua unix socket vẫn chạy).
+MANG = []
+
+
+class MangBiChan(RuntimeError):
+	pass
+
+
+_connect, _connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+
+def _chan(fn):
+	def g(self, addr, *a, **k):
+		if self.family in (socket.AF_INET, socket.AF_INET6):
+			MANG.append(addr)
+			raise MangBiChan(f"bộ thử chặn mạng: {addr}")
+		return fn(self, addr, *a, **k)
+	return g
+
+
+def _dns(*a, **k):
+	MANG.append(a[:2])
+	raise MangBiChan(f"bộ thử chặn DNS: {a[:2]}")
+
+
+socket.socket.connect, socket.socket.connect_ex = _chan(_connect), _chan(_connect_ex)
+socket.getaddrinfo = socket.create_connection = _dns
+
+
+def nem(fn, loi=Exception):
+	try:
+		fn()
+	except loi:
+		return True
+	except BaseException:  # noqa: BLE001
+		return False
+	return False
+
+
+import urllib.request  # noqa: E402
+
+c("chặn mạng: urlopen tới api.anthropic.com nổ", nem(lambda: urllib.request.urlopen(
+	"https://api.anthropic.com/v1/messages", timeout=2), MangBiChan))
+_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+c("chặn mạng: socket AF_INET connect nổ", nem(lambda: _s.connect(("127.0.0.1", 9)), MangBiChan))
+_s.close()
+c("chặn mạng: MariaDB (unix socket) vẫn chạy", frappe.db.sql("SELECT 1")[0][0] == 1)
+MANG.clear()
+
+frappe.conf["bc_ai_anthropic_key"] = KEY
+
+from bc.ai import llm, pipeline, registry, store  # noqa: E402
+from bc.ai.jobs import LOCK_KEY  # noqa: E402
+
+CALL_THAT = llm.call
+GOI = []          # mọi lời gọi mô hình giả: {nhom, system, user, obj, model, timeout}
+KICH_BAN = {}     # nhóm → hàm(obj) → kết quả | ném
+KQ = []           # mọi giá trị run_daily trả
+
+
+def fake_call(provider, model, system, user, schema_name, schema, max_tokens=16000, timeout=300):
+	obj = json.loads(user)
+	GOI.append({"nhom": obj["nhom"], "system": system, "user": user, "obj": obj, "model": model,
+		"timeout": timeout, "provider": provider, "schema_name": schema_name})
+	f = KICH_BAN.get(obj["nhom"])
+	if f is None:
+		return {"data": {"insights": []}, "tokens_in": 1000, "tokens_out": 100, "model": model}
+	return f(obj)
+
+
+llm.call = fake_call
+c("chỉ thay llm.call: has_key / LLMError / clean / run_status vẫn là bản thật",
+	llm.has_key("claude") and llm.run_status("credit") == "het-credit" and llm.LLMError.__module__ == "bc.ai.llm"
+	and KEY not in llm.clean("x" + KEY) and CALL_THAT is not fake_call)
+
+
+def tl(insights, tin=1000, tout=100, model=None):
+	"""Một câu trả lời của mô hình giả (1000 token vào, 100 ra mặc định)."""
+	return lambda obj: {"data": {"insights": insights(obj) if callable(insights) else insights}, "tokens_in": tin,
+		"tokens_out": tout, "model": model or "claude-sonnet-5-5"}
+
+
+def S(obj, rule, co=None):
+	"""id S… của tín hiệu có rule (và loi_quy_tac chứa `co`) trong đề bài."""
+	for t in obj["tin_hieu"]:
+		if t["rule"] == rule and (co is None or co in t["loi_quy_tac"]):
+			return t["id"]
+	raise KeyError((rule, co))
+
+
+def ins(signal, title, body, advice=(), severity="vang", priority=3):
+	return {"signal": signal, "severity": severity, "priority": priority, "title": title, "body": body,
+		"advice": list(advice)}
+
+
+def chay(run_type=None, **kich_ban):
+	GOI.clear()
+	KICH_BAN.clear()
+	KICH_BAN.update(kich_ban)
+	out = pipeline.run_daily(run_type) if run_type else pipeline.run_daily()
+	KQ.append(out)
+	return out
+
+
+def cai(**kw):
+	single("BC Settings", **kw)
+	luu()
+
+
+def bo_cai(*fields):
+	for f in fields:
+		frappe.db.sql("DELETE FROM `tabSingles` WHERE doctype = 'BC Settings' AND field = %s", (f,))
+	luu()
+
+
+def R(key):
+	r = frappe.db.sql(f"SELECT * FROM `tab{INSIGHT}` WHERE BINARY signal_key = %s", (key,), as_dict=True)
+	return r[0] if r else None
+
+
+def rows_of(run):
+	return frappe.db.sql(f"SELECT * FROM `tab{RUN}` WHERE run_id = %s ORDER BY name", (run,), as_dict=True)
+
+
+def tong(run):
+	return frappe.db.sql(f"SELECT * FROM `tab{RUN}` WHERE name = %s", (run,), as_dict=True)[0]
+
+
+def con(run):
+	return [r for r in rows_of(run) if r.step != "tong"]
+
+
+def xoa_run():
+	frappe.db.sql(f"DELETE FROM `tab{RUN}`")
+	luu()
+
+
+def free_rows(status=None):
+	q = f"SELECT * FROM `tab{INSIGHT}` WHERE rule = 'ai'" + (" AND status = %s" if status else "")
+	return frappe.db.sql(q, (status,) if status else None, as_dict=True)
+
+
+def tao_free(sections, key, path, now=D(2026, 10, 26, 5, 30)):
+	"""Nhận định tự do của một lượt TRƯỚC (như lượt gọi hôm qua đã nêu)."""
+	sec = registry.section_of(path)
+	store.sync_ai_free(sections, [{"key": key, "section": sec, "route": f"#/{sec}", "severity": "vang", "priority": 2,
+		"title": "Lời tự do cũ", "body": "Số cũ của hôm qua", "advice": [], "paths": [path], "sections_used": [sec]}],
+		now)
+	luu()
+
+
+# Tín hiệu tính tay trên seed (test_cn / test_vc / test_ns / test_attp + thư mục backup rỗng).
+KEYS = {"cn.qua_han_ty_le", "cn.vuot_han_muc", "cn.dso_cao", "cn.phai_tra_qua_han", "vc.cho_qua_han",
+	"vc.chua_xep_chuyen", "vc.su_co_mo", "vc.cuoc_canh_bao:tra_bat_thuong", "vc.cuoc_canh_bao:tra_chuyen_huy",
+	"vc.cuoc_canh_bao:sua_tay", "vc.xe_qua_han", "ns.bhxh_rui_ro", "ns.giay_to:hd", "ns.giay_to:ksk",
+	"ns.giay_to:attp", "ns.viec_ton:luong_trung", "attp.den_do:vong_kiem", "attp.den_do:su_co",
+	"attp.den_do:khac_phuc", "attp.den_do:khieu_nai", "attp.den_do:xuat_xuong", "attp.den_do:truy_xuat",
+	"ht.backup_cu"}
+NHOM = list(registry.GROUPS)      # thứ tự gọi
+CO_TIN = {"van-chuyen", "tai-chinh", "nhan-su", "attp", "he-thong"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("C. AI tắt (ai_enabled = 0): không gọi mô hình, bước 1–4 + 8 vẫn chạy, lời quy tắc")
+tao_free(("cong-no", "phai-tra"), "ai:cong-no.receivables.kpis.net", "cong-no.receivables.kpis.net")
+out = chay()
+run1 = out["run"]
+eq("không một lời gọi mô hình", len(GOI), 0)
+eq("trả: status ok, ai tat", (out["status"], out["ai"]), ("ok", "tat"))
+t = tong(run1)
+eq("dòng tổng: step tong, status ok, run_type ngay, run_id = chính nó", (t.step, t.status, t.run_type, t.run_id),
+	("tong", "ok", "ngay", run1))
+eq("dòng tổng: signals = 23 tín hiệu tính tay", t.signals, len(KEYS))
+cc = con(run1)
+eq("đúng MỘT dòng con: step ai, status tat, provider claude, không token / chi phí",
+	[(r.step, r.status, r.provider, r.tokens_in, r.tokens_out, r.cost_usd) for r in cc], [("ai", "tat", "claude", 0, 0, 0)])
+mo = {r.signal_key for r in frappe.db.sql(f"SELECT signal_key FROM `tab{INSIGHT}` WHERE status = 'mo' AND rule != 'ai'",
+	as_dict=True)}
+eq("tín hiệu mở = đúng 23 khoá tính tay", mo, KEYS)
+a = R("cn.qua_han_ty_le")
+# 120 tr / 220 tr = 54,545…% → "54,5%"; 120.000.000 ≥ 1e8 → "120 triệu"; 220.000.000 → "220 triệu"
+eq("lời quy tắc thay số kiểu VN (54,5% · 120 triệu · 220 triệu)", (a.source, a.title, a.severity),
+	("quy-tac", "Nợ quá hạn chiếm 54,5% tổng phải thu", "do"))
+c("thân: 120 triệu trên 220 triệu", "120 triệu" in a.body and "220 triệu" in a.body, a.body)
+eq("vc.cho_qua_han: 28 đơn chờ giao quá 3 ngày (seed test_vc)", R("vc.cho_qua_han").title, "28 đơn chờ giao quá 3 ngày")
+eq("cn.phai_tra_qua_han: 30.000.000 ≥ 1e6 → '30 triệu'", R("cn.phai_tra_qua_han").title,
+	"30 triệu tiền hàng nhà cung cấp đã quá hạn chưa trả")
+con_ngoac = frappe.db.sql(f"""SELECT signal_key FROM `tab{INSIGHT}` WHERE LOCATE('{{{{', CONCAT(IFNULL(title, ''),
+	IFNULL(body, ''), IFNULL(rule_title, ''))) > 0""")
+eq("không còn '{{' trong title / body / rule_title", con_ngoac, ())
+eq("mọi tín hiệu: source quy-tac", frappe.db.sql(f"SELECT DISTINCT source FROM `tab{INSIGHT}` WHERE rule != 'ai'"),
+	(("quy-tac",),))
+eq("nhận định tự do của lượt trước → dong", R("ai:cong-no.receivables.kpis.net").status, "dong")
+k = json.loads(t.kpis)
+eq("kpis: phải thu 220.000.000, quá hạn 54,5 (bước 8 chạy)", (k.get("cong-no.receivables.kpis.receivable"),
+	k.get("cong-no.receivables.kpis.overdue_pct")), (220000000.0, 54.5))
+c("lock nhả sau lượt chạy", frappe.cache().get_value(LOCK_KEY) is None)
+c("user trả về như cũ sau lượt chạy", frappe.session.user == "viewer@example.com", frappe.session.user)
+eq("rank 1 là tín hiệu đỏ", R(frappe.db.sql(f"SELECT signal_key FROM `tab{INSIGHT}` WHERE `rank` = 1")[0][0]).severity,
+	"do")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("D. Lượt đầy đủ với mô hình giả (run_type tay)")
+xoa_run()
+cai(ai_enabled=1)
+
+
+def tai_chinh(obj):
+	s1 = S(obj, "cn.qua_han_ty_le")
+	return [
+		ins(s1, "Nợ quá hạn {{cong-no.receivables.kpis.overdue_pct|pct}}",
+			"Quá hạn {{cong-no.receivables.kpis.overdue|tien}} trên {{cong-no.receivables.kpis.receivable|tien}}, "
+			"phải trả quá hạn {{phai-tra.payables.ap.due.overdue_total|tien}}.",
+			["Kế toán: thúc thu trong 7 ngày."], severity="vang", priority=9),                 # hạ đỏ → vàng, prio 9
+		ins(s1, "Lời thứ hai", "Bị bỏ vì trùng {{cong-no.receivables.kpis.net|tien}}."),         # trùng S → bỏ
+		ins("S99", "Tín hiệu lạ", "Không có {{cong-no.receivables.kpis.net|tien}}."),            # S lạ → bỏ
+		ins(S(obj, "cn.dso_cao"), "Thu tiền chậm", "Bình quân {{cong-no.receivables.kpis.dso.dso|so}} ngày.",
+			priority=-3),
+		ins(None, "Tổng phải trả", "Tổng phải trả {{phai-tra.payables.ap.total|tien}}.", priority=3),        # F_d
+		ins(None, "Quỹ so với {{phai-tra.payables.ap.total|tien}} phải trả", "Quỹ hiện có "
+			"{{phai-tra.payables.cash.total|tien}}.", priority=4),     # F_c: khoá theo path đầu của THÂN, không của title
+		ins(None, "Số trần", "Khách trả chậm 1.250.000 đ, ròng {{cong-no.receivables.kpis.net|tien}}.", priority=5),
+		ins(None, "Phải thu ròng", "Phải thu ròng {{cong-no.receivables.kpis.net|tien}} sau ứng trước.",
+			priority=5),                                                                                       # F_b
+		ins(None, "Khoản lớn nhất", "Khoản quá hạn lớn nhất {{cong-no.receivables.top_overdue[0].overdue|tien}}.",
+			severity="do", priority=1),                                                                        # F_a
+	]
+
+
+def van_chuyen(obj):
+	return [
+		ins(S(obj, "vc.cho_qua_han"), "Đơn chờ", "Có 1.250.000 đơn chờ {{van-chuyen.overview.giao.total|so}}."),
+		ins(S(obj, "vc.chua_xep_chuyen"), "Chưa xếp", "Chiếm 35% {{van-chuyen.overview.giao.xep.chua_xep|so}} đơn."),
+		ins(S(obj, "vc.su_co_mo"), "Sự cố", "Thiệt hại 2 tỷ, {{van-chuyen.overview.su_co.mo_qua_n|so}} sự cố."),
+		ins(S(obj, "vc.cuoc_canh_bao", "tra_bat_thuong"), "Cước", "Có {{van-chuyen.overview.khong_co|so}} chuyến."),
+		ins(S(obj, "vc.cuoc_canh_bao", "sua_tay"), "Sửa tay",
+			"Hình thức {{van-chuyen.overview.giao.cho_qua_han.rows[0].hinh_thuc|tien}}."),             # sai kiểu
+		ins(S(obj, "vc.cuoc_canh_bao", "tra_chuyen_huy"), "Huỷ", "Nợ {{cong-no.receivables.kpis.overdue|tien}}."),
+		ins(S(obj, "vc.xe_qua_han"), "Xe", "Giao {{van-chuyen.overview.giao.total|so}} đơn, xếp xe trong 7 ngày.",
+			["Vận chuyển: xếp lịch đăng kiểm trong 7 ngày."]),                                         # hợp lệ
+	]
+
+
+def he_thong(obj):
+	return [ins(S(obj, "ht.backup_cu"), "Chưa sao lưu", "Lỗi hệ thống 24 giờ: {{he-thong.error_log.tong|so}}.",
+		["Quản trị: bật sao lưu."], severity="do", priority=5),
+		ins(None, "Tự do hệ thống", "Hàng đợi {{he-thong.hang_doi.cho|so}} việc.", priority=5)]   # nhóm hệ thống: bỏ
+
+
+out = chay("tay", **{"tai-chinh": tl(tai_chinh), "van-chuyen": tl(van_chuyen), "he-thong": tl(he_thong)})
+run2 = out["run"]
+eq("gọi đủ 7 nhóm theo đúng thứ tự (kinh-doanh, kho-sx có số nhưng chưa tín hiệu → vẫn gọi để nêu tự do)",
+	[g["nhom"] for g in GOI], NHOM)
+eq("mọi lời gọi: provider claude, model mặc định claude-sonnet-5-5, schema ghi_nhan_dinh",
+	{(g["provider"], g["model"], g["schema_name"]) for g in GOI}, {("claude", "claude-sonnet-5-5", "ghi_nhan_dinh")})
+c("timeout mỗi lời gọi trong [30, 300]", all(30 <= g["timeout"] <= 300 for g in GOI), [g["timeout"] for g in GOI])
+eq("kinh-doanh / kho-sx: không tín hiệu trong đề bài", [len(g["obj"]["tin_hieu"]) for g in GOI[:2]], [0, 0])
+eq("số tín hiệu gửi mỗi nhóm = số tín hiệu mở của nhóm (vc 7, tc 4, ns 5, attp 6, ht 1)",
+	[len(g["obj"]["tin_hieu"]) for g in GOI[2:]], [7, 4, 5, 6, 1])
+tt = tong(run2)
+eq("run_type tay lưu ở dòng tổng và mọi dòng con", {r.run_type for r in rows_of(run2)}, {"tay"})
+a = R("cn.qua_han_ty_le")
+eq("S1: lời AI, số thật (54,5% · 120 triệu · 220 triệu · 30 triệu)", (a.source, a.title, a.body),
+	("ai", "Nợ quá hạn 54,5%", "Quá hạn 120 triệu trên 220 triệu, phải trả quá hạn 30 triệu."))
+eq("S1: mô hình hạ đỏ → vàng: vẫn đỏ", a.severity, "do")
+eq("S1: priority 9 → kẹp 5", a.priority, 5)
+eq("S1: advice 'trong 7 ngày' được giữ", a.advice, "Kế toán: thúc thu trong 7 ngày.")
+eq("S1: rule_title giữ lời quy tắc", a.rule_title, "Nợ quá hạn chiếm 54,5% tổng phải thu")
+c("S1: paths gồm path của lời AI (phai-tra…overdue_total)", "phai-tra.payables.ap.due.overdue_total"
+	in json.loads(a.paths) and "cong-no.receivables.kpis.overdue_pct" in json.loads(a.paths), a.paths)
+eq("S1: sections_used = cong-no + phai-tra", set(a.sections_used.splitlines()), {"cong-no", "phai-tra"})
+c("S1: text_at = now, needs_check 0", (a.text_at, a.needs_check) == (D(2026, 10, 27, 10, 30), 0), a.text_at)
+c("trùng S: lời thứ hai không thắng", "Lời thứ hai" not in (a.title + a.body))
+eq("S lạ (S99): không tạo / không gắn gì", frappe.db.sql(f"SELECT COUNT(*) FROM `tab{INSIGHT}` WHERE title = "
+	"'Tín hiệu lạ'")[0][0], 0)
+d = R("cn.dso_cao")
+eq("dso: priority −3 → kẹp 0, 244,9 ngày (208 tr / 310 tr × 365)", (d.source, d.priority, d.body),
+	("ai", 0, "Bình quân 244,9 ngày."))
+fr = {r.signal_key: r for r in free_rows("mo")}
+eq("tự do: giữ 3 (đỏ trước, rồi priority cao): F_a, F_b, F_c", set(fr), {
+	"ai:cong-no.receivables.top_overdue.overdue", "ai:cong-no.receivables.kpis.net", "ai:phai-tra.payables.cash.total"})
+fa = fr.get("ai:cong-no.receivables.top_overdue.overdue")
+c("tự do: khoá = 'ai:' + path đầu của thân bỏ chỉ số [0]; mảng cong-no; đỏ; source ai", fa is not None
+	and (fa.section, fa.route, fa.severity, fa.source, fa.audience) == ("cong-no", "#/cong-no", "do", "ai",
+	"lanh-dao") and "{{" not in fa.body and ("triệu" in fa.body or " đ" in fa.body), fa)
+eq("tự do F_b: phải thu ròng 220 − 10 = 210 triệu", fr["ai:cong-no.receivables.kpis.net"].body,
+	"Phải thu ròng 210 triệu sau ứng trước.")
+eq("tự do F_c: mảng phai-tra, route #/phai-tra", (fr["ai:phai-tra.payables.cash.total"].section,
+	fr["ai:phai-tra.payables.cash.total"].route), ("phai-tra", "#/phai-tra"))
+c("tự do F_d (priority 3, thứ 4) bị cắt, không tạo dòng", R("ai:phai-tra.payables.ap.total") is None)
+c("tự do của nhóm he-thong bị bỏ", R("ai:he-thong.hang_doi.cho") is None and not frappe.db.sql(
+	f"SELECT name FROM `tab{INSIGHT}` WHERE rule = 'ai' AND section = 'he-thong'"))
+h = R("ht.backup_cu")
+eq("he-thong: tín hiệu nhận lời AI (0 lỗi 24 giờ)", (h.source, h.body), ("ai", "Lỗi hệ thống 24 giờ: 0."))
+# Lời bị loại: lời quy tắc giữ nguyên, needs_check 1.
+LOAI = {"vc.cho_qua_han": "28 đơn chờ giao quá 3 ngày", "vc.chua_xep_chuyen": "3 đơn tự giao chưa được xếp lên chuyến xe",
+	"vc.su_co_mo": "3 sự cố vận chuyển mở quá 7 ngày chưa xử lý",
+	"vc.cuoc_canh_bao:tra_bat_thuong": "1 chuyến ghi đã trả cước mà phiếu chi chưa duyệt",
+	"vc.cuoc_canh_bao:sua_tay": "1 chuyến có cước sửa tay trong tháng",
+	"vc.cuoc_canh_bao:tra_chuyen_huy": "1 chuyến đã huỷ nhưng tiền cước vẫn đã chi"}
+for k, tieu_de in LOAI.items():
+	r = R(k)
+	eq(f"loại ({k}): needs_check 1, source quy-tac, lời quy tắc", (r.needs_check, r.source, r.title), (1, "quy-tac",
+		tieu_de))
+x = R("vc.xe_qua_han")
+eq("vc.xe_qua_han: 'trong 7 ngày' hợp lệ → nhận", (x.source, x.needs_check, x.advice),
+	("ai", 0, "Vận chuyển: xếp lịch đăng kiểm trong 7 ngày."))
+cc = {r.step: r for r in con(run2)}
+eq("một dòng / nhóm đã gọi, đủ 7, đều ok", {s: r.status for s, r in cc.items()}, {g: "ok" for g in NHOM})
+eq("dòng nhóm: rejected / insights_ai (vc 6/1, tc 1/5, ht 0/1)", [(cc[g].rejected, cc[g].insights_ai) for g in
+	("van-chuyen", "tai-chinh", "he-thong")], [(6, 1), (1, 5), (0, 1)])
+eq("dòng tổng: insights_ai = 1 + 5 + 1 = 7, rejected = 6 + 1 = 7", (tt.status, tt.insights_ai, tt.rejected),
+	("ok", 7, 7))
+eq("trả về khớp dòng tổng", (out["accepted"], out["rejected"], out["ai"], out["signals"]), (7, 7, "ok", 23))
+# 1000 × 3 + 100 × 15 = 4.500 USD / 1e6 = 0,0045 USD / lượt
+eq("chi phí mỗi lượt gọi 0,0045 USD, cost_known 1, token 1000 / 100", {(r.tokens_in, r.tokens_out,
+	round(float(r.cost_usd), 6), r.cost_known) for r in cc.values()}, {(1000, 100, 0.0045, 1)})
+eq("dòng con: provider claude, run_id = dòng tổng", {(r.provider, r.run_id) for r in cc.values()}, {("claude", run2)})
+eq("dòng con: signals = số tín hiệu đã gửi", [cc[g].signals for g in NHOM], [0, 0, 7, 4, 5, 6, 1])
+k = json.loads(tt.kpis)
+PATHS = {p for p, _k, _l in registry.KPIS}
+c("kpis: JSON {path KPI: số}, mọi khoá thuộc registry.KPIS, mọi giá trị là số",
+	k and set(k) <= PATHS and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in k.values()), k)
+# ứng trước 10 tr → ròng 210 tr; 4 khách quá hạn; DSO 244,9; 1 hoá đơn mua quá hạn 30 tr
+eq("kpis: số tính tay", [k.get(p) for p in ("cong-no.receivables.kpis.net", "cong-no.receivables.kpis.overdue_customers",
+	"cong-no.receivables.kpis.dso.dso", "phai-tra.payables.ap.due.overdue_total", "phai-tra.payables.ap.due.overdue_count",
+	"van-chuyen.overview.giao.cho_qua_han.qua_n")], [210000000.0, 4, 244.9, 30000000.0, 1, 28])
+eq("dòng tổng: error trống khi mọi quy tắc chạy được", tt.error, None)
+
+print("D2. Lượt sau (cùng ngày, 15:00): tự do không nêu lại → dong; bo-qua không gửi; dang-xu-ly gửi kèm trạng thái")
+frappe.db.set_value(INSIGHT, R("cn.dso_cao").name, {"status": "bo-qua", "mute_until": None})
+frappe.db.set_value(INSIGHT, R("cn.vuot_han_muc").name, {"status": "dang-xu-ly"})
+luu()
+seen_truoc = R("cn.qua_han_ty_le").seen_count
+frappe.utils.FAKE_NOW_TIME = datetime.time(15, 0)
+out = chay(**{"tai-chinh": tl(lambda o: [ins(None, "Phải thu ròng", "Ròng {{cong-no.receivables.kpis.net|tien}}.",
+	priority=2)])})
+frappe.utils.FAKE_NOW_TIME = datetime.time(10, 30)
+g_tc = next(g for g in GOI if g["nhom"] == "tai-chinh")
+rules_tc = {t["rule"]: t for t in g_tc["obj"]["tin_hieu"]}
+c("bo-qua (cn.dso_cao) không gửi mô hình", "cn.dso_cao" not in rules_tc, list(rules_tc))
+eq("dang-xu-ly (cn.vuot_han_muc) gửi kèm trang_thai dang-xu-ly", rules_tc.get("cn.vuot_han_muc", {}).get("trang_thai"),
+	"dang-xu-ly")
+eq("dang-xu-ly giữ trạng thái", R("cn.vuot_han_muc").status, "dang-xu-ly")
+eq("tự do không nêu lại → dong (F_a, F_c); nêu lại → mo (F_b)", (R("ai:cong-no.receivables.top_overdue.overdue").status,
+	R("ai:phai-tra.payables.cash.total").status, R("ai:cong-no.receivables.kpis.net").status), ("dong", "dong", "mo"))
+eq("F_b: lời mới của lượt này", R("ai:cong-no.receivables.kpis.net").body, "Ròng 210 triệu.")
+eq("lượt sau cùng ngày: seen_count không tăng", R("cn.qua_han_ty_le").seen_count, seen_truoc)
+eq("lượt sau không nhận lời AI cho S1 → về lời quy tắc", (R("cn.qua_han_ty_le").source, R("cn.qua_han_ty_le").title),
+	("quy-tac", "Nợ quá hạn chiếm 54,5% tổng phải thu"))
+eq("so_ngay của tín hiệu mới hôm nay = 0", rules_tc["cn.qua_han_ty_le"]["so_ngay"], 0)
+frappe.db.set_value(INSIGHT, R("cn.dso_cao").name, {"status": "mo"})
+frappe.db.set_value(INSIGHT, R("cn.vuot_han_muc").name, {"status": "mo"})
+luu()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("E. Mã giả: không tên / mã khách, NCC nào trong đề bài; lời lưu có tên thật")
+xoa_run()
+DOI_TAC = [(n, t) for n, t in frappe.db.sql("SELECT name, customer_name FROM `tabCustomer`")] + \
+	[(n, t) for n, t in frappe.db.sql("SELECT name, supplier_name FROM `tabSupplier`")]
+TEN = sorted({x for p in DOI_TAC for x in p if x})
+c("DB có đủ khách / NCC để soát (6 khách, 3 NCC)", len(DOI_TAC) == 9, DOI_TAC)
+# Khách theo name: COOP-1, DL-1, KH-ADV, KH-XUAN-HOA, NPP-A → KH#0005; NCC theo name: "NCC Bao bì" < "NCC Đường"
+# (B < Đ) < "NCC-HUONG-QUE" ("-" > " ") → NCC Đường = NCC#0002.
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"admin_note":
+	"Đã gọi Đại lý Minh Phát và NPP-B hôm qua; NCC Đường đòi tiền."})
+luu()
+# Chứng từ kèm tín hiệu (chỉ quản trị thấy): seed hiện không quy tắc nào kèm chứng từ → bọc run_rules THÊM chứng từ
+# vào tín hiệu cn.qua_han_ty_le cho ca này (luồng còn lại vẫn thật).
+_rr = registry.run_rules
+
+
+def _rr_chung_tu(pack, overrides=None, only=None):
+	out = _rr(pack, overrides, only)
+	for s in out.signals:
+		if s.key == "cn.qua_han_ty_le":
+			s.documents = [{"doctype": "Sales Invoice", "name": "ACC-SINV-BIMAT-00042"}]
+	return out
+
+
+registry.run_rules = _rr_chung_tu
+
+
+def tc_mask(obj):
+	return [ins(S(obj, "cn.qua_han_ty_le"), "Khách {{cong-no.receivables.top_overdue[0].customer|chu}} nợ lâu",
+		"KH#0005 nợ quá hạn nhiều nhất, NCC#0002 chờ thanh toán {{phai-tra.payables.ap.due.overdue_total|tien}}.",
+		["Kinh doanh: làm việc với KH#0005."])]
+
+
+out = chay(**{"tai-chinh": tl(tc_mask)})
+registry.run_rules = _rr
+eq("lượt có mã giả: 7 lời gọi", len(GOI), 7)
+lo = [(g["nhom"], x) for g in GOI for x in TEN if x in g["user"] or x in g["system"]]
+eq("không tên / mã khách, NCC nào (mọi Customer + Supplier của DB) trong user / system", lo, [])
+g_tc = next(g for g in GOI if g["nhom"] == "tai-chinh")
+t_tc = next(t for t in g_tc["obj"]["tin_hieu"] if t["rule"] == "cn.qua_han_ty_le")
+eq("ghi chú quản trị: tên giữa câu bị che (Đại lý Minh Phát → KH#0005, NPP-B → KH#0006, NCC Đường → NCC#0002)", t_tc["ghi_chu_quan_tri"],
+	"Đã gọi KH#0005 và KH#0006 hôm qua; NCC#0002 đòi tiền.")
+pk = g_tc["obj"]["pack"]
+eq("gói số: top_overdue[0].customer = mã giả KH#0005 (Đại lý Minh Phát = NPP-A)",
+	pk["cong-no"]["receivables"]["top_overdue"][0]["customer"], "KH#0005")
+a = R("cn.qua_han_ty_le")
+eq("lời lưu: mã giả + placeholder chu → tên thật", (a.source, a.title, a.body, a.advice), ("ai",
+	"Khách Đại lý Minh Phát nợ lâu", "Đại lý Minh Phát nợ quá hạn nhiều nhất, NCC Đường chờ thanh toán 30 triệu.",
+	"Kinh doanh: làm việc với Đại lý Minh Phát."))
+names_ins = [r[0] for r in frappe.db.sql(f"SELECT name FROM `tab{INSIGHT}`")]
+docs = [d["name"] for r in frappe.db.sql(f"SELECT documents FROM `tab{INSIGHT}`") for d in json.loads(r[0] or "[]")]
+c("chứng từ có thật trên Insight (ca này)", "ACC-SINV-BIMAT-00042" in docs, docs)
+lo2 = [x for g in GOI for x in [*names_ins, *docs] if x in g["user"]]
+eq("tên Insight, chứng từ không có trong user", lo2, [])
+c("user không có khoá documents / admin_note / review_note / signal_key / needs_check", not any(
+	f'"{f}"' in g["user"] for g in GOI for f in ("documents", "admin_note", "review_note", "signal_key", "needs_check")))
+c("ghi chú quản trị gốc (chưa che) không có trong user", not any("Đại lý Minh Phát và" in g["user"] for g in GOI))
+
+print("E2. ai_mask_parties = 0 → tên thật được gửi")
+cai(ai_mask_parties=0)
+out = chay()
+g_tc = next(g for g in GOI if g["nhom"] == "tai-chinh")
+c("tắt mã giả: tên thật có trong user (Đại lý Minh Phát, NCC Đường)", "Đại lý Minh Phát" in g_tc["user"]
+	and "NCC Đường" in g_tc["user"] and "KH#0" not in g_tc["user"])
+cai(ai_mask_parties=1)
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"admin_note": None})
+luu()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("F. Bỏ cả bước AI: không khoá / vượt trần / trần 0 / 30 lượt — bước 1–4 + 8 vẫn chạy")
+
+
+def ca_bo(nhan, status, error=None):
+	tao_free(("nhan-su",), "ai:nhan-su.overview.bhxh.rui_ro", "nhan-su.overview.bhxh.rui_ro")
+	frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"source": "ai", "title": "Lời AI hôm qua"})
+	luu()
+	out = chay(**{g: (lambda o: (_ for _ in ()).throw(AssertionError("không được gọi"))) for g in NHOM})
+	run = out["run"]
+	eq(f"{nhan}: không lời gọi mô hình", len(GOI), 0)
+	eq(f"{nhan}: một dòng step ai status {status}", [(r.step, r.status, r.provider, r.error) for r in con(run)],
+		[("ai", status, "claude", error)])
+	t = tong(run)
+	eq(f"{nhan}: dòng tổng ok, 23 tín hiệu, có kpis", (t.status, t.signals, bool(json.loads(t.kpis or "{}"))),
+		("ok", 23, True))
+	eq(f"{nhan}: lời quy tắc (source quy-tac, số đã thay)", (R("cn.qua_han_ty_le").source,
+		R("cn.qua_han_ty_le").title), ("quy-tac", "Nợ quá hạn chiếm 54,5% tổng phải thu"))
+	eq(f"{nhan}: tự do cũ → dong", R("ai:nhan-su.overview.bhxh.rui_ro").status, "dong")
+	eq(f"{nhan}: trả ai = {status}", out["ai"], status)
+	return out
+
+
+del frappe.conf["bc_ai_anthropic_key"]
+ca_bo("không khoá", "khong-khoa")
+frappe.conf["bc_ai_anthropic_key"] = "   "
+ca_bo("khoá chỉ có dấu cách", "khong-khoa")
+frappe.conf["bc_ai_anthropic_key"] = KEY
+xoa_run()
+cai(ai_cap_claude_usd=0)
+ca_bo("trần 0", "vuot-tran")
+cai(ai_cap_claude_usd=0.01)
+insert(RUN, run_type="ngay", step="kinh-doanh", provider="claude", status="ok", started=D(2026, 10, 3, 5, 30),
+	cost_usd=0.01, cost_known=1, tokens_in=0, tokens_out=0, signals=0, insights_ai=0, rejected=0)
+luu()
+ca_bo("đã chi 0,01 ≥ trần 0,01 trong kỳ", "vuot-tran")
+xoa_run()
+cai(ai_cap_claude_usd=90)
+for i in range(30):
+	insert(RUN, run_type="ngay", step="tai-chinh", provider="claude", status="ok", started=D(2026, 10, 27, 1, 0),
+		cost_usd=0, cost_known=1, tokens_in=0, tokens_out=0, signals=0, insights_ai=0, rejected=0)
+luu()
+ca_bo("30 lượt gọi hôm nay", "vuot-tran", "quá số lượt gọi trong ngày")
+xoa_run()
+cai(ai_enabled=0)
+ca_bo("ai_enabled = 0 (lần 2, có lời AI cũ)", "tat")
+cai(ai_enabled=1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("G. Lỗi của mô hình")
+
+
+def nem_loi(kind, msg="", tin=0, tout=0, model=""):
+	def f(obj):
+		e = llm.LLMError(kind, msg)
+		e.tokens_in, e.tokens_out, e.model = tin, tout, model
+		raise e
+	return f
+
+
+def nem_thuong(msg):
+	def f(obj):
+		raise RuntimeError(msg)
+	return f
+
+
+xoa_run()
+tao_free(("cong-no", "phai-tra"), "ai:cong-no.receivables.kpis.net", "cong-no.receivables.kpis.net")
+out = chay(**{"kinh-doanh": nem_loi("credit", "credit balance too low " + KEY), "kho-sx": tl([])})
+run = out["run"]
+eq("credit: đúng MỘT lời gọi (nhóm đầu), không gọi thêm", [g["nhom"] for g in GOI], ["kinh-doanh"])
+eq("credit: dòng nhóm het-credit, không dòng nhóm nào khác", [(r.step, r.status) for r in con(run)],
+	[("kinh-doanh", "het-credit")])
+eq("credit: dòng tổng vẫn ok; trả ai het-credit", (tong(run).status, out["status"], out["ai"]), ("ok", "ok",
+	"het-credit"))
+c("credit: khoá không có trong error của dòng", KEY not in (con(run)[0].error or ""), con(run)[0].error)
+eq("credit: nhóm còn lại giữ lời quy tắc; tự do cũ của tai-chinh → dong", (R("cn.qua_han_ty_le").source,
+	R("ai:cong-no.receivables.kpis.net").status), ("quy-tac", "dong"))
+
+xoa_run()
+tao_free(("cong-no", "phai-tra"), "ai:cong-no.receivables.kpis.net", "cong-no.receivables.kpis.net")
+# Mô hình giả: rate / timeout (không token), schema (đã tính tiền 500 / 50), refusal trả từ mô hình dự phòng CHƯA
+# khai giá (ước theo giá mô hình đã yêu cầu), Exception thường chứa khoá, http chứa khoá, he-thong ok.
+out = chay(**{"kinh-doanh": nem_loi("rate", "429"), "kho-sx": nem_loi("timeout", "đọc quá 300 s"),
+	"van-chuyen": nem_loi("schema", "sai cấu trúc", 500, 50, "claude-sonnet-5-5"),
+	"tai-chinh": nem_loi("refusal", "từ chối", 800, 0, "claude-du-phong-x"),
+	"nhan-su": nem_thuong("hỏng " + KEY + " " + "x" * 50), "attp": nem_loi("http", "401 khoá " + KEY + " sai")})
+run = out["run"]
+eq("rate / timeout / schema / refusal / lỗi thường / http: nhóm sau VẪN được gọi (đủ 7)", [g["nhom"] for g in GOI],
+	NHOM)
+cc = {r.step: r for r in con(run)}
+eq("trạng thái từng dòng", {g: cc[g].status for g in NHOM}, {"kinh-doanh": "loi", "kho-sx": "loi", "van-chuyen": "loi",
+	"tai-chinh": "loi", "nhan-su": "loi", "attp": "loi", "he-thong": "ok"})
+# schema: 500 × 3 + 50 × 15 = 2.250 / 1e6 = 0,00225; refusal: 800 × 3 / 1e6 = 0,0024 (giá của mô hình đã yêu cầu)
+eq("lượt hỏng đã tính tiền: token + chi phí ghi lại", [(cc[g].tokens_in, cc[g].tokens_out, round(float(cc[g].cost_usd), 6),
+	cc[g].cost_known) for g in ("van-chuyen", "tai-chinh")], [(500, 50, 0.00225, 1), (800, 0, 0.0024, 1)])
+eq("refusal: model = mô hình thực trả lời", cc["tai-chinh"].model, "claude-du-phong-x")
+eq("rate / timeout: 0 token, chi phí 0 đã biết", [(cc[g].tokens_in, cc[g].cost_usd, cc[g].cost_known) for g in
+	("kinh-doanh", "kho-sx")], [(0, 0, 1), (0, 0, 1)])
+eq("lỗi thường (không phải LLMError): dòng loi, error chỉ tên loại", cc["nhan-su"].error, "lỗi không lường: RuntimeError")
+c("http có khoá: error đã xoá khoá", KEY not in (cc["attp"].error or "") and "401" in (cc["attp"].error or ""),
+	cc["attp"].error)
+eq("dòng tổng vẫn ok, lời quy tắc giữ, tự do cũ → dong", (tong(run).status, R("cn.qua_han_ty_le").source,
+	R("ai:cong-no.receivables.kpis.net").status), ("ok", "quy-tac", "dong"))
+c("lỗi thường: có Error Log, không khoá trong đó", any(r[0] == "bc.ai bước AI nhóm nhan-su" for r in LOG), LOG[-3:])
+
+print("G2. Lỗi khi XỬ LÝ lời (sau lượt gọi đã tính tiền): rollback phần ghi dở, nhóm sau vẫn gọi")
+# Ép lỗi lập trình: render.render_insight ném ở insight THỨ HAI của nhóm tai-chinh (insight đầu đã ghi).
+from bc.ai import render  # noqa: E402
+_ri = render.render_insight
+dem_ri = {"n": 0}
+
+
+def _ri_hong(raw, pack, sections, mask=None):
+	if "cong-no" in sections:
+		dem_ri["n"] += 1
+		if dem_ri["n"] == 2:
+			raise ZeroDivisionError("hỏng giữa chừng")
+	return _ri(raw, pack, sections, mask)
+
+
+render.render_insight = _ri_hong
+xoa_run()
+out = chay(**{"tai-chinh": tl(lambda o: [ins(S(o, "cn.qua_han_ty_le"), "Lời một {{cong-no.receivables.kpis.net|tien}}",
+	"Thân {{cong-no.receivables.kpis.net|tien}}."), ins(S(o, "cn.dso_cao"), "Lời hai", "Thân {{cong-no.receivables."
+	"kpis.dso.dso|so}}.")], 700, 70)})
+render.render_insight = _ri
+cc = {r.step: r for r in con(out["run"])}
+eq("nhóm hỏng khi xử lý: dòng loi, token 700 / 70 + chi phí ghi lại", (cc["tai-chinh"].status, cc["tai-chinh"].error,
+	cc["tai-chinh"].tokens_in, round(float(cc["tai-chinh"].cost_usd), 6)), ("loi", "lỗi không lường: ZeroDivisionError", 700,
+	0.00315))   # 700 × 3 + 70 × 15 = 3.150 / 1e6
+eq("lời đã gắn cho S1 trước khi hỏng bị ROLLBACK (về lời quy tắc)", R("cn.qua_han_ty_le").source, "quy-tac")
+eq("nhóm sau (nhan-su, attp, he-thong) vẫn được gọi", [g["nhom"] for g in GOI][-3:], ["nhan-su", "attp", "he-thong"])
+
+print("G3. Mô hình chưa khai giá → cost_known 0")
+xoa_run()
+cai(ai_claude_model="claude-chua-khai-gia")
+out = chay()
+eq("mọi dòng gọi: cost_known 0, cost 0, model claude-chua-khai-gia", {(r.cost_known, r.cost_usd, r.model) for r in
+	con(out["run"])}, {(0, 0, "claude-chua-khai-gia")})
+bo_cai("ai_claude_model")
+
+print("G4. Quy tắc không chạy được (khối nguồn _error): tín hiệu cũ còn mở nhưng KHÔNG gửi mô hình (số đã cũ)")
+import bc.api.cn as _cn  # noqa: E402
+_gr = _cn.get_receivables
+
+
+def _gr_hong(*a, **k):
+	raise RuntimeError("nguồn công nợ hỏng")
+
+
+xoa_run()
+_cn.get_receivables = _gr_hong
+out = chay()
+_cn.get_receivables = _gr
+g_tc = next((g for g in GOI if g["nhom"] == "tai-chinh"), None)
+eq("tai-chinh vẫn gọi (phai-tra còn số), chỉ gửi tín hiệu của lượt này: cn.phai_tra_qua_han",
+	g_tc and [t["rule"] for t in g_tc["obj"]["tin_hieu"]], ["cn.phai_tra_qua_han"])
+eq("cn.qua_han_ty_le cũ vẫn mở (không đóng)", R("cn.qua_han_ty_le").status, "mo")
+c("gói số gửi đi không có khối cong-no hỏng", g_tc and "cong-no" not in g_tc["obj"]["pack"], g_tc and list(g_tc["obj"]["pack"]))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("H. Trần chạm GIỮA lượt; 30 lượt / ngày giữa lượt; hết thời gian")
+xoa_run()
+cai(ai_cap_claude_usd=0.004)     # lượt 1: đã chi 0 < 0,004 → gọi; sau đó 0,0045 ≥ 0,004 → dừng
+out = chay()
+eq("trần chạm sau nhóm đầu: chỉ gọi kinh-doanh", [g["nhom"] for g in GOI], ["kinh-doanh"])
+eq("dòng: kinh-doanh ok, kho-sx vuot-tran, không dòng nào sau", [(r.step, r.status, r.error) for r in con(out["run"])],
+	[("kinh-doanh", "ok", None), ("kho-sx", "vuot-tran", None)])
+eq("dòng tổng ok; trả ai vuot-tran", (tong(out["run"]).status, out["ai"]), ("ok", "vuot-tran"))
+cai(ai_cap_claude_usd=90)
+xoa_run()
+for i in range(29):
+	insert(RUN, run_type="ngay", step="tai-chinh", provider="claude", status="loi", started=D(2026, 10, 27, 1, 0),
+		cost_usd=0, cost_known=1, tokens_in=0, tokens_out=0, signals=0, insights_ai=0, rejected=0)
+luu()
+out = chay()
+eq("29 lượt sẵn: gọi đúng 1 lượt nữa", [g["nhom"] for g in GOI], ["kinh-doanh"])
+eq("lượt thứ 31 bị chặn: dòng vuot-tran 'quá số lượt gọi trong ngày'", [(r.step, r.status, r.error)
+	for r in con(out["run"])], [("kinh-doanh", "ok", None), ("kho-sx", "vuot-tran", "quá số lượt gọi trong ngày")])
+
+xoa_run()
+_time = pipeline.time
+
+
+class _Dong:
+	"""time.monotonic giả: lần đầu (t0) 0, sau đó 1.501 giây → còn 1800 − 240 − 1501 = 59 s < 60."""
+	n = 0
+
+	@classmethod
+	def monotonic(cls):
+		cls.n += 1
+		return 0.0 if cls.n == 1 else 1501.0
+
+
+pipeline.time = _Dong
+out = chay()
+pipeline.time = _time
+eq("hết thời gian (còn 59 s < 60): không gọi", len(GOI), 0)
+eq("một dòng nhóm đầu: loi 'hết thời gian lượt chạy'", [(r.step, r.status, r.error) for r in con(out["run"])],
+	[("kinh-doanh", "loi", "hết thời gian lượt chạy")])
+eq("dòng tổng vẫn ok", tong(out["run"]).status, "ok")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("I. Vòng đời qua nhiều ngày (AI tắt)")
+cai(ai_enabled=0)
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}`")
+xoa_run()
+K = "cn.qua_han_ty_le"
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 28)
+chay()
+r = R(K)
+eq("28/10: mới → mo, seen 1, first_seen 28/10 10:30", (r.status, r.seen_count, r.first_seen), ("mo", 1,
+	D(2026, 10, 28, 10, 30)))
+frappe.utils.FAKE_NOW_TIME = datetime.time(16, 0)
+chay()
+r = R(K)
+eq("28/10 lượt 2: seen vẫn 1, last_seen 16:00", (r.seen_count, r.last_seen), (1, D(2026, 10, 28, 16, 0)))
+frappe.utils.FAKE_NOW_TIME = datetime.time(10, 30)
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 29)
+chay()
+r = R(K)
+eq("29/10: còn → seen 2, first_seen giữ 28/10", (r.status, r.seen_count, r.first_seen), ("mo", 2,
+	D(2026, 10, 28, 10, 30)))
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 30)
+_cn.get_receivables = _gr_hong
+out = chay()
+_cn.get_receivables = _gr
+r = R(K)
+eq("30/10 khối nguồn _error: KHÔNG đóng, seen giữ 2", (r.status, r.seen_count), ("mo", 2))
+c("dòng tổng ok, error liệt kê cn.qua_han_ty_le không chạy", tong(out["run"]).status == "ok"
+	and K in (tong(out["run"]).error or "") and (tong(out["run"]).error or "").startswith("quy tắc không chạy được"),
+	tong(out["run"]).error)
+c("trả not_run có cn.qua_han_ty_le", K in out["not_run"], out["not_run"])
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 31)
+child("BC Settings", "BC Settings", "BC AI Rule", "ai_rules", [{"rule_key": K, "disabled": 0, "threshold": 90,
+	"threshold_red": 95}])
+frappe.db.sql("UPDATE `tabBC AI Rule` SET idx = 2 WHERE rule_key = %s", (K,))
+luu()
+chay()
+r = R(K)
+eq("31/10 ngưỡng 90 / 95 (54,5 không vượt): dong, closed_on 31/10", (r.status, r.closed_on), ("dong",
+	D(2026, 10, 31, 10, 30)))
+frappe.db.sql("DELETE FROM `tabBC AI Rule` WHERE rule_key = %s", (K,))
+luu()
+frappe.utils.FAKE_TODAY = datetime.date(2026, 11, 1)
+chay()
+r = R(K)
+eq("1/11 xuất hiện lại: mo, first_seen 1/11, seen 1", (r.status, r.first_seen, r.seen_count), ("mo",
+	D(2026, 11, 1, 10, 30), 1))
+frappe.utils.FAKE_TODAY = datetime.date(2026, 10, 27)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("J. Khoá chống chạy trùng; lỗi giữa lượt")
+n_run = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]
+frappe.cache().set_value(LOCK_KEY, 7)
+out = chay()
+eq("khoá đang giữ → dang-chay", out, {"status": "dang-chay"})
+eq("không dòng Run mới", frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0], n_run)
+eq("khoá không bị đụng", frappe.cache().get_value(LOCK_KEY), 7)
+frappe.cache().delete_value(LOCK_KEY)
+
+from bc.ai import collect  # noqa: E402
+_build = collect.build
+
+
+def _build_hong(today=None):
+	frappe.db.sql(f"UPDATE `tab{INSIGHT}` SET title = 'GHI DỞ' WHERE signal_key = %s", (K,))   # ghi dở → rollback
+	raise ValueError("collect hỏng " + KEY)
+
+
+collect.build = _build_hong
+n_log = len(LOG)
+try:
+	out = chay()
+	nem_ra = False
+except Exception:  # noqa: BLE001
+	nem_ra = True
+collect.build = _build
+c("lỗi giữa lượt: không ném ra cho nơi gọi", not nem_ra)
+eq("trả status loi + run", (out.get("status"), bool(out.get("run"))), ("loi", True))
+t = tong(out["run"])
+eq("dòng tổng loi, error = tên loại lỗi, có finished", (t.status, t.error, t.finished is not None),
+	("loi", "ValueError", True))
+c("dòng tổng còn sau ROLLBACK (đã commit trước)", t.name == out["run"])
+eq("phần ghi dở bị rollback", R(K).title, "Nợ quá hạn chiếm 54,5% tổng phải thu")
+c("có Error Log bc.ai run_daily", any(r[0] == "bc.ai run_daily" for r in LOG[n_log:]), LOG[n_log:])
+c("khoá được nhả", frappe.cache().get_value(LOCK_KEY) is None)
+out = chay()
+eq("lượt sau chạy bình thường", (out["status"], tong(out["run"]).status), ("ok", "ok"))
+
+_finish = store.rerank
+
+
+def _rerank_hong():
+	raise KeyError("rerank")
+
+
+store.rerank = _rerank_hong
+out = chay()
+store.rerank = _finish
+eq("lỗi SAU bước 4 (rerank): dòng tổng loi KeyError, tín hiệu đã lưu còn", (tong(out["run"]).status,
+	tong(out["run"]).error, R(K).status), ("loi", "KeyError", "mo"))
+c("khoá được nhả", frappe.cache().get_value(LOCK_KEY) is None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("K. Lộ khoá / đề bài")
+# Đề bài của một lượt gọi có số (tai-chinh) và system prompt: lấy đoạn dài, đặc trưng.
+cai(ai_enabled=1)
+xoa_run()
+out = chay(**{"nhan-su": nem_thuong("lỗi chứa khoá " + KEY), "attp": nem_loi("http", "khoá " + KEY)})
+mau_user = [g["user"][40:160] for g in GOI if len(g["user"]) > 200]
+mau_sys = GOI[0]["system"][300:420]
+c("có mẫu đề bài để soát", len(mau_user) >= 5 and len(mau_sys) > 100)
+
+
+def cot(doctype):
+	return [" ".join("" if v is None else str(v) for v in r) for r in frappe.db.sql(f"SELECT * FROM `tab{doctype}`")]
+
+
+TAT_CA = cot(RUN) + cot(INSIGHT)
+eq("khoá không có trong cột nào của BC AI Run / BC AI Insight", [x[:80] for x in TAT_CA if KEY in x], [])
+eq("khoá không có trong tham số log_error nào", [str(r)[:80] for r in LOG if KEY in str(r)], [])
+eq("khoá không có trong giá trị trả của run_daily", [o for o in KQ if KEY in json.dumps(o, default=str)], [])
+eq("đề bài (user) không lưu ở đâu", [m[:30] for m in mau_user if any(m in x for x in TAT_CA)
+	or any(m in str(r) for r in LOG)], [])
+eq("system prompt không lưu ở đâu", any(mau_sys in x for x in TAT_CA) or any(mau_sys in str(r) for r in LOG), False)
+eq("không một lần ra mạng trong cả bộ thử", MANG, [])
+
+c.done()

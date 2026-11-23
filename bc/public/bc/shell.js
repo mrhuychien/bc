@@ -124,7 +124,30 @@ function openMoreSheet() {
     }).join('');
     const el = showModal({ title: 'Tất cả báo cáo', body });
     el?.addEventListener('click', (e) => { if (e.target.closest('a')) closeModal(); });
+    paintAiDot();
 }
+
+// ─── Chấm đỏ cạnh "Trợ lý AI": get_badge() MỘT lần sau buildNav (lỗi → bỏ qua); màn Trợ lý báo lại số mới ─
+const AI_ROUTE = '/tro-ly';
+let aiRed = false;
+let aiAsked = false;
+function paintAiDot() {
+    const sel = `#bc-sidebar [data-route="${AI_ROUTE}"], #bc-bottom-nav [data-route="${AI_ROUTE}"], .bc-menu-tile[href="#${AI_ROUTE}"]`
+        + (BOTTOM.includes(AI_ROUTE) ? '' : ', #bc-nav-more');
+    document.querySelectorAll(sel).forEach((el) => {
+        const dot = el.querySelector(':scope > .bc-ai-dot');
+        if (aiRed && !dot) el.insertAdjacentHTML('beforeend', '<span class="bc-ai-dot" role="img" aria-label="Trợ lý AI có việc mức đỏ"></span>');
+        if (!aiRed && dot) dot.remove();
+    });
+}
+function askAiBadge() {
+    if (aiAsked || !VIEW_MODULES[AI_ROUTE] || !ALL_ITEMS.some((it) => it.route === AI_ROUTE)) return;
+    aiAsked = true;
+    try {
+        api.ai.badge().then((b) => { aiRed = Number(b?.do) > 0; paintAiDot(); }).catch(() => {});
+    } catch { /* lib/api.js cũ (tab mở trước deploy) chưa có api.ai */ }
+}
+window.addEventListener('bc:ai-badge', (e) => { aiRed = Number(e.detail?.do) > 0; paintAiDot(); });
 
 let currentRoute = null;
 function highlight(path) {
@@ -218,6 +241,7 @@ window.addEventListener('bc:hidden-sections', (e) => {
     HIDDEN = new Set(e.detail || []);
     CTX.hiddenSections = [...HIDDEN];
     buildNav();
+    paintAiDot();
     if (currentRoute) highlight(currentRoute);
 });
 
@@ -265,6 +289,7 @@ document.getElementById('bc-btn-refresh')?.addEventListener('click', async (e) =
 
 paintHeader();
 buildNav();
+askAiBadge();
 // Làm mới vừa tải lại trang (danh sách mảng ẩn đổi) → lượt dựng đầu vẫn gửi refresh=1 như người dùng đã bấm.
 try { if (sessionStorage.getItem('bc_refresh_once')) { sessionStorage.removeItem('bc_refresh_once'); api.setRefresh(true); } } catch { /* */ }
 router.start();

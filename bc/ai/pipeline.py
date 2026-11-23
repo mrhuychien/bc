@@ -13,14 +13,23 @@ Bước 5–6 lỗi bất kỳ chỉ ghi vào BC AI Run — KHÔNG làm hỏng b
 hiện tín hiệu với lời theo quy tắc. Không lưu, không log đề bài hay gói số. Lời AI chỉ được lưu sau khi máy chủ thay
 số và kiểm (bc.ai.render).
 
-Dòng tổng (step "tong"): status ok = bước quy tắc xong (kể cả khi AI tắt / lỗi); loi = lượt chạy hỏng. Bước AI: một
-dòng / nhóm đã gọi (ok | loi | het-credit | vuot-tran), hoặc MỘT dòng step "ai" khi cả bước bị bỏ (tat | khong-khoa |
-vuot-tran).
+Dòng tổng (step "tong"): status ok = bước quy tắc xong (kể cả khi AI tắt / lỗi); loi = lượt chạy hỏng (error = TÊN
+loại lỗi). error của dòng tổng ok liệt kê quy tắc không chạy được. Bước AI:
+- cả bước bị bỏ → MỘT dòng step "ai" (tat | khong-khoa | vuot-tran; vượt trần vì 30 lượt / ngày thì error "quá số
+  lượt gọi trong ngày"), hoặc loi khi chính bước AI hỏng trước lượt gọi đầu;
+- còn lại một dòng / nhóm đã tới lượt: ok | loi | het-credit (lượt gọi), vuot-tran / loi "hết thời gian lượt chạy"
+  (dừng giữa chừng, không gọi). Sau het-credit / vuot-tran / hết giờ: các nhóm sau không gọi, không có dòng.
+- lỗi không lường trong một nhóm (không phải LLMError) → dòng nhóm đó loi, error "lỗi không lường: <loại>", nhóm sau
+  vẫn được gọi.
+Nhóm không gọi được (bỏ / lỗi / dừng) → nhận định tự do cũ của nhóm bị đóng (đặc tả: chỉ sống khi lượt gọi gần nhất
+nêu lại). Error Log của module này chỉ có tên loại lỗi + vị trí dòng code — không lời lỗi (có thể chứa khoá / số
+liệu), không biến cục bộ.
 """
 
 from __future__ import annotations
 
 import time
+import traceback
 
 import frappe
 from frappe.utils import cint, getdate, now_datetime
@@ -34,36 +43,73 @@ MAX_FREE = 3             # nhận định tự do tối đa / nhóm / lượt
 CALL_TIMEOUT = 300       # giây / lượt gọi
 MARGIN = 240             # giây chừa lại cuối job cho bước 8
 SO_NGAY_KEY = "so_ngay"
+HET_GIO = "hết thời gian lượt chạy"
+QUA_LUOT = "quá số lượt gọi trong ngày"
+
+
+def _ghi_loi(title: str, e: BaseException) -> None:
+	"""Error Log KHÔNG dữ liệu: tên loại lỗi + các dòng code. Không str(e) (lỗi từ thư viện HTTP / bản giả có thể chứa
+	khoá), không get_traceback (developer_mode kèm biến cục bộ = đề bài, gói số). message luôn khác rỗng — log_error
+	của v16 nhận message rỗng thì tự lấy get_traceback(with_context=True)."""
+	try:
+		noi = " <- ".join(f"{f.filename.rsplit('/', 1)[-1]}:{f.lineno} {f.name}"
+			for f in reversed(traceback.extract_tb(e.__traceback__)[-8:]))
+		frappe.log_error(title=title, message=f"{type(e).__name__} tại {noi or '?'}")
+		frappe.clear_last_message()
+	except Exception:   # ghi nhật ký hỏng không được làm hỏng lượt chạy
+		pass
 
 
 def run_daily(run_type: str = "ngay") -> dict:
 	"""Chạy một lượt (scheduler: "ngay"; nút Chạy ngay: "tay"). Trả tóm tắt {status, run, signals, ai…}.
 
-	Luôn chạy dưới Administrator (qua _guard của mảng đang ẩn — job do quản trị bấm cũng vậy). Đang có lượt khác giữ
-	khoá → bỏ qua. Lỗi ngoài dự kiến: ghi dòng tổng status loi + Error Log (chỉ traceback), không ném tiếp."""
+	Chạy dưới Administrator (qua _guard của mảng đang ẩn — job do quản trị bấm cũng vậy), trả lại user cũ khi xong.
+	Đang có lượt khác giữ khoá → {"status": "dang-chay"}, không ghi gì, không đụng khoá. Lỗi ngoài dự kiến: dòng tổng
+	status loi (error = tên loại lỗi) + Error Log, nhả khoá, KHÔNG ném tiếp → {"status": "loi", "run"}."""
 	from bc.ai import store
 
 	cache = frappe.cache()
 	if cache.get_value(LOCK_KEY):
 		return {"status": "dang-chay"}
 	cache.set_value(LOCK_KEY, 1, expires_in_sec=LOCK_TTL)
-	t0 = time.monotonic()
-	frappe.set_user("Administrator")
-	now = now_datetime()
-	run = store.start_run(run_type, "tong", now=now)
+	cu = getattr(getattr(frappe, "session", None), "user", None)
+	run = None
 	try:
+		t0 = time.monotonic()
+		frappe.set_user("Administrator")
+		now = now_datetime()
+		run = store.start_run(run_type, "tong", now=now)
+		frappe.db.commit()   # dòng tổng phải còn sau rollback ở nhánh lỗi
 		out = _run(run, run_type, now, t0)
 		frappe.db.commit()
 		return out
 	except Exception as e:
-		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "bc.ai run_daily")
-		frappe.clear_last_message()
-		store.finish_run(run, status="loi", now=now_datetime(), error=type(e).__name__)
-		frappe.db.commit()
+		_that_bai(run, e)
 		return {"status": "loi", "run": run}
 	finally:
 		cache.delete_value(LOCK_KEY)
+		if cu and cu != "Administrator":
+			try:
+				frappe.set_user(cu)
+			except Exception:
+				pass
+
+
+def _that_bai(run, e: BaseException) -> None:
+	"""Lượt chạy hỏng: bỏ phần ghi dở, Error Log, chốt dòng tổng loi. Không ném."""
+	from bc.ai import store
+	try:
+		frappe.db.rollback()
+	except Exception:
+		pass
+	_ghi_loi("bc.ai run_daily", e)
+	if not run:
+		return
+	try:
+		store.finish_run(run, status="loi", now=now_datetime(), error=type(e).__name__)
+		frappe.db.commit()
+	except Exception as e2:
+		_ghi_loi("bc.ai run_daily (chốt dòng tổng)", e2)
 
 
 def _run(run: str, run_type: str, now, t0: float) -> dict:
@@ -76,7 +122,9 @@ def _run(run: str, run_type: str, now, t0: float) -> dict:
 	items, sigs = _rule_items(pack, rr)
 	stats = store.sync_signals(items, rr.ran, now)                # 4
 	frappe.db.commit()
-	ai = _write(pack, sigs, run, run_type, now, t0)               # 5–6 (không bao giờ ném)
+	names = stats.get("names") or {}
+	by_name = {names[k]: s for k, s in sigs.items() if names.get(k)}
+	ai = _write(pack, by_name, run, run_type, now, t0)            # 5–6 (không bao giờ ném)
 	store.rerank()
 	store.cleanup(now)
 	store.finish_run(run, status="ok", now=now_datetime(), signals=len(items), insights_ai=ai["accepted"],
@@ -96,7 +144,8 @@ def _rule_items(pack: dict, rr) -> tuple:
 		r = render.render_rule(s.title, s.detail, pack)
 		if not r["ok"]:
 			hong.add(s.rule)
-			frappe.log_error(f"{s.key}: {', '.join(r['errors'])[:200]}", "bc.ai lời quy tắc không dựng được")
+			frappe.log_error(title="bc.ai lời quy tắc không dựng được",
+				message=f"{s.rule}: {', '.join(r['errors'])[:200]}")
 			continue
 		tam.append((s, r))
 	for k in hong:
@@ -114,38 +163,52 @@ def _rule_items(pack: dict, rr) -> tuple:
 
 
 # ─── Bước 5–6: mô hình viết lời ──────────────────────────────────────────────
-def _write(pack: dict, sigs: dict, run: str, run_type: str, now, t0: float) -> dict:
-	"""Gọi mô hình cho từng nhóm và gắn lời đã kiểm. Mọi lỗi ở đây chỉ thành trạng thái trong BC AI Run."""
+def _write(pack: dict, by_name: dict, run: str, run_type: str, now, t0: float) -> dict:
+	"""Gọi mô hình cho từng nhóm và gắn lời đã kiểm. by_name = {tên Insight: Signal của lượt này}. Mọi lỗi ở đây chỉ
+	thành trạng thái trong BC AI Run."""
 	from bc.ai import store
 
 	out = {"status": "ok", "accepted": 0, "rejected": 0}
 	try:
-		skip = _skip_reason(getdate(now))
+		skip, why = _skip_reason(getdate(now))
 		if skip:
 			_close_all_free(now)
 			row = store.start_run(run_type, "ai", provider=PROVIDER, now=now_datetime(), run_id=run)
-			store.finish_run(row, status=skip, now=now_datetime())
+			store.finish_run(row, status=skip, now=now_datetime(), error=why or None)
+			frappe.db.commit()
 			out["status"] = skip
 			return out
-		_write_groups(pack, sigs, run, run_type, now, t0, out)
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "bc.ai bước AI")
-		frappe.clear_last_message()
+		_write_groups(pack, by_name, run, run_type, now, t0, out)
+	except Exception as e:
+		# Hỏng ngoài một nhóm (dựng mã giả / đề bài, ghi Run): bỏ phần ghi dở, đóng lời tự do, một dòng "ai" loi.
+		try:
+			frappe.db.rollback()
+		except Exception:
+			pass
+		_ghi_loi("bc.ai bước AI", e)
 		out["status"] = "loi"
+		try:
+			_close_all_free(now)
+			row = store.start_run(run_type, "ai", provider=PROVIDER, now=now_datetime(), run_id=run)
+			store.finish_run(row, status="loi", now=now_datetime(), error=f"lỗi bước AI: {type(e).__name__}")
+			frappe.db.commit()
+		except Exception as e2:
+			_ghi_loi("bc.ai bước AI (ghi nhật ký)", e2)
 	return out
 
 
-def _skip_reason(today) -> str | None:
-	"""Lý do bỏ cả bước AI: 'tat' | 'khong-khoa' | 'vuot-tran' | None."""
+def _skip_reason(today) -> tuple:
+	"""Lý do bỏ cả bước AI → (status | None, error | None): 'tat' | 'khong-khoa' | 'vuot-tran'."""
 	from bc.ai import budget, llm
 
 	if not cint(conf("ai_enabled", 0)):
-		return "tat"
+		return "tat", None
 	if not llm.has_key(PROVIDER):
-		return "khong-khoa"
-	if not budget.can_call(PROVIDER, today)[0]:
-		return "vuot-tran"
-	return None
+		return "khong-khoa", None
+	ok, why = budget.can_call(PROVIDER, today)
+	if not ok:
+		return "vuot-tran", (QUA_LUOT if why == "qua-so-luot" else None)
+	return None, None
 
 
 def _close_all_free(now) -> None:
@@ -154,7 +217,7 @@ def _close_all_free(now) -> None:
 		store.sync_ai_free(g["sections"], [], now)
 
 
-def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: float, out: dict) -> None:
+def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: float, out: dict) -> None:
 	from bc.ai import budget, llm, prompt, redact, store
 
 	today = getdate(now)
@@ -162,13 +225,14 @@ def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: floa
 	limit = cint(conf("ai_max_signals")) or DEFAULT_MAX_SIGNALS
 	mask = redact.build(bool(cint(conf("ai_mask_parties", 1))))
 	system = prompt.system_prompt(today)
-	dung = None    # lý do dừng gọi tiếp (hết credit / mất khoá / vượt trần / hết giờ): các nhóm còn lại chỉ đóng lời cũ
+	dung = None    # lý do dừng gọi tiếp (hết credit / mất khoá / vượt trần / hết giờ): nhóm còn lại chỉ đóng lời cũ
 	for group, g in registry.GROUPS.items():
 		sections = g["sections"]
 		if dung:
 			store.sync_ai_free(sections, [], now)
 			continue
-		rows = [r for r in store.open_for_llm(sections, limit) if r["signal_key"] in sigs]
+		# lọc theo tín hiệu CỦA LƯỢT NÀY (tín hiệu cũ của quy tắc không chạy được không gửi) rồi mới cắt `limit`
+		rows = [r for r in store.open_for_llm(sections, 10 ** 6) if r["name"] in by_name][:limit]
 		pack_group = {s: pack[s] for s in sections if _co_so(pack.get(s))}
 		if not rows and (group == registry.HE_THONG or not pack_group):
 			store.sync_ai_free(sections, [], now)    # nhóm không có gì để nói → không tốn lượt gọi
@@ -179,39 +243,70 @@ def _write_groups(pack: dict, sigs: dict, run: str, run_type: str, now, t0: floa
 			dung = "vuot-tran" if not ok else "loi"
 			row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
 			store.finish_run(row, status=dung, now=now_datetime(),
-				error=("quá số lượt gọi trong ngày" if why == "qua-so-luot" else None) if not ok else "hết thời gian lượt chạy")
+				error=(QUA_LUOT if why == "qua-so-luot" else None) if not ok else HET_GIO)
 			store.sync_ai_free(sections, [], now)
+			frappe.db.commit()
 			out["status"] = dung
 			continue
-		by_id = {f"S{i}": r for i, r in enumerate(rows, 1)}
-		tin_hieu = [_ctx(sid, r, sigs[r["signal_key"]], today, mask) for sid, r in by_id.items()]
-		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu))
 		row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
-		try:
-			# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
-			res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
-				timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
-		except llm.LLMError as e:
-			st = llm.run_status(e.kind)
-			# Lượt bị từ chối / cắt cụt / sai schema vẫn bị tính tiền → ghi token + chi phí nếu máy chủ đã trả lời.
-			ti, to = cint(getattr(e, "tokens_in", 0)), cint(getattr(e, "tokens_out", 0))
-			store.finish_run(row, status=st, now=now_datetime(), signals=len(rows), error=e.message, tokens_in=ti,
-				tokens_out=to, model=getattr(e, "model", "") or model,
-				cost_usd=_cost(getattr(e, "model", ""), model, ti, to) if (ti or to) else None)
-			store.sync_ai_free(sections, [], now)
-			out["status"] = st
-			if e.kind in ("credit", "no_key"):
-				dung = st
-			frappe.db.commit()
-			continue
-		acc, rej = _apply(group, sections, res.get("data") or {}, by_id, pack, mask, now)
-		out["accepted"] += acc
-		out["rejected"] += rej
-		store.finish_run(row, status="ok", now=now_datetime(), tokens_in=cint(res.get("tokens_in")),
-			tokens_out=cint(res.get("tokens_out")), model=res.get("model") or model, signals=len(rows), insights_ai=acc,
-			rejected=rej, cost_usd=_cost(res.get("model"), model, cint(res.get("tokens_in")), cint(res.get("tokens_out"))),
-			error="; ".join(notes)[:300] if notes else None)
+		frappe.db.commit()   # dòng của lượt gọi còn lại dù phần sau bị rollback
+		st = _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
+			out)
 		frappe.db.commit()
+		if st in ("het-credit", "khong-khoa"):
+			dung = st
+
+
+def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
+		out) -> str:
+	"""Một lượt gọi cho một nhóm + gắn lời → status của dòng Run (đã chốt). Không ném."""
+	from bc.ai import llm, prompt, store
+
+	res = None
+	try:
+		by_id = {f"S{i}": r for i, r in enumerate(rows, 1)}
+		tin_hieu = [_ctx(sid, r, by_name[r["name"]], today, mask) for sid, r in by_id.items()]
+		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu))
+		# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
+		res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
+			timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
+		del user
+		ti, to = cint(res.get("tokens_in")), cint(res.get("tokens_out"))
+		served = res.get("model") or model
+		data = res.get("data")
+		acc, rej = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now)
+	except llm.LLMError as e:
+		st = llm.run_status(e.kind)
+		# Lượt bị từ chối / cắt cụt / sai schema vẫn bị tính tiền → ghi token + chi phí nếu máy chủ đã trả lời.
+		ti, to = cint(getattr(e, "tokens_in", 0)), cint(getattr(e, "tokens_out", 0))
+		served = llm.clean(getattr(e, "model", "") or "")[:140]
+		store.finish_run(row, status=st, now=now_datetime(), signals=len(rows),
+			error=llm.clean(e.message) or e.kind, tokens_in=ti, tokens_out=to, model=served or model,
+			cost_usd=_cost(served, model, ti, to) if (ti or to) else 0.0)
+		store.sync_ai_free(sections, [], now)
+		out["status"] = st
+		return st
+	except Exception as e:   # lỗi lập trình / đầu ra lạ: bỏ phần lời ghi dở của nhóm này, nhóm sau vẫn gọi
+		try:
+			frappe.db.rollback()
+		except Exception:
+			pass
+		_ghi_loi(f"bc.ai bước AI nhóm {group}", e)
+		ti = cint(res.get("tokens_in")) if isinstance(res, dict) else 0
+		to = cint(res.get("tokens_out")) if isinstance(res, dict) else 0
+		served = (res.get("model") if isinstance(res, dict) else None) or model
+		store.finish_run(row, status="loi", now=now_datetime(), signals=len(rows), tokens_in=ti, tokens_out=to,
+			model=served, cost_usd=_cost(served, model, ti, to) if (ti or to) else 0.0,
+			error=f"lỗi không lường: {type(e).__name__}")
+		store.sync_ai_free(sections, [], now)
+		out["status"] = "loi"
+		return "loi"
+	out["accepted"] += acc
+	out["rejected"] += rej
+	store.finish_run(row, status="ok", now=now_datetime(), tokens_in=ti, tokens_out=to, model=served,
+		signals=len(rows), insights_ai=acc, rejected=rej, cost_usd=_cost(served, model, ti, to),
+		error="; ".join(notes)[:300] if notes else None)
+	return "ok"
 
 
 def _cost(served: str | None, requested: str, tokens_in: int, tokens_out: int):
@@ -232,13 +327,13 @@ def _co_so(block) -> bool:
 
 def _ctx(sid: str, row: dict, sig, today, mask) -> dict:
 	"""Một tín hiệu trong đề bài. Lời quy tắc gửi đi CÒN placeholder (lời đã thay số có thể chứa tên khách thật).
-	Ghi chú của quản trị là chữ tự do → che tên khách / NCC xuất hiện giữa câu (mask.mask chỉ thay chuỗi bằng đúng
-	một tên)."""
+	Chữ tự do (ghi chú của quản trị, lời quy tắc) → mask_text che tên khách / NCC xuất hiện giữa câu (mask.mask chỉ
+	thay chuỗi bằng đúng một tên). Không gửi chứng từ, tên Insight, signal_key."""
 	fs = row.get("first_seen")
 	return {"id": sid, "rule": row["rule"], "muc": row["severity"],
-		"loi_quy_tac": (sig.title + (" — " + sig.detail if sig.detail else "")), "paths": list(sig.paths),
-		SO_NGAY_KEY: max(0, (today - getdate(fs)).days) if fs else 0, "trang_thai": row["status"],
-		"ghi_chu_quan_tri": mask.mask_text(row.get("admin_note") or "")}
+		"loi_quy_tac": mask.mask_text(sig.title + (" — " + sig.detail if sig.detail else "")),
+		"paths": list(sig.paths), SO_NGAY_KEY: max(0, (today - getdate(fs)).days) if fs else 0,
+		"trang_thai": row["status"], "ghi_chu_quan_tri": mask.mask_text(row.get("admin_note") or "")}
 
 
 def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now) -> tuple:
@@ -247,15 +342,17 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now)
 
 	acc = rej = 0
 	da_gan, free = set(), {}
-	for ins in (data.get("insights") or []):
+	ds = data.get("insights")
+	for ins in (ds if isinstance(ds, list) else []):
 		if not isinstance(ins, dict):
 			continue
 		raw = {"title": ins.get("title") or "", "body": ins.get("body") or "", "advice": ins.get("advice") or []}
 		sev = ins.get("severity") if ins.get("severity") in registry.SEVERITIES else "vang"
-		prio = max(0, min(5, cint(ins.get("priority"))))   # schema không ràng được khoảng → kẹp ở đây (5 = đáng chú ý nhất)
+		prio = max(0, min(5, cint(ins.get("priority"))))   # schema không ràng khoảng → kẹp (5 = đáng chú ý nhất)
 		sid = ins.get("signal")
 		if sid:
-			row = by_id.get(str(sid))
+			sid = str(sid).strip()
+			row = by_id.get(sid)
 			if not row or sid in da_gan:      # S lạ / trùng → lấy cái đầu
 				continue
 			da_gan.add(sid)
@@ -271,7 +368,8 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now)
 		if group == registry.HE_THONG:       # nhóm hệ thống không nhận nhận định tự do
 			continue
 		r = render.render_insight(raw, pack, set(sections), mask)
-		dau = next((p for p, _ in registry.placeholders(raw["body"])), None) or (r["paths"][0] if r["paths"] else None)
+		body = raw["body"] if isinstance(raw["body"], str) else ""
+		dau = next((p for p, _ in registry.placeholders(body)), None) or (r["paths"][0] if r["paths"] else None)
 		if not r["ok"] or not dau:            # nhận định tự do phải trích ít nhất một số trong gói
 			rej += 1
 			continue

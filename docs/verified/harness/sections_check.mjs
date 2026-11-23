@@ -160,8 +160,8 @@ try {
     await M.goto(`${viewer}/bc#/thoi-gian-thuc`);
     await M.waitForSelector('#bc-bottom-nav .bc-nav-item', { timeout: 20000 });
     const bottom = await M.$$eval('#bc-bottom-nav [data-route]', (els) => els.map((e) => e.dataset.route));
-    check('điện thoại: thanh dưới bỏ màn ẩn, bù màn kế tiếp (4 + Thêm)', bottom.length === 5 && !bottom.includes('/tong-quan') && bottom.includes('/ngay'),
-        bottom.join(','));
+    check('điện thoại: thanh dưới bỏ màn ẩn, bù màn kế tiếp (4 + Thêm)', bottom.length === 5 && !bottom.includes('/tong-quan') && bottom.includes('/tro-ly'),
+        bottom.join(','));   // màn kế tiếp theo thứ tự menu: Trợ lý AI
     await M.click('#bc-nav-more');
     const sheet = await M.textContent('.bc-modal, [role="dialog"], body');
     check('điện thoại: sheet "Thêm" không có Phải thu / Nhân sự', !sheet.includes('Phải thu') && !sheet.includes('Nhân sự & lương'));

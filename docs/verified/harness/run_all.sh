@@ -43,6 +43,17 @@ if node -e "require('playwright')" 2>/dev/null; then
 		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	done
 	pkill -f '^python3 -B server.py 8127' || true
+	# Trợ lý AI: #/tro-ly + #/ai (LLM giả, hàng đợi giả, chặn mạng) — 2 lượt seed riêng (fresh / stale)
+	for pass in fresh stale; do
+		pkill -f 'seed_ui_ai.py serve 812[89]' || true; sleep 0.5
+		BC_TEST_DB=bc_test_ai_ui python3 -B seed_ui_ai.py $pass >/dev/null || fail=1
+		(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_ai_ui python3 -B seed_ui_ai.py serve 8128 > /tmp/bc-ui-ai-v.log 2>&1 &)
+		(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_ai_ui BC_UI_USER=Administrator python3 -B seed_ui_ai.py serve 8129 > /tmp/bc-ui-ai-a.log 2>&1 &)
+		sleep 1.5
+		echo "═══ ui_ai.mjs $pass"; out=$(node ui_ai.mjs http://127.0.0.1:8128 http://127.0.0.1:8129 $pass 2>&1); rc=$?
+		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	done
+	pkill -f 'seed_ui_ai.py serve 812[89]' || true
 	if [ -n "${BC_OLD_PUBLIC:-}" ]; then  # public/bc của bản đang chạy trên site trước deploy
 		(BC_OLD_PUBLIC="$BC_OLD_PUBLIC" python3 -B server.py 8125 > /tmp/bc-ui-server-old.log 2>&1 &) && sleep 1
 		echo "═══ old_tab_check.mjs"; node old_tab_check.mjs http://127.0.0.1:8125 | tail -1 || fail=1
