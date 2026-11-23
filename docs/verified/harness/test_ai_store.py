@@ -502,7 +502,7 @@ c("dòng tổng: run_id = chính nó, started = now, chưa finished", (x.run_typ
 	x.provider, x.model) == ("ngay", "tong", tong, S1, None, None, None), x)
 c("dòng chưa chốt tự nói là lỗi (job chết giữa chừng không bị đọc thành ok), số đếm 0",
 	(x.status, x.error, x.tokens_in, x.tokens_out, x.cost_usd, x.cost_known, x.signals, x.insights_ai, x.rejected, x.kpis)
-	== ("loi", store.DANG_CHAY, 0, 0, 0, 0, 0, 0, 0, None), x)
+	== ("loi", "chưa hoàn tất", 0, 0, 0, 0, 0, 0, 0, None), x)
 con = store.start_run("ngay", "tai-chinh", provider="claude", model="claude-sonnet-5-5", now=S1, run_id=tong)
 x = run_row(con)
 c("dòng con: run_id = name dòng tổng, có provider + model", con != tong and (x.step, x.run_id, x.provider, x.model)
@@ -522,6 +522,14 @@ c("cost_usd None = chưa khai giá: cost_usd 0 + cost_known 0; error cắt 300; 
 con3 = store.start_run("ngay", "nhan-su", provider="claude", model="m", now=S1, run_id=tong)
 store.finish_run(con3, status="ok", now=S2, cost_usd=0)
 c("cost_usd 0 (đã khai giá, lượt gọi 0 đồng) khác None: cost_known 1", run_row(con3).cost_known == 1)
+# lượt gọi mô hình hỏng vẫn ghi token đã tốn: hết credit giữa chừng, model thật trả về, lời lỗi ghi rõ
+con4 = store.start_run("ngay", "attp", provider="claude", model="claude-sonnet-5-5", now=S1, run_id=tong)
+store.finish_run(con4, status="het-credit", now=S2, tokens_in=900, tokens_out=40, cost_usd=0.0033,
+	model="claude-sonnet-5-5-x", error="credit")
+x = run_row(con4)
+c("lượt gọi hỏng (het-credit) vẫn ghi token / chi phí / model thật; lời 'chưa hoàn tất' bị thay",
+	(x.status, x.finished, x.tokens_in, x.tokens_out, float(x.cost_usd), x.cost_known, x.model, x.error, x.run_id)
+	== ("het-credit", S2, 900, 40, 0.0033, 1, "claude-sonnet-5-5-x", "credit", tong), x)
 ai = store.start_run("ngay", "ai", provider="claude", now=S1, run_id=tong)
 store.finish_run(ai, status="tat", now=S2)
 x = run_row(ai)

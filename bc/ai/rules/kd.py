@@ -226,7 +226,7 @@ def npp_tut(pack, cfg):
 		detail += "; hụt nhiều nhất: " + ", ".join(neu)
 	tinh = {"so_npp": len(tut), "nguong_giam": NPP_GIAM, "hut": sum(x[0] for x in tut),
 		"nam_nay": sum(x[2] for x in tut), "nam_truoc": sum(x[3] for x in tut)}
-	return [cfg.signal(muc, "{{@so_npp|so}} NPP lớn mua hàng Tết giảm hơn {{@nguong_giam|pct}} so với cùng kỳ",
+	return [cfg.signal(muc, "{{@so_npp|so}} NPP lớn giảm mua hàng Tết hơn {{@nguong_giam|pct}} so cùng kỳ",
 		detail=detail + ".", paths=paths, tinh=tinh)]
 
 

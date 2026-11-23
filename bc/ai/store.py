@@ -23,9 +23,10 @@ Chi tiết đã chốt ở đây (nơi khác dựa vào):
 - signal_key cắt 140 ký tự (độ dài cột + unique), title / rule_title cắt 200. Khoá so theo đúng collation của cột
   (utf8mb4_unicode_ci: không phân biệt hoa thường / dấu) để không bao giờ chèn trùng chỉ mục unique.
 - sections_used lưu mỗi dòng một mã, luôn GỒM mảng chính của nhận định (lời không có path nào vẫn ẩn theo mảng).
-- Dòng Run mới tạo mang status "loi" + error DANG_CHAY, finished trống: job chết giữa chừng thì dòng tự nói là lỗi,
-  không bao giờ bị đọc nhầm thành lượt chạy tốt. finish_run ghi đè cả hai. Nơi đọc muốn biết "đang chạy / dở dang"
-  thì xét finished trống.
+- Dòng Run mới tạo mang status "loi" + error "chưa hoàn tất" (DANG_CHAY), finished trống: job chết giữa chừng
+  thì dòng tự nói là lỗi, không bao giờ bị đọc nhầm thành lượt chạy tốt. finish_run ghi đè cả hai (error None
+  xoá lời; gọi được cho lượt gọi mô hình hỏng kèm tokens / model, status loi | het-credit). Nơi đọc muốn biết
+  "đang chạy / dở dang" thì xét finished trống.
 - Dọn theo NGÀY LỊCH: xoá dòng có ngày đóng (Insight) / ngày bắt đầu (Run) TRƯỚC ngày (hôm nay − 180). Đúng 180 ngày
   trước (bất kể giờ) → còn giữ; 181 ngày → xoá.
 """
@@ -51,7 +52,7 @@ ERROR_LEN = 300          # BC AI Run.error
 DOCS_MAX = 20            # chứng từ kèm một tín hiệu
 RUN_TYPES = ("ngay", "tuan", "tay", "hoi-dap")
 RUN_STATUSES = ("ok", "loi", "het-credit", "vuot-tran", "tat", "khong-khoa")
-DANG_CHAY = "Lượt chạy chưa kết thúc (đang chạy hoặc dừng giữa chừng)."
+DANG_CHAY = "chưa hoàn tất"      # dòng Run chưa chốt (đang chạy / job chết giữa chừng)
 _MUC = {"vang": 1, "do": 2}          # đỏ nặng hơn vàng
 _AUDIENCES = ("lanh-dao", "quan-tri")
 _COT = ("name, signal_key, rule, section, status, severity, priority, seen_count, first_seen, last_seen, "

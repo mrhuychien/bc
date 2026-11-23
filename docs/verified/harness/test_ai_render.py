@@ -15,6 +15,7 @@ import os
 import random
 import shutil
 import subprocess
+import time
 from decimal import Decimal
 
 from seed import Check, drop_column, drop_doctype, insert, reset
@@ -33,6 +34,7 @@ R = "cong-no.receivables"
 PACK = {
 	"cong-no": {"receivables": {
 		"as_of": "2026-11-05",
+		"aging": {"31_60": 7_000_000},
 		"kpis": {"total": 1_600_000_000, "overdue": 33_000_000, "overdue_pct": 35.25, "dso": 45.3, "over_limit": 3,
 			"unallocated": 450_000, "trong": None, "co": True, "ten_dai": TEN_DAI, "ten_vua": TEN_VUA,
 			"nhan": "Bánh {đặc biệt}  hộp\n12 cái", "rong": "", "qua_120": 5},
@@ -140,6 +142,10 @@ SAI = [
 ]
 for kind, v in SAI:
 	c(f"sai kiểu → ValueError: {kind} ← {str(v)[:20]!r}", loi(render.fmt, v, kind) == "ValueError", loi(render.fmt, v, kind))
+# Số không hữu hạn: MỌI kiểu số × mọi dạng (float / Decimal, NaN / ±vô cực / sNaN) đều là ValueError, không lỗi nào khác
+VO_HAN = [float("nan"), float("inf"), float("-inf"), Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity"), Decimal("sNaN")]
+sot = [(k, str(v)) for k in ("tien", "so", "pct") for v in VO_HAN if loi(render.fmt, v, k) != "ValueError"]
+c("số không hữu hạn: 3 kiểu × 7 giá trị đều ValueError", not sot, str(sot))
 
 
 def doi_chieu_node():
@@ -319,6 +325,11 @@ BAT = [
 	("khoảng hai tỷ đồng", ["hai tỷ"], "số bằng chữ + tỷ"),
 	("nợ vài trăm triệu", ["vài trăm triệu"], "ước lượng bằng chữ"),
 	("nợ hai mươi tư triệu", ["hai mươi tư triệu"], "số bằng chữ nhiều từ"),
+	# Tối đa 8 từ số trước một đơn vị: 8 từ đầu + "năm" không phải đơn vị → lùi về 7 từ + đơn vị "trăm"; phần còn lại
+	# "năm mươi sáu" + "tỷ" thành mẩu thứ hai. (Không chặn 8 thì regex chạy bậc hai trên lời dài toàn chữ số.)
+	("một trăm hai mươi ba nghìn bốn trăm năm mươi sáu tỷ", ["một trăm hai mươi ba nghìn bốn trăm", "năm mươi sáu tỷ"],
+		"số bằng chữ rất dài: bắt thành hai mẩu"),
+	("phiếu X" + "-ABC" * 12 + "-123", ["123"], "chuỗi nối gạch dài hơn 40 ký tự không còn là mã"),
 	("tăng mười phần trăm", ["mười phần trăm"], "phần trăm bằng chữ"),
 	("thiệt hại nhiều tỷ đồng", ["nhiều tỷ"], "'nhiều tỷ'"),
 	("mất nửa tỷ", ["nửa tỷ"], "'nửa tỷ'"),
@@ -333,8 +344,11 @@ BAT = [
 	("tăng ×3", ["×3"], "dấu nhân"),
 	("chiếm 2/3 doanh số", ["2/3"], "'chiếm a/b' là phân số, không phải ngày"),
 	("đạt 3/5 chỉ tiêu", ["3/5"], "'đạt a/b' là phân số"),
+	("doanh số giảm 1/3 so với cùng kỳ, chỉ còn gần 1/4 chưa thu", ["1/3", "1/4"], "'giảm a/b', 'còn gần a/b' là phân số"),
+	("tăng 1/2, mất 2/5, thêm 1/5, thiếu 3/4, vượt 1/10", ["1/2", "2/5", "1/5", "3/4", "1/10"], "động từ tăng giảm + a/b"),
 	("1/3 số khách giảm mua", ["1/3"], "'a/b số …' là phân số"),
-	("thiếu khoảng 2/3 tỷ đồng", ["2/3"], "a/b + đơn vị là phân số, không phải ngày"),
+	("nợ khoảng 2/3 tỷ đồng", ["2/3", "tỷ đồng"], "a/b + ĐƠN VỊ là phân số, không phải ngày (không có chữ gợi ý đứng "
+		"trước); 'tỷ đồng' còn lại trơ trọi cũng bị bắt — chỗ đã bắt KHÔNG bắc cầu thành 'khoảng tỷ'"),
 	("2/3 tổng nợ nằm ở một khách", ["2/3"], "'a/b tổng …' là phân số"),
 	("đạt 45/60 điểm", ["45/60"], "a/b không thể là ngày"),
 	("mốc 32/13 và 12/15", ["32/13", "12/15"], "ngày > 31, tháng > 12: không phải ngày"),
@@ -345,9 +359,24 @@ BAT = [
 	("chiếm một nửa nợ quá hạn", ["một nửa"], "'một nửa'"),
 	("một phần ba số khách", ["một phần ba"], "phân số bằng chữ"),
 	("chiếm ½ doanh số", ["½"], "ký tự phân số"),
-	# Mã giả mô hình bịa (mã hợp lệ đã được Mask.strip bỏ trước khi lint)
+	# Đơn vị "trăm" / "vạn" sau chữ số; nói độ lớn KHÔNG kèm số ("gần tỷ", "tỷ hai", "… tỷ đồng")
+	("có 5 trăm khách", ["5 trăm"], "số + trăm: '5 trăm' = 500 (viết '500' thì đã bị bắt)"),
+	("khoảng 5 vạn hộp", ["5 vạn"], "số + vạn"),
+	("còn vài vạn hộp", ["vài vạn"], "'vài vạn'"),
+	("nợ gần tỷ đồng", ["gần tỷ"], "ước lượng không có số: 'gần tỷ'"),
+	("mất hơn trăm khách, lên tới nghìn đơn", ["hơn trăm", "tới nghìn"], "'hơn trăm', 'tới nghìn'"),
+	("vốn đầu tư tỷ đồng chưa giải ngân", ["tỷ đồng"], "'… tỷ đồng' trơ trọi vẫn là nói độ lớn; và 'đầu tư tỷ' "
+		"KHÔNG phải 'tư tỷ' (bốn tỷ)"),
+	("nợ tỷ hai, lỗ triệu mốt", ["tỷ hai", "triệu mốt"], "'tỷ hai' = 1,2 tỷ; 'triệu mốt' = 1,1 triệu"),
+	("chi tiền triệu mỗi chuyến", ["tiền triệu"], "'tiền triệu'"),
+	("nửa số khách giảm mua", ["nửa"], "'nửa' trơ trọi là tỷ phần"),
+	("nợ __2__ tỷ, tăng _35_%", ["2 tỷ", "35%"], "nhấn markdown bằng gạch dưới chen giữa số và đơn vị"),
+	("Hai tỷ đồng nợ quá hạn, nợ 5 Tỷ", ["Hai tỷ", "5 Tỷ"], "chữ số viết hoa đầu câu; sau CHỮ SỐ thì đơn vị viết hoa vẫn bắt"),
+	# Mã giả mô hình bịa hoặc chép hỏng (mã hợp lệ đã được Mask.strip bỏ trước khi lint)
 	("KH#0099 nợ lớn", ["KH#0099"], "mã giả lạ"),
 	("trả NCC#2026 trước", ["NCC#2026"], "mã giả lạ trùng dạng năm cũng không lọt"),
+	("KH0001 nợ lớn nhất", ["KH0001"], "mã giả chép hỏng (mất #): không được coi là 'mã có chữ đứng trước'"),
+	("KH #0001 và NCC# 0002", ["KH #0001", "NCC# 0002"], "mã giả chép hỏng (thêm dấu cách quanh #)"),
 	# Trùng → báo một lần; nhiều mẩu → theo thứ tự xuất hiện
 	("1.250.000 rồi lại 1.250.000", ["1.250.000"], "mẩu trùng báo một lần"),
 	("tăng 35% lên 2 tỷ, top 5, còn 1250", ["35%", "2 tỷ", "1250"], "nhiều mẩu, đúng thứ tự"),
@@ -362,13 +391,14 @@ GIU = [
 	("Kế hoạch năm 2026 và mùa Tết 2027", "năm 20xx"),
 	("giai đoạn 2025-2026", "khoảng năm"),
 	("chốt ngày 5/11", "ngày d/m"),
+	("tăng ca từ 6/11, giảm tải sau 7/11, còn hạn đến 30/11, khoảng 5/11 sẽ giao", "động từ tăng giảm nhưng có chữ khác "
+		"chen trước ngày; 'khoảng d/m' là ngày"),
 	("hoàn tất trước 05/11/2026", "ngày d/m/yyyy"),
 	("hạn 05/11/26", "ngày d/m/yy"),
 	("kỳ tháng 10/2026 và quý 3/2026", "tháng/năm, quý/năm"),
 	("từ 5-7/11, đến 5/11 phải xong", "khoảng ngày"),
 	("giao được ngày 5/11", "có chữ 'ngày' chen giữa nên không phải 'được a/b'"),
 	("mốc 5/11 tổng kết quý, mốc 7/11 tổng hợp số", "'tổng kết', 'tổng hợp' sau ngày (không có chữ chỉ ngày đứng trước)"),
-	("vốn đầu tư tỷ đồng chưa giải ngân", "'đầu tư tỷ …': 'tư' không phải số bốn"),
 	("ngày 2/3 số đơn tăng", "'a/b số …' nhưng có chữ 'ngày' đứng trước → ngày"),
 	("từ 2/3 tỷ lệ trả hàng tăng, 5/11 đã giao, 7/11 khách nhận", "ngày + 'tỷ lệ' / 'đã' / 'khách': không phải đơn vị"),
 	("5/11 số liệu được chốt, đến 5/11 tổng hợp", "'số liệu', 'tổng hợp' sau ngày"),
@@ -380,6 +410,7 @@ GIU = [
 	("quý 3, top 5, tuần 45, ca 2, lần 2, thứ 2", "số thứ tự"),
 	("mã SR900 bán chậm", "mã có chữ đứng liền trước (đặc tả)"),
 	("phiếu KK-2026-002 và ACC-SINV-2026-00012", "số trong mã chứng từ viết hoa nối bằng gạch"),
+	("phiếu ACC-SINV-PINV-STE-MAT-HGC-KK-2026-00012", "mã dài 39 ký tự vẫn là mã"),
 	("kho HGC/2026/001", "mã nối bằng dấu /"),
 	("kỳ T10, Q4, đợt N1", "mã ngắn"),
 	("diện tích 50 m²", "m² → m2 sau chuẩn hoá: chữ số dính chữ"),
@@ -399,6 +430,16 @@ GIU = [
 	("ba mươi khách, hai chục đơn", "số đếm < 100 viết bằng chữ (như '30 khách' viết số)"),
 	("năm ngoái, năm nay, hằng năm", "'năm' là thời gian"),
 	("hỗ trợ 24/7", "trùng dạng ngày d/m — chấp nhận lọt (đặc tả giữ d/m)"),
+	("vượt tỷ lệ cho phép, đến tỷ giá mới, gần triệu chứng cũ", "chữ ước lượng + 'tỷ lệ' / 'tỷ giá' / 'triệu chứng'"),
+	("nửa cuối năm, nửa sau tháng 11, nửa đêm, nửa mùa Tết, làm nửa chừng, nửa vời", "'nửa …' chỉ thời gian / thành ngữ"),
+	("mã KH-0001 và NCC-2026-001", "mã viết hoa nối gạch là mã chứng từ thật — mã giả luôn có dấu #"),
+	("rà soát quá tỉ mỉ, dẫn đến triệu hồi sản phẩm", "'tỉ mỉ', 'triệu hồi' không phải đơn vị"),
+	("giao đến Triệu Sơn, hàng Vạn Phúc, tiền Triệu Sơn, cả Vạn Ninh, Tỷ Hai", "tên riêng viết HOA: đơn vị không có "
+		"chữ số đứng trước chỉ nhận khi viết thường"),
+	("5 chục khách, vài chục đơn", "'chục' không kèm đơn vị lớn: như số < 100 viết bằng số"),
+	("phiếu KK_2026_002", "mã nối bằng gạch dưới"),
+	("DSO 62 ngày, tăng 5 lần", "GIỚI HẠN đã biết: số ≤ 2 chữ số không kèm đơn vị luôn lọt (đặc tả cho phép "
+		"'trong 7 ngày') dù ở đây là số liệu — đề bài (bc.ai.prompt) phải răn, lint không phân biệt được"),
 	("mục x2", "chữ số dính chữ đứng trước (đặc tả giữ)"),
 	("", "lời rỗng"),
 	(None, "None"),
@@ -408,6 +449,20 @@ for text, nhan in GIU:
 	eq(f"giữ — {nhan}: {text!r}", render.lint(text), [])
 eq("lời còn placeholder: bỏ placeholder rồi mới lint", render.lint(render.strip_placeholders(
 	f"Nợ {{{{{R}.kpis.total|tien}}}}, chiếm {{{{{R}.kpis.overdue_pct|pct}}}} trong 7 ngày")), [])
+
+print("\n— lint: lời rất dài / dị dạng vẫn soát xong nhanh (không chạy bậc hai) —")
+# Mỗi ca ~0,1–0,2 s khi tuyến tính; bản chạy bậc hai mất hàng chục giây → ngưỡng 5 s cách xa cả hai phía.
+DAI = [
+	("chuỗi chữ số bằng chữ không có đơn vị", "một hai ba bốn năm sáu bảy tám chín mười " * 1000, []),
+	("mã nối gạch rất dài", "A" + "-123" * 10000, ["123"]),       # quá 40 ký tự đầu thì không còn là mã
+	("rất nhiều số nhỏ", "1 " * 20000, []),
+	("rất nhiều ngày", "5/11 " * 8000, []),
+]
+for nhan, text, want in DAI:
+	t0 = time.monotonic()
+	got = render.lint(text)
+	dt = time.monotonic() - t0
+	c(f"{nhan} ({len(text)} ký tự): đúng kết quả và < 5 s", got == want and dt < 5, f"{dt:.1f} s, {got[:3]}")
 
 # ══ 4. render_rule ════════════════════════════════════════════════════════════
 print("\n— render_rule: lời quy tắc (không lint) + số quy tắc tự tính (hợp đồng §1 mục 8) —")
@@ -554,6 +609,21 @@ eq("path trong khuyến nghị cũng vào paths / sections_used", (r["ok"], r["a
 	(True, [f"Phòng Mua hàng làm việc với {BAO_BI} về 12 hoá đơn."], "phai-tra.payables.ap.due.overdue_count",
 	["cong-no", "phai-tra"]))
 
+# Hợp đồng §1 mục 12: lời quy tắc gửi mô hình là lời CÒN placeholder → không mang tên thật, đi qua mask y nguyên;
+# mô hình chép lại placeholder thì máy chủ chèn tên thật + số thật từ pack GỐC (250.500.000 → "251 triệu").
+tin_hieu = [{"id": "S1", "rule": "cn.qua_han_lon", "muc": "do", "trang_thai": "mo", "so_ngay": 3,
+	"loi_quy_tac": f"{{{{{R}.top_overdue[0].customer_name|chu}}}} quá hạn {{{{{R}.top_overdue[0].overdue|tien}}}}",
+	"paths": [f"{R}.top_overdue[0].customer_name", f"{R}.top_overdue[0].overdue"], "ghi_chu_quan_tri": LAN_ANH}]
+che_th = M.mask(tin_hieu)
+eq("mục 12: lời quy tắc còn placeholder + paths đi qua mask y nguyên; ghi chú BẰNG ĐÚNG tên khách thì bị che",
+	(che_th[0]["loi_quy_tac"], che_th[0]["paths"], che_th[0]["ghi_chu_quan_tri"], che_th[0]["rule"], che_th[0]["so_ngay"]),
+	(tin_hieu[0]["loi_quy_tac"], tin_hieu[0]["paths"], "KH#0001", "cn.qua_han_lon", 3))
+c("… tín hiệu gửi đi không có tên / mã khách thật", not any(x in json.dumps(che_th, ensure_ascii=False)
+	for x in (LAN_ANH, "CUST-0001")))
+r = render.render_insight({"title": che_th[0]["loi_quy_tac"], "body": "Cần thu hồi sớm.", "advice": []}, PACK, NHOM, M)
+eq("… mô hình chép lại lời quy tắc → lời lưu có tên thật và số thật", (r["ok"], r["title"]),
+	(True, f"{LAN_ANH} quá hạn 251 triệu"))
+
 LOI_INSIGHT = [
 	({"body": "Doanh thu 1.250.000 trong tháng."}, "so-tran:1.250.000", "§9.3: '1.250.000' viết trần"),
 	({"body": "Nợ quá hạn chiếm 35% phải thu."}, "so-tran:35%", "§9.3: '35%' viết trần"),
@@ -582,6 +652,21 @@ LOI_INSIGHT = [
 		"chữ số + dấu cách + placeholder kiểu so ('1 3' đọc như nhóm nghìn)"),
 	({"body": f"Có {{{{{R}.kpis.over_limit|so}}}} 000 khách."}, f"so-tran:{{{{{R}.kpis.over_limit|so}}}} 000",
 		"placeholder kiểu so + ' 000'"),
+	({"body": f"Tháng 11 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức."}, f"so-tran:11 {{{{{R}.kpis.over_limit|so}}}}",
+		"số RỜI 2 chữ số + placeholder so ('11 250' dễ đọc thành một số)"),
+	({"body": f"Có {{{{{R}.kpis.over_limit|so}}}} trăm khách."}, f"so-tran:{{{{{R}.kpis.over_limit|so}}}} trăm",
+		"'trăm' sau placeholder số (3 thành 300)"),
+	({"body": f"Có {{{{{R}.kpis.over_limit|so}}}} chục khách."}, f"so-tran:{{{{{R}.kpis.over_limit|so}}}} chục",
+		"'chục' sau placeholder số (3 thành 30)"),
+	({"body": "KH0001 nợ lớn nhất."}, "so-tran:KH0001", "mã giả chép hỏng (mất #) trong lời mô hình"),
+	({"body": f"Có {{{{{R}.kpis.over_limit|so}}}}{{{{{R}.kpis.qua_120|so}}}} khách."},
+		f"so-tran:{{{{{R}.kpis.over_limit|so}}}}{{{{{R}.kpis.qua_120|so}}}}", "hai placeholder số dính liền (3 và 5 thành '35')"),
+	({"body": f"Gấp {{{{{R}.kpis.over_limit|so}}}},{{{{{R}.kpis.qua_120|so}}}} lần."},
+		f"so-tran:{{{{{R}.kpis.over_limit|so}}}},{{{{{R}.kpis.qua_120|so}}}}", "hai placeholder số nối bằng dấu phẩy ('3,5')"),
+	({"body": f"Nợ {{{{{R}.kpis.total|tien}}}}.{{{{{R}.kpis.over_limit|so}}}} đồng."},
+		f"so-tran:{{{{{R}.kpis.total|tien}}}}.{{{{{R}.kpis.over_limit|so}}}}", "tien + '.' + so"),
+	({"body": f"Có {{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.qua_120|so}}}} khách."},
+		f"so-tran:{{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.qua_120|so}}}}", "hai placeholder so cách một dấu cách ('3 5' / '3 250')"),
 ]
 for doi, want, nhan in LOI_INSIGHT:
 	r = ri(**doi)
@@ -592,12 +677,26 @@ eq("'tỷ lệ', 'khách', 'trường hợp' sau placeholder số không phải 
 r = ri(body=f"Phải thu cuối quý 3 {{{{{R}.kpis.total|tien}}}}, top 5 {{{{{R}.top_overdue[0].customer_name|chu}}}}.")
 eq("chữ số + dấu cách + placeholder tien / chu: không phải ghép số", (r["ok"], r["body"]),
 	(True, f"Phải thu cuối quý 3 1,6 tỷ, top 5 {LAN_ANH}."))
+# over_limit = 3. Ngày (11 đứng sau "/"), năm (4 chữ số), mã (900 dính chữ), giờ (30 đứng sau ":") KHÔNG phải đầu nhóm nghìn
+r = ri(body=f"Đến 5/11 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 {{{{{R}.kpis.over_limit|so}}}} khách; "
+	f"mã SR900 {{{{{R}.kpis.over_limit|so}}}} lần; lúc 5:30 {{{{{R}.kpis.over_limit|so}}}} đơn.")
+eq("ngày / năm / mã / giờ đứng trước placeholder so không phải số ghép", (r["ok"], r["errors"], r["body"]),
+	(True, [], "Đến 5/11 3 khách vượt hạn mức; năm 2026 3 khách; mã SR900 3 lần; lúc 5:30 3 đơn."))
+# Hai số THẬT đặt cạnh nhau có dấu phân cách rõ ("3/5"), chu dính so, so cách tien: không tạo ra con số nào mới
+r = ri(body=f"{{{{{R}.kpis.over_limit|so}}}}/{{{{{R}.kpis.qua_120|so}}}} khách đã trả; "
+	f"{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}} lần trễ; "
+	f"nhóm {{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}.")
+eq("'{{a|so}}/{{b|so}}', chu dính so, so cách tien: không phải số ghép", (r["ok"], r["errors"], r["body"]),
+	(True, [], "3/5 khách đã trả; Công ty ABC3 lần trễ; nhóm 3 33 triệu."))
 r = ri(body=f"Nợ của KH#0001,{{{{{R}.top_overdue[0].overdue|tien}}}} đã quá hạn; KH#0002 {{{{{R}.kpis.over_limit|so}}}} lần trễ.")
 eq("chữ số trong mã giả HỢP LỆ đứng sát placeholder không phải số ghép", (r["ok"], r["body"]),
 	(True, f"Nợ của {LAN_ANH},251 triệu đã quá hạn; {ABC} 3 lần trễ."))
-r = ri(body=f"Có {{{{{R}.kpis.qua_120|so}}}} khách quá hạn lâu, lớn nhất {{{{{R}.top_overdue[0].overdue|tien}}}}.")
-eq("chữ số nằm TRONG path của placeholder (qua_120, [0]) không bị lint", (r["ok"], r["body"]),
-	(True, "Có 5 khách quá hạn lâu, lớn nhất 251 triệu."))
+# Khoá "31_60": nếu lint chạy trên lời CHƯA bỏ placeholder thì ".31_60" thành dãy 4 chữ số "3160" → bị bắt nhầm.
+# 7.000.000 → one(7,0) = "7" → "7 triệu"
+r = ri(body=f"Có {{{{{R}.kpis.qua_120|so}}}} khách quá hạn lâu, nhóm trễ vừa {{{{{R}.aging.31_60|tien}}}}, "
+	f"lớn nhất {{{{{R}.top_overdue[0].overdue|tien}}}}.")
+eq("chữ số nằm TRONG path của placeholder (qua_120, aging.31_60, [0]) không bị lint", (r["ok"], r["errors"], r["body"]),
+	(True, [], "Có 5 khách quá hạn lâu, nhóm trễ vừa 7 triệu, lớn nhất 251 triệu."))
 r = ri(title="Nợ 35% và 35% nữa", body="Lại 35%.")
 eq("lỗi trùng báo một lần", r["errors"], ["so-tran:35%"])
 r = ri(title=f"{{{{{R}.kpis.x|so}}}} và 2 tỷ", body="")
