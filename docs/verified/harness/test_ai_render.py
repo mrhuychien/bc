@@ -1167,7 +1167,7 @@ eq("E2: kieu_theo_ten — 'rate' → tien, '*_rate' → pct", [render.kieu_theo_
 LA_DE_TRONG = {}        # lá cố ý để trống (không xếp được): hiện không có
 # G4: ≥ 60 nhận định ĐÚNG viết theo đề bài (bc.ai.prompt), đủ 7 nhóm, hai seed (g = seed_ui2, k = seed_ui_kho) —
 # chỉ có placeholder, không số liệu; §path§ = chép mã giả có ở path đó trong gói đã che của lượt (như mô hình chép).
-# (seed, nhóm, tiêu đề, thân, khuyến nghị). Gốc: scratchpad fx2_text/insights30 + vf2/ok40, sửa theo G1 / G2.
+# (seed, nhóm, tiêu đề, thân, khuyến nghị). Gốc: các câu soạn tay ở những đợt kiểm lại, sửa theo G1 / G2.
 DUNG = [
 	("g", "kinh-doanh", "Doanh số luỹ kế tăng mạnh so với cùng kỳ",
 		"Doanh số luỹ kế đạt {{tong-quan.summary.rows[0].sales|tien}}, tăng {{tong-quan.summary.meta.growth.sales|pct}} so với cùng kỳ năm trước ({{tong-quan.summary.rows[1].sales|tien}}). Mức tăng lớn bất thường, cần kiểm tra: có đơn hàng lớn một lần hay không.",
