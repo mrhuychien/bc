@@ -228,18 +228,21 @@ print("\nB. Detector gia — dòng bán [21/10, 27/10], nền [23/7, 20/10]; mua
 _si = iter(range(1, 1000))
 
 
-def ban(ngay, dong, *, kh=KH, nhom="Nhà phân phối", is_return=0, is_opening="No", docstatus=1, name=None):
+def ban(ngay, dong, *, kh=KH, nhom="Nhà phân phối", is_return=0, is_opening="No", docstatus=1, name=None, ty_gia=1):
+	"""Hoá đơn bán; giá trong `dong` là giá TIỀN CÔNG TY (đồng). ty_gia ≠ 1: hoá đơn ngoại tệ — net_rate / net_amount
+	(tiền hoá đơn) = giá đồng / ty_gia, base_* = giá đồng."""
 	n = name or f"SI-B{next(_si):03d}"
 	doc("Sales Invoice", n, docstatus=docstatus, posting_date=d(ngay), customer=kh, customer_group=nhom,
-		is_return=is_return, is_opening=is_opening, base_grand_total=0,
+		is_return=is_return, is_opening=is_opening, base_grand_total=0, conversion_rate=ty_gia,
 		modified=dt("2026-07-01 09:00:00") if docstatus == 2 else None)      # huỷ lâu rồi: ngoài nền ct.huy_nhieu
 	for i, x in enumerate(dong, 1):
 		ma, rate, cf = x[0], x[1], x[2] if len(x) > 2 else 1
 		ck = x[3] if len(x) > 3 else 0
 		qty = x[4] if len(x) > 4 else 1
 		insert("Sales Invoice Item", parent=n, parenttype="Sales Invoice", parentfield="items", idx=i, item_code=ma,
-			item_name={"BDX": "Bánh đậu xanh hộp", "KEO": "Kẹo dừa"}.get(ma, ma), net_rate=rate, conversion_factor=cf,
-			discount_percentage=ck, qty=qty, net_amount=rate * qty, **NGUOI_COT)
+			item_name={"BDX": "Bánh đậu xanh hộp", "KEO": "Kẹo dừa"}.get(ma, ma), net_rate=rate / ty_gia,
+			base_net_rate=rate, conversion_factor=cf, discount_percentage=ck, qty=qty, net_amount=rate * qty / ty_gia,
+			base_net_amount=rate * qty, **NGUOI_COT)
 	return n
 
 
@@ -279,6 +282,11 @@ eq("ban_lech: dòng lệch nhiều trước (đơn giá theo đơn vị kho, tru
 	r["trung_vi"], r["lech_pct"], r["so_dong_nen"], r["kenh"], r["customer"], r["item_name"]) for r in bl["rows"]],
 	[(SI_L3, 70_000, 100_000, 30.0, 5, "NPP", KH, "Bánh đậu xanh hộp"),
 	(SI_L2, 84_500, 100_000, 15.5, 5, "NPP", KH, "Bánh đậu xanh hộp")])
+# Tên hiển thị: hoá đơn chụp customer_name khác mã hồ sơ → dòng mang TÊN (như các màn khác của bc), trống thì mã
+frappe.db.sql("UPDATE `tabSales Invoice` SET customer_name = %s WHERE name = %s", ("Đại lý Tên Hiển Thị", SI_L3))
+eq("ban_lech: khách hiện theo tên chụp trên hoá đơn (customer_name), hoá đơn không có tên thì hiện mã",
+	[r["customer"] for r in GIA._ban_lech(CTX, GIA._dong_ban(CTX))["rows"]], ["Đại lý Tên Hiển Thị", KH])
+frappe.db.sql("UPDATE `tabSales Invoice` SET customer_name = NULL WHERE name = %s", (SI_L3,))
 ck = GIA._chiet_khau(CTX, dong)
 eq("chiet_khau: > 15% (ngặt): 2 dòng, 2 hoá đơn, Σ thành tiền 900.000 + 155.000", (ck["nguong"], ck["so_dong"],
 	ck["so_hd"], ck["gia_tri"], [(r["name"], r["ck_pct"], r["gia_tri"], r["kenh"]) for r in ck["rows"]]),
@@ -290,6 +298,17 @@ eq("ngưỡng ghi đè đi tới detector: lệch > 20 → 1 dòng; chiết kh�
 	[(x["nguong"], x["so_dong"]) for x in (GIA._ban_lech(CTX, dong), GIA._chiet_khau(CTX, dong))], [(20, 1), (16, 1)])
 frappe.db.sql("DELETE FROM `tabBC AI Rule`")
 frappe.cache().store.clear()
+# Hoá đơn ngoại tệ (USD, tỷ giá 25.000) đúng giá nền: net_rate = 4 (USD) nhưng base_net_rate = 100.000 đ → không lệch;
+# dòng chiết khấu 20% tính giá trị bằng TIỀN CÔNG TY (100.000 đ, không phải 4).
+SI_USD = ban("2026-10-26", [("BDX", 100_000), ("BDX", 100_000, 1, 20)], ty_gia=25_000)
+dong_usd = GIA._dong_ban(CTX)
+bl_usd, ck_usd = GIA._ban_lech(CTX, dong_usd), GIA._chiet_khau(CTX, dong_usd)
+eq("ngoại tệ: dòng USD đúng giá được xét nhưng không lệch (đơn giá tiền công ty); chiết khấu cộng tiền công ty",
+	(bl_usd["so_dong_xet"], bl_usd["so_dong"], [r["name"] for r in bl_usd["rows"]], ck_usd["so_dong"], ck_usd["gia_tri"],
+	[r["gia_tri"] for r in ck_usd["rows"] if r["name"] == SI_USD]),
+	(7, 2, [SI_L3, SI_L2], 3, 1_155_000, [100_000]))
+frappe.db.sql("DELETE FROM `tabSales Invoice Item` WHERE parent = %s", SI_USD)
+frappe.db.sql("DELETE FROM `tabSales Invoice` WHERE name = %s", SI_USD)
 
 _pi = iter(range(1, 1000))
 
@@ -369,7 +388,7 @@ eq("mọi tín hiệu: mảng tro-ly, lanh-dao, route rỗng, khoá = quy tắc"
 eq("lời đã thay số (seed)", {k: loi(s, p1) for k, s in sig.items()}, {
 	"ct.huy_nhieu": "6 chứng từ bị huỷ trong 7 ngày qua | Trung bình 8 tuần trước là 2,9 chứng từ mỗi tuần, nhiều nhất "
 		"là hoá đơn bán với 3 chứng từ; kế toán trưởng cần rà soát lý do huỷ.",
-	"ct.ghi_lui": "3 chứng từ mới duyệt bị ghi lùi ngày quá 10 ngày | Lùi xa nhất 26 ngày ở bút toán số JE-L26, kế toán "
+	"ct.ghi_lui": "3 chứng từ mới tạo bị ghi lùi ngày quá 10 ngày | Lùi xa nhất 26 ngày ở bút toán số JE-L26, kế toán "
 		"cần kiểm tra lý do ghi sổ muộn.",
 	"ct.but_toan_tay_lon": "2 bút toán nhập tay từ 100 triệu trở lên trong tuần qua | Tổng 350 triệu, lớn nhất 250 "
 		"triệu ở bút toán JE-T250; kế toán trưởng cần đối chiếu chứng từ gốc.",
@@ -457,7 +476,7 @@ eq("ghi_lui: ghi đè vàng 15 đỏ 25: 20 → vàng, 26 → đỏ, 15 → khô
 	[muc_all(GL([(v, 1)]), K, {"vang": 15, "do": 25}) for v in (20, 26, 15)], [{K: "vang"}, {K: "do"}, {}])
 _, sg, pk = mot(GL([(30, 2), (12, 3), (10, 4), (2, 5)]), K)
 eq("ghi_lui: đếm chỉ phần lùi > ngưỡng (2 + 3 = 5)", (sg[K].tinh, loi(sg[K], pk).split(" | ")[0]),
-	({"so": 5, "nguong": 10}, "5 chứng từ mới duyệt bị ghi lùi ngày quá 10 ngày"))
+	({"so": 5, "nguong": 10}, "5 chứng từ mới tạo bị ghi lùi ngày quá 10 ngày"))
 _, sg, pk = mot(GL([(30, 1)], rows=[]), K)
 eq("ghi_lui: không dòng → lời chung, không documents", (sg[K].detail, sg[K].documents),
 	("Kế toán cần kiểm tra lý do ghi sổ muộn và khoá sổ các kỳ đã chốt.", []))
@@ -589,8 +608,10 @@ for f in ("chung_tu.py", "gia.py", "kpi.py"):
 	eq(f"{f}: chuỗi SQL chỉ SELECT", [s[:60] for s in sql if CAM.search(s)], [])
 	eq(f"{f}: không NOW() / CURDATE() / SYSDATE / CURRENT_", [s[:60] for s in sql
 		if re.search(r"NOW\(|CURDATE|SYSDATE|CURRENT_", s, re.I)], [])
+	# tên hiển thị của khách / NCC (customer_name, supplier_name, party_name) ĐƯỢC đọc: nằm dưới khoá customer /
+	# supplier nên được che như mọi màn; cấm là người tạo / sửa, tên người, chữ tự do
 	eq(f"{f}: không đọc owner / modified_by / tên người / diễn giải", [s[:60] for s in sql if re.search(
-		r"\b(owner|modified_by|party_name|customer_name|supplier_name|user_remark|remarks|title|full_name)\b", s)], [])
+		r"\b(owner|modified_by|user_remark|remarks|title|full_name|employee_name)\b", s)], [])
 	eq(f"{f}: không gọi ghi DB", sorted({n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
 		and n.attr in ("set_value", "delete", "insert", "commit", "save", "get_doc", "db_set", "set_single_value")}), [])
 src = open(os.path.join(BC_ROOT, "bc", "ai", "rules", "ks.py"), encoding="utf-8").read()

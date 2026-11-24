@@ -6,9 +6,11 @@ khoá cache LOCK_KEY do bc.ai.pipeline.run_daily giữ trong lúc chạy (LOCK_T
 hết). Khoá KHÔNG mang tiền tố "bc:" vì lưu BC Settings xoá mọi khoá "bc:*".
 Cron trong hooks.py chạy theo múi giờ của site (System Settings › Time Zone) — v16 so cron với now_datetime().
 
-Bản tin tuần / tháng (P2, bc.ai.brief.run_brief): job id riêng từng loại (BRIEF_JOB_IDS) và MỘT khoá riêng
-BRIEF_LOCK_KEY (bc.ai.brief giữ trong lúc chạy) — bản tin không chặn lượt ngày và ngược lại; hai loại bản tin không chạy
-chồng nhau.
+Bản tin tuần / tháng (P2, bc.ai.brief.run_brief): job id riêng từng loại (BRIEF_JOB_IDS) và khoá riêng TỪNG LOẠI
+brief_lock_key(kind) = "bcai:lock:brief:<loại>" (bc.ai.brief giữ trong lúc chạy) — bản tin không chặn lượt ngày và ngược
+lại; hai loại bản tin chạy độc lập: thứ Hai trùng ngày 2, bản tin tuần (06:00, tới 1800 s, có thể chờ sau lượt ngày) còn
+chạy lúc 07:00 thì bản tin tháng VẪN được xếp và chạy (khoá chung trước đây làm mất bản tin tháng đó — không ai xếp lại).
+Cùng một loại thì không chạy chồng (job_id + deduplicate, và khoá của loại đó).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ JOB_TIMEOUT = 1800       # giây — bằng trần của một lượt chạy (b
 
 BRIEF_KINDS = ("tuan", "thang")
 BRIEF_JOB_IDS = {"tuan": "bc_ai_brief_tuan", "thang": "bc_ai_brief_thang"}
-BRIEF_LOCK_KEY = "bcai:lock:brief"   # bc.ai.brief.run_brief giữ (đặt / xoá) — chung cho hai loại bản tin
+BRIEF_LOCK_KEY = "bcai:lock:brief"   # tiền tố; khoá thật của từng loại: brief_lock_key(kind)
 BRIEF_LOCK_TTL = 1800    # giây
 BRIEF_TIMEOUT = 1800     # giây / job bản tin
 
@@ -53,12 +55,17 @@ def daily():
 
 
 # ─── Bản tin tuần / tháng (P2) ───────────────────────────────────────────────
-def brief_running(kind: str) -> bool:
-	"""Một bản tin đang chạy (khoá BRIEF_LOCK_KEY — loại nào cũng vậy) hoặc job bản tin loại `kind` đang chờ / chạy.
-	Không xét khoá của lượt ngày. kind ∉ BRIEF_KINDS → ValueError."""
+def brief_lock_key(kind: str) -> str:
+	"""Khoá cache bc.ai.brief.run_brief(kind) giữ trong lúc chạy — riêng từng loại. kind ∉ BRIEF_KINDS → ValueError."""
 	if kind not in BRIEF_KINDS:
 		raise ValueError(f"bc.ai: loại bản tin không hợp lệ: {kind}")
-	if frappe.cache().get_value(BRIEF_LOCK_KEY):
+	return f"{BRIEF_LOCK_KEY}:{kind}"
+
+
+def brief_running(kind: str) -> bool:
+	"""Bản tin loại `kind` đang chạy (khoá brief_lock_key(kind)) hoặc job loại đó đang chờ / chạy. Không xét khoá của
+	lượt ngày, không xét loại bản tin kia. kind ∉ BRIEF_KINDS → ValueError."""
+	if frappe.cache().get_value(brief_lock_key(kind)):
 		return True
 	try:
 		from frappe.utils.background_jobs import is_job_enqueued
@@ -68,8 +75,8 @@ def brief_running(kind: str) -> bool:
 
 
 def enqueue_brief(kind: str) -> bool:
-	"""Xếp job bc.ai.brief.run_brief(kind=kind) vào hàng `long`. kind ∉ BRIEF_KINDS → ValueError. Đang có bản tin chạy /
-	job loại này đang chờ → không xếp, trả False."""
+	"""Xếp job bc.ai.brief.run_brief(kind=kind) vào hàng `long`. kind ∉ BRIEF_KINDS → ValueError. Bản tin loại này đang
+	chạy / đang chờ → không xếp, trả False (loại kia đang chạy thì vẫn xếp)."""
 	if brief_running(kind):
 		return False
 	frappe.enqueue("bc.ai.brief.run_brief", queue="long", timeout=BRIEF_TIMEOUT, job_id=BRIEF_JOB_IDS[kind],

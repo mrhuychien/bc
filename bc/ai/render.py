@@ -78,6 +78,12 @@ Vòng sửa 4 (H1–H8) — luật theo cấu trúc, một bộ cho mỗi khái 
   nghiệp, ý, bộ, hành, phục, tình, thuận).
 - H8: số La Mã chỉ I V X (≥ 2 chữ HOA, hợp lệ, đứng riêng) chỉ được ngay sau từ chỉ thứ tự (quý, tháng, kỳ, đợt, giai
   đoạn, chương, phần, mục, cấp, loại, hạng, khoá, thứ, thế kỷ, vùng, khu, QĐ, NĐ, TT).
+- thoi_han=False (render_text — lời P2: mục bản tin tuần / tháng, ghi chú phản biện): bỏ ngoại lệ "thời hạn ≤ 2 chữ số"
+  ở dạng ĐỨNG TRƯỚC đơn vị thời gian ("45 ngày", "3 tháng", "trong 7 ngày") và loại cả số bằng chữ đứng trước ngày /
+  tuần / tháng / năm / quý / giờ / hôm ("chín mươi ngày", "bốn mươi lăm ngày", "nửa tháng") → "thoi-han:<mẩu>". Số
+  ngày phải lấy bằng placeholder. Vẫn giữ: thứ tự / tên kỳ ("tháng 11", "quý 4", "ngày 5 tháng 11 năm 2026", "thứ hai
+  tuần này") và đúng các mốc so sánh cố định mà đề bài bản tin định nghĩa (KY_CO_DINH: "bốn tuần trước", "ba tháng
+  trước", "tám tuần gần nhất", "mười hai tháng gần nhất").
 GIỚI HẠN đã biết (G4): dạng được phép của G1 lọt dù dùng sai ("DSO 62 ngày" là số liệu thật viết tay) và số bằng chữ
 không kèm đơn vị, không sát placeholder lọt ("chín mươi chín hoá đơn"), số La Mã có L C D M không kèm
 đơn vị ("XL khách") — lint không biết thật / giả; đề bài
@@ -190,6 +196,15 @@ def fmt(value, kind: str) -> str:
 
 # ─── Thay placeholder ────────────────────────────────────────────────────────
 def _them(ds: list, *items) -> None:
+	"""Thêm các phần tử chưa có vào cuối `ds` (giữ thứ tự). Lô lớn tra bằng set — "x not in list" là bậc hai, một lời
+	80 KB toàn mẩu khác nhau cho hơn chục nghìn lỗi."""
+	if len(items) > 32:
+		co = set(ds)
+		for x in items:
+			if x not in co:
+				co.add(x)
+				ds.append(x)
+		return
 	for x in items:
 		if x not in ds:
 			ds.append(x)
@@ -800,18 +815,16 @@ def lint(text: str, ma=None) -> list:
 	số không kèm đơn vị trên ("trong 7 ngày", "30 ngày", "quý 4").
 	Bắt thêm (xem docstring module): số có phần lẻ, số viết bằng chữ trước đơn vị lớn, "gấp đôi", phân số, mã giả lạ."""
 	tho = "" if text is None else str(text)
-	out: list = []
-	for mau in [m.group(0) for m in _PHAN_SO_KY_TU.finditer(tho)]:
-		_them(out, mau)
+	out: dict = dict.fromkeys(m.group(0) for m in _PHAN_SO_KY_TU.finditer(tho))   # dict: giữ thứ tự, không bậc hai
 	tho = _PHAN_SO_KY_TU.sub(" ", tho)
 	bo = _cac_dang(tho)
 	for s in bo:                   # có ngoặc nhọn: soát cả hai dạng (E1)
-		_them(out, *_lint_mot(s, ma))
+		out.update(dict.fromkeys(_lint_mot(s, ma)))
 	# H1: lượt theo từ chạy thêm trên dạng GIỮ dấu nhấn markdown (dấu là "khoảng": "hai_tỷ", "hai~tỷ")
 	for s in _cac_dang(tho, giu_dau=True):
 		if s not in bo:
-			_them(out, *_lint_mot(s, ma, chi_tu=True))
-	return out
+			out.update(dict.fromkeys(_lint_mot(s, ma, chi_tu=True)))
+	return list(out)
 
 
 def _lint_mot(s: str, ma=None, chi_tu: bool = False) -> list:
@@ -938,10 +951,9 @@ def _lint_mot(s: str, ma=None, chi_tu: bool = False) -> list:
 		else:
 			xoa(i, j, s[i:j])
 		i = j
-	out: list = []
-	for _vt, mau in sorted(bat, key=lambda x: x[0]):
-		_them(out, mau)
-	return out
+	# khử trùng bằng dict (giữ thứ tự, tra O(1)): lời 80 KB toàn mẩu khác nhau cho hơn chục nghìn mẩu — "x not in
+	# list" ở đây là bậc hai
+	return list(dict.fromkeys(mau for _vt, mau in sorted(bat, key=lambda x: x[0])))
 
 
 # ─── Số do mô hình GHÉP quanh placeholder (soát trên lời CÒN placeholder) ─────
@@ -1383,12 +1395,44 @@ def render_rule(title: str, detail: str, pack: dict) -> dict:
 		"errors": errors}
 
 
+# ─── Thời hạn viết tay (render_text thoi_han=False) ──────────────────────────
+_DV_THOI = r"(?:ngày|tuần|tháng|năm|quý|giờ|hôm|ngay|tuan|thang|gio)"   # "quy" không dấu: "hai quy trình"
+_TH_THU_TU = {"ngày", "tháng", "quý", "mùng", "mồng", "thứ", "kỳ", "đợt", "tuần", "tết", "t", "ngay", "thang", "quy",
+	"thu", "ky", "dot", "tuan", "tet"}   # từ đứng trước → số là thứ tự / tên kỳ, không phải thời hạn
+_SO_CHU_TH = (r"(?:một|hai|ba|bốn|năm|sáu|bảy|bẩy|tám|chín|mười|mươi|lăm|nhăm|trăm|chục|nửa|rưỡi|mot|bon|bay|tam|chin|"
+	r"muoi|lam|nham|tram|chuc|nua)")
+_TH_SO = re.compile(rf"(?<![\w.,/])\d+(?:[.,]\d+)?[ \t]*{_DV_THOI}(?!\w)", re.I)
+_TH_CHU = re.compile(rf"(?<!\w){_SO_CHU_TH}(?:[ \t\-]+{_SO_CHU_TH})*[ \t]+{_DV_THOI}(?!\w)", re.I)
+# Mốc so sánh cố định của đề bản tin (bc.ai.brief._MO_TA) — số trong đó là định nghĩa của phép so, không phải số liệu.
+KY_CO_DINH = ("bốn tuần trước", "ba tháng trước", "tám tuần gần nhất", "mười hai tháng gần nhất")
+
+
+def _thoi_han_tay(text: str, mask=None) -> list:
+	"""Mẩu thời hạn viết tay (số hoặc chữ + đơn vị thời gian) trong lời đã bỏ placeholder và mã giả đã gửi — xem
+	docstring module (thoi_han=False)."""
+	goc = mask.strip(text) if mask is not None else ("" if text is None else str(text))
+	out: list = []
+	for s in _cac_dang(strip_placeholders(goc)):
+		for rx in (_TH_SO, _TH_CHU):
+			for m in rx.finditer(s):
+				a, b = m.start(), m.end()
+				tu = _tu_ket_thuc(s, a - 1 if a and s[a - 1] in " \t" else a).lower()
+				if tu in _TH_THU_TU:
+					continue                                  # "tháng 11 năm 2026", "thứ hai tuần này"
+				if re.match(r"[ \t]+20\d\d(?!\d)", s[b:]) and m.group(0).lower().endswith("năm"):
+					continue                                  # "… 11 năm 2026"
+				if rx is _TH_CHU and any(s.lower().startswith(k, a) for k in KY_CO_DINH):
+					continue
+				_them(out, " ".join(m.group(0).split()))
+	return out
+
+
 _DAU_DONG = re.compile(r"^(?:[-–—•*·]+|\d{1,2}[.)])\s+")     # "- …", "1. …" đầu dòng khuyến nghị
 _DAU_DONG_GIUA = re.compile(r"(?:[-–—•*·]+|\d{1,2}[.)])\s+")   # như trên, xét tại một vị trí bất kỳ (H6)
 
 
 def render_text(text, pack: dict, sections, mask=None, kinds=None, nguon: str | None = None,
-		one_line: bool = True) -> dict:
+		one_line: bool = True, thoi_han: bool = True) -> dict:
 	"""MỘT đoạn lời của MÔ HÌNH (tiêu đề, thân, một khuyến nghị, ghi chú phản biện, một mục bản tin) → {"ok", "text",
 	"masked", "paths", "sections_used", "errors"} — đúng đường đi của từng đoạn trong render_insight, cùng mọi luật:
 
@@ -1397,6 +1441,8 @@ def render_text(text, pack: dict, sections, mask=None, kinds=None, nguon: str | 
 	   xét kiểu);
 	2. lint số trần (G1, G2 láng giềng placeholder, mã trong `nguon` — đề bài CUỐI đã gửi, None = không xét), chữ lạ
 	   (chu-la, trên lời đã bỏ placeholder và mã giả đã gửi), placeholder chu ra chuỗi rỗng (chu-rong);
+	   thoi_han=False (mục bản tin, ghi chú phản biện): thêm "thoi-han:<mẩu>" cho thời hạn viết tay — số hoặc chữ trước
+	   ngày / tuần / tháng / năm / quý ("45 ngày", "chín mươi ngày"; xem docstring module);
 	3. hoàn nguyên mã giả đã gửi → tên thật (mask.unmask).
 	"text" = lời đã thay số VÀ đã hoàn nguyên tên (để lưu / hiện); "masked" = lời đã thay số, CÒN mã giả (trước bước 3 —
 	thứ duy nhất được phép gửi tiếp cho một mô hình khác). Lời rỗng sau cùng → lỗi "rong". Không cắt độ dài (nơi gọi
@@ -1410,6 +1456,8 @@ def render_text(text, pack: dict, sections, mask=None, kinds=None, nguon: str | 
 	_them(errors, *f.errors, *(f"so-tran:{mau}" for mau in _so_tran(text, mask, pack, ma)))
 	goc = mask.strip(text) if mask is not None else text
 	_them(errors, *(f"chu-la:{mau}" for mau in _chu_la(strip_placeholders(goc))))
+	if not thoi_han:
+		_them(errors, *(f"thoi-han:{mau}" for mau in _thoi_han_tay(text, mask)))
 	_them(errors, *(f"chu-rong:{p}" for p, k in registry.placeholders(text) if k == "chu"
 		and isinstance(registry.resolve(pack, p, None), str) and not registry.resolve(pack, p, "").strip()))
 	out = mask.unmask(f.text) if mask is not None else f.text

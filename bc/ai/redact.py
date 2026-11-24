@@ -19,6 +19,9 @@ Chi tiết:
 - mask_text (chữ tự do, và mọi chuỗi không khớp đúng trong gói số — D3): thay tên đã biết đứng riêng thành từ (không
   dính chữ / số hai bên), chỉ tên ≥ 2 từ (dãy chữ / số: "NPP-B" là 2 từ) hoặc ≥ 6 ký tự (tên ngắn một từ dễ trùng
   chữ thường). Tên dài thắng.
+- mask_text(text, tat_ca=True) — chế độ NGẶT cho chữ do MÁY CHỦ đã điền tên thật vào (tiêu đề nhận định đã lưu gửi
+  vào bản tin tuần / tháng): thay MỌI tên đã biết đứng riêng thành từ, kể cả tên một từ ngắn ("Hùng", "ABC"). Thay
+  nhầm một chữ thường trùng tên thì chấp nhận (che thừa được, lọt tên thì không).
 - Hai đối tác trùng một chuỗi: chuỗi về mã của đối tác đứng TRƯỚC (khách trước NCC, trong mỗi loại theo `name` tăng
   dần; tên trên hồ sơ trước bí danh từ hoá đơn). Hoàn nguyên vẫn ra đúng tên hiển thị của mã đó.
 - Chỉ mã ĐÃ GỬI mới được hoàn nguyên / bỏ (D4): mọi mã do mask / mask_text phát ra được ghi lại; begin() xoá bản ghi
@@ -96,13 +99,14 @@ class Mask:
 		le = sorted((m for m in self._ten if not _MA.fullmatch(m)), key=len, reverse=True)
 		self._le = re.compile(r"(?<![\w#])(?:" + "|".join(map(re.escape, le)) + r")(?![\w#])") if le else None
 		self._chi_muc = None     # mask_text: {từ đầu: [tên, dài trước]}, dựng khi cần
+		self._chi_muc_het = None  # như trên, chế độ ngặt (mọi tên, kể cả một từ ngắn)
 
 	def _alias(self, s, ma: str) -> None:
 		"""Thêm chuỗi s làm bí danh của mã (đã có chuỗi đó thì giữ mã cũ)."""
 		s = s.strip() if isinstance(s, str) else ""
 		if s and ma in self._ten and s not in self._ma:
 			self._ma[s] = ma
-			self._chi_muc = None
+			self._chi_muc = self._chi_muc_het = None
 
 	def _phat(self, ma: str) -> str:
 		self._gui.add(ma)
@@ -118,21 +122,25 @@ class Mask:
 		self._so[tien_to] = n
 		self._ten[ma] = s
 		self._ma[s] = ma
-		self._chi_muc = None
+		self._chi_muc = self._chi_muc_het = None
 		return ma
 
-	def _chi_muc_ten(self) -> dict:
-		if self._chi_muc is None:
-			cm: dict = {}
+	def _chi_muc_ten(self, tat_ca: bool = False) -> dict:
+		cm = self._chi_muc_het if tat_ca else self._chi_muc
+		if cm is None:
+			cm = {}
 			for s in self._ma:
-				if not (len(_TU.findall(s)) >= 2 or len(s) >= TEN_TOI_THIEU):
+				if not (tat_ca or len(_TU.findall(s)) >= 2 or len(s) >= TEN_TOI_THIEU):
 					continue
 				m = _TU.match(s)
 				cm.setdefault(m.group(0) if m else "", []).append(s)     # "" = tên mở đầu bằng ký tự không phải chữ
 			for ds in cm.values():
 				ds.sort(key=len, reverse=True)
-			self._chi_muc = cm
-		return self._chi_muc
+			if tat_ca:
+				self._chi_muc_het = cm
+			else:
+				self._chi_muc = cm
+		return cm
 
 	# ── công khai ──
 	def begin(self) -> None:
@@ -183,14 +191,16 @@ class Mask:
 				return ma
 		return None
 
-	def mask_text(self, text) -> str:
+	def mask_text(self, text, tat_ca: bool = False) -> str:
 		"""Chữ TỰ DO: thay mọi tên đã biết đứng riêng thành từ → mã giả (tên dài trước). Chỉ tên ≥ 2 từ hoặc ≥
-		TEN_TOI_THIEU ký tự. Là che HẾT SỨC: tên gọi tắt, tên viết khác hồ sơ không nhận ra được. Nhanh: chỉ xét tên có
-		từ đầu trùng một từ của câu (không dò cả bảng bằng một biểu thức)."""
+		TEN_TOI_THIEU ký tự — trừ khi tat_ca=True (chế độ ngặt: MỌI tên đã biết, kể cả một từ ngắn — cho chữ mà máy chủ
+		đã chèn tên thật từ đúng giá trị trường, vd tiêu đề nhận định đã lưu). Là che HẾT SỨC: tên gọi tắt, tên viết
+		khác hồ sơ không nhận ra được. Nhanh: chỉ xét tên có từ đầu trùng một từ của câu (không dò cả bảng bằng một
+		biểu thức)."""
 		text = "" if text is None else str(text)
 		if not self._ma or not text:
 			return text
-		cm = self._chi_muc_ten()
+		cm = self._chi_muc_ten(tat_ca)
 		if not cm:
 			return text
 		le = cm.get("")          # tên mở đầu bằng ký tự không phải chữ: soát bằng tìm chuỗi con

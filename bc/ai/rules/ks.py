@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 
-from bc.ai.registry import KPI_TICH_LUY, KPIS, TRO_LY, NotRunnable, ph, resolve, rule, section_of
+from bc.ai.registry import KPI_TICH_LUY, KPIS, TRO_LY, NotRunnable, ph, resolve, rule, section_of, source_ok, strip_index
 
 C, G, K = f"{TRO_LY}.chung_tu", f"{TRO_LY}.gia", f"{TRO_LY}.kpi"
 
@@ -117,7 +117,7 @@ def huy_nhieu(pack, cfg):
 
 
 @_ks("ct.ghi_lui", f"{C}.ghi_lui", vang=10, unit="ngày",
-	label="Chứng từ duyệt trong 7 ngày có ngày hạch toán lùi xa so với ngày tạo")
+	label="Chứng từ tạo trong 7 ngày (đã duyệt) có ngày hạch toán lùi xa so với ngày tạo")
 def ghi_lui(pack, cfg):
 	"""Chứng từ tạo trong 7 ngày có ngày hạch toán sớm hơn ngày tạo QUÁ ngưỡng ngày (ngặt) → một tín hiệu; đếm từ
 	phan_bo. Mức theo số ngày lùi xa nhất (đỏ chỉ khi đặt ngưỡng đỏ)."""
@@ -139,7 +139,7 @@ def ghi_lui(pack, cfg):
 			f"{ph(f'{b}.rows[0].name', 'chu')}, kế toán cần kiểm tra lý do ghi sổ muộn.")
 	else:
 		detail = "Kế toán cần kiểm tra lý do ghi sổ muộn và khoá sổ các kỳ đã chốt."
-	return [cfg.signal(muc, "{{@so|so}} chứng từ mới duyệt bị ghi lùi ngày quá {{@nguong|so}} ngày", detail=detail,
+	return [cfg.signal(muc, "{{@so|so}} chứng từ mới tạo bị ghi lùi ngày quá {{@nguong|so}} ngày", detail=detail,
 		tinh={"so": so, "nguong": cfg.vang}, documents=_docs(rows, lambda r: (_so(r.get("so_ngay_lui")) or 0) > cfg.vang))]
 
 
@@ -252,13 +252,27 @@ def mua_tang(pack, cfg):
 def lech_chuan(pack, cfg):
 	"""Mỗi KPI (không cộng dồn, ≥ 14 ngày lịch sử) có d = |hôm nay − trung vị| thoả d > ngưỡng × max(MAD, 1% |trung
 	vị|) (ngặt) VÀ d ≥ max(5% |trung vị|, sàn theo kiểu: tien 1 triệu, so 1, pct 0,5) → tín hiệu khoá
-	kpi.lech_chuan:<path>, MẢNG CỦA KPI. Hôm nay = giá trị tại path thật của KPI trong gói. Đỏ chỉ khi đặt ngưỡng đỏ."""
+	kpi.lech_chuan:<path>, MẢNG CỦA KPI. Hôm nay = giá trị tại path thật của KPI trong gói. Đỏ chỉ khi đặt ngưỡng đỏ.
+	Lời nêu số ngày THẬT có số làm nền (n của dòng, 14 … 28) trong cửa sổ 28 ngày.
+
+	KPI KHÔNG đánh giá được hôm nay → cfg.keep(path): tín hiệu đang mở của nó GIỮ NGUYÊN (không đóng rồi mở lại với
+	first_seen mới — tuổi "tồn" của bản tin và phản biện không bị xoá). Không đánh giá được = khối nguồn của chính KPI
+	(`<mảng>.<khối>`) lỗi / vắng, hoặc có số hôm nay mà lịch sử < 14 ngày (khoảng trống lượt chạy), hoặc dòng của
+	detector có mà số hôm nay / trung vị / MAD không đọc được. KPI có khối nguồn tốt mà không có số hôm nay (danh sách
+	rỗng — không còn gì để so) và KPI đánh giá được mà không lệch → đóng như thường."""
 	from bc.ai.detectors.kpi import KPI_THEO_KY      # hằng số (không SQL ở đây)
 
 	if cfg.vang is None:
 		return []
 	cua_so = _n(pack, f"{K}.cua_so") or CUA_SO
 	out, gap = [], set()
+	dong = {r.get("path"): r for r in _rows(pack, K) if isinstance(r, dict) and isinstance(r.get("path"), str)}
+	for path in _KPI:
+		if path in KPI_TICH_LUY or path in KPI_THEO_KY or path in dong:
+			continue
+		khoi = ".".join(strip_index(path).split(".")[:2])
+		if not source_ok(pack, khoi) or _n(pack, path) is not None:
+			cfg.keep(path)               # nguồn lỗi / lịch sử chưa đủ: không kết luận được → giữ tín hiệu cũ
 	for r in _rows(pack, K):
 		path = r.get("path") if isinstance(r, dict) else None
 		if path not in _KPI or path in gap or path in KPI_TICH_LUY or path in KPI_THEO_KY:
@@ -266,15 +280,16 @@ def lech_chuan(pack, cfg):
 		kieu, nhan = _KPI[path]
 		x, med, mad, n = _n(pack, path), _so(r.get("trung_vi")), _so(r.get("mad")), _so(r.get("n"))
 		if x is None or med is None or mad is None or n is None or n < NGAY_MIN:
+			cfg.keep(path)
 			continue
 		d, mau = abs(x - med), max(mad, TL_MAD * abs(med))
 		if not (d > cfg.vang * mau and d >= max(TL_SAN * abs(med), SAN_KPI[kieu])):
 			continue
 		gap.add(path)
 		muc = "do" if cfg.do is not None and d > cfg.do * mau else "vang"
-		out.append(cfg.signal(muc, "{{@nhan|chu}} khác thường so với {{@so_ngay|so}} ngày qua",
-			detail=(f"Hôm nay là {ph(path, kieu)}, trung vị {{{{@so_ngay|so}}}} ngày trước đó là "
-				f"{{{{@trung_vi|{kieu}}}}}; cần đối chiếu số trên màn gốc trước khi kết luận."),
+		out.append(cfg.signal(muc, "{{@nhan|chu}} khác thường so với {{@cua_so|so}} ngày qua",
+			detail=(f"Hôm nay là {ph(path, kieu)}, trung vị của {{{{@so_ngay|so}}}} ngày có số trong {{{{@cua_so|so}}}} "
+				f"ngày trước đó là {{{{@trung_vi|{kieu}}}}}; cần đối chiếu số trên màn gốc trước khi kết luận."),
 			obj=path, section=section_of(path), paths=[path],
-			tinh={"nhan": nhan, "so_ngay": cua_so, "trung_vi": med}))
+			tinh={"nhan": nhan, "so_ngay": int(n), "cua_so": cua_so, "trung_vi": med}))
 	return out

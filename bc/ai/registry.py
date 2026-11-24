@@ -240,6 +240,7 @@ class Cfg:
 		self.key, self.section, self.audience, self.route = rd.key, rd.section, rd.audience, rd.route
 		self.unit, self.label, self.lower = rd.unit, rd.label, rd.lower
 		self.disabled = bool(o.get("disabled"))
+		self.giu: set = set()        # khoá tín hiệu GIỮ NGUYÊN lượt này (keep) — run_rules gom vào RuleRun.keep
 		self.vang = o.get("vang") if o.get("vang") else rd.vang     # 0 / trống = dùng mặc định
 		self.do = o.get("do") if o.get("do") else rd.do
 
@@ -257,6 +258,11 @@ class Cfg:
 		if self._vuot(value, self.vang, bang):
 			return "vang"
 		return None
+
+	def keep(self, obj: str | None = None) -> None:
+		"""Báo tín hiệu `<rule>:<obj>` (obj trống: `<rule>`) KHÔNG đánh giá được lượt này (số nguồn của riêng nó hỏng /
+		thiếu) → tín hiệu cũ của khoá đó giữ nguyên (không đóng, không cập nhật) dù quy tắc vẫn chạy cho khoá khác."""
+		self.giu.add(self.key if obj in (None, "") else f"{self.key}:{obj}")
 
 	def signal(self, severity: str, title: str, *, detail: str = "", paths=(), tinh: dict | None = None,
 			obj: str | None = None, documents=(), route: str | None = None, section: str | None = None) -> Signal:
@@ -327,6 +333,7 @@ class RuleRun:
 	signals: list = field(default_factory=list)
 	ran: set = field(default_factory=set)            # quy tắc đã chạy (kể cả đang tắt) → tín hiệu không còn thì đóng
 	not_run: dict = field(default_factory=dict)      # {rule: lý do} → tín hiệu cũ giữ nguyên
+	keep: set = field(default_factory=set)           # khoá tín hiệu của quy tắc ĐÃ chạy nhưng không đánh giá được (Cfg.keep)
 	disabled: set = field(default_factory=set)
 
 
@@ -365,6 +372,7 @@ def run_rules(pack: dict, overrides: dict | None = None, only=None) -> RuleRun:
 			continue
 		out.signals += done
 		out.ran.add(key)
+		out.keep |= cfg.giu - {s.key for s in done}
 	return out
 
 

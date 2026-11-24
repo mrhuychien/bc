@@ -14,8 +14,9 @@
   chứa gì ngoài đề bài người viết: không tên thật (lời đã thay số CÒN mã giả), không mảng ẩn, không khối NO_SEND.
   Dài quá trần của người viết (prompt.MAX_CHARS) → bỏ bớt nhận định từ cuối (giữ ít nhất một).
 - Áp: id lạ / trùng → bỏ; verdict ngoài ("dong-y", "nghi-ngo") → bỏ; note qua render.render_text (cùng sections,
-  kinds, mask; nguon = đề bài phản biện) và mọi placeholder của note cũng phải phân giải trên gói đã gửi — hỏng → note
-  rỗng, đếm rejected, GIỮ verdict. store.set_review(key, verdict, note). Không đổi lời / mức / trạng thái, không ẩn gì.
+  kinds, mask; nguon = đề bài phản biện; thoi_han=False — thời hạn viết tay "45 ngày" bị loại vì phản biện không có
+  số ngày để đối chiếu) và mọi placeholder của note cũng phải phân giải trên gói đã gửi — hỏng → note rỗng, đếm
+  rejected, GIỮ verdict. store.set_review(key, verdict, note). Không đổi lời / mức / trạng thái, không ẩn gì.
 - Dòng Run: step "review:<nhóm>", provider openai, run_id = dòng tổng; token, chi phí theo mô hình thực trả lời (chưa
   khai giá → giá mô hình đã yêu cầu), insights_ai = số verdict đã ghi, rejected = số note bị bỏ.
 - Không lưu / log đề bài, gói số, khoá. Lỗi không lường (không phải LLMError): rollback phần ghi dở, chốt dòng Run loi
@@ -88,7 +89,8 @@ def system_prompt() -> str:
 	Không chứa số liệu kinh doanh, không chứa bối cảnh công ty."""
 	from bc.ai import prompt
 	ghi = ("Khi note cần nhắc một con số, ngày hay tên: theo đúng luật placeholder dưới đây (path lấy trong "
-		"du_lieu.pack). Không tự viết, tự tính con số.")
+		"du_lieu.pack). Không tự viết, tự tính con số. Không viết thời hạn bằng chữ số hay bằng chữ (\"45 ngày\", "
+		"\"chín mươi ngày\", \"trong 7 ngày\" đều làm ghi chú bị bỏ) — số ngày chỉ lấy bằng placeholder.")
 	return "\n\n".join([_VAI_TRO, ghi, prompt._PLACEHOLDER, _DAU_RA])
 
 
@@ -283,7 +285,7 @@ def _ap(data, by_id: dict, pack: dict, pack_gui: dict, sections, mask, kinds, ng
 		ghi = ""
 		if note.strip():
 			paths = [p for p, _k in registry.placeholders(note)]
-			rr = render.render_text(note, pack, sections, mask, kinds=kinds, nguon=nguon)
+			rr = render.render_text(note, pack, sections, mask, kinds=kinds, nguon=nguon, thoi_han=False)
 			if rr["ok"] and _gui_duoc(pack_gui, paths):
 				ghi = rr["text"]
 			else:

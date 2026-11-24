@@ -4,21 +4,26 @@ dòng cao, giá mua tăng. Kết quả vào pack["tro-ly"]["gia"]; quy tắc gia
 đầu kỳ, khoá đối tác, khối con lỗi riêng): xem bc.ai.detectors.chung_tu.
 
 Dòng bán xét (ban_lech, chiet_khau): Sales Invoice Item của hoá đơn docstatus 1, không trả hàng (is_return 0), không đầu
-kỳ, posting_date trong 7 ngày, net_rate > 0 (bỏ hàng tặng / giá 0). Kênh = _common.channel_of(si.customer_group) (nhóm
-khách CHỤP trên hoá đơn — như mọi màn doanh số).
-- ban_lech (gia.ban_lech): đơn giá theo ĐƠN VỊ KHO = net_rate / conversion_factor (dòng conversion_factor ≤ 0 bỏ). Nền =
+kỳ, posting_date trong 7 ngày, base_net_rate > 0 (bỏ hàng tặng / giá 0). Mọi giá / tiền dòng bán đọc ở TIỀN CÔNG TY
+(base_net_rate, base_net_amount — hoá đơn ngoại tệ đã quy đổi theo conversion_rate của hoá đơn), như gia.mua_tang: hoá
+đơn USD đúng giá không thành "lệch 100 %". Kênh = _common.channel_of(si.customer_group) (nhóm khách CHỤP trên hoá đơn —
+như mọi màn doanh số).
+- ban_lech (gia.ban_lech): đơn giá theo ĐƠN VỊ KHO = base_net_rate / conversion_factor (dòng conversion_factor ≤ 0 bỏ). Nền =
   dòng cùng mã × kênh, cùng điều kiện, posting_date trong 90 ngày TRƯỚC cửa sổ ([today − 96, today − 7]); cần ≥ 5 dòng
   nền, không đủ thì bỏ dòng. lech_pct = (trung vị − đơn giá) / trung vị × 100, 1 số lẻ (làm tròn kiểu Math.round);
   dòng lệch khi lech_pct > nguong (ngưỡng vàng đang áp của quy tắc, ngặt). → so_dong_xet (dòng có đủ nền), so_dong,
   so_hd, rows ≤ 20 lệch nhiều trước.
-- chiet_khau (gia.chiet_khau_cao): discount_percentage > nguong (ngặt) → so_dong, so_hd, gia_tri (Σ net_amount các dòng
-  đó), rows ≤ 20 chiết khấu cao trước.
+- chiet_khau (gia.chiet_khau_cao): discount_percentage > nguong (ngặt) → so_dong, so_hd, gia_tri (Σ base_net_amount các
+  dòng đó), rows ≤ 20 chiết khấu cao trước.
 - mua_tang (gia.mua_tang): Purchase Invoice Item của hoá đơn mua docstatus 1, không trả, không đầu kỳ. Giá mua bình
   quân theo đơn vị kho = Σ base_net_amount / Σ stock_qty (tiền công ty — hoá đơn mua ngoại tệ đã quy đổi). Kỳ mới = 30
   ngày [today − 29, today]; nền = 90 ngày trước đó [today − 119, today − 30]. Chỉ mã có giá trị mua kỳ mới ≥ 20 triệu
   (GIA_TRI_SAN, hằng số) và có mua trong nền (Σ stock_qty > 0 cả hai kỳ). tang_pct (1 số lẻ) > nguong → so_ma, rows ≤ 20
   tăng nhiều trước (nhà cung cấp chính = NCC có giá trị mua kỳ mới lớn nhất, name = hoá đơn mua mới nhất của mã trong kỳ
   mới).
+
+Tên khách / nhà cung cấp trong `rows` là TÊN HIỂN THỊ chụp trên hoá đơn (customer_name / supplier_name; trống thì mã hồ
+sơ), nằm dưới khoá `customer` / `supplier` như các màn khác của bc — bc.ai.redact che theo khoá trước khi gửi mô hình.
 
 Hiệu năng (EXPLAIN): mọi truy vấn lọc `tabSales Invoice` / `tabPurchase Invoice` theo posting_date (có chỉ mục) trong dải
 7 / 96 / 120 ngày rồi nối dòng con qua chỉ mục `parent`; truy vấn nền chỉ lấy mã hàng có trong cửa sổ.
@@ -44,7 +49,7 @@ SO_NGAY_MUA_NEN = 90     # gia.mua_tang: nền
 GIA_TRI_SAN = 20_000_000  # gia.mua_tang: giá trị mua kỳ mới tối thiểu của một mã
 
 _BAN = f"""si.docstatus = 1 AND IFNULL(si.is_return, 0) = 0 AND {OPENING.format(a='si.')}
-	AND si.posting_date BETWEEN %(tu)s AND %(den)s AND sii.net_rate > 0"""
+	AND si.posting_date BETWEEN %(tu)s AND %(den)s AND sii.base_net_rate > 0"""
 _MUA = f"""pi.docstatus = 1 AND IFNULL(pi.is_return, 0) = 0 AND {OPENING.format(a='pi.')}
 	AND pi.posting_date BETWEEN %(tu)s AND %(den)s"""
 
@@ -61,8 +66,9 @@ def _kenh(group) -> tuple:
 
 def _dong_ban(ctx) -> list:
 	tu, den = cua_so(ctx)
-	return frappe.db.sql(f"""SELECT si.name, si.posting_date, si.customer, si.customer_group, sii.item_code,
-			sii.item_name, sii.net_rate, sii.conversion_factor, sii.discount_percentage, sii.net_amount
+	return frappe.db.sql(f"""SELECT si.name, si.posting_date, COALESCE(NULLIF(si.customer_name, ''), si.customer) AS customer,
+			si.customer_group, sii.item_code,
+			sii.item_name, sii.base_net_rate, sii.conversion_factor, sii.discount_percentage, sii.base_net_amount
 		FROM `tabSales Invoice` si JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
 			AND sii.parenttype = 'Sales Invoice'
 		WHERE {_BAN} ORDER BY si.posting_date, si.name, sii.idx""", {"tu": tu, "den": den}, as_dict=True)
@@ -70,7 +76,7 @@ def _dong_ban(ctx) -> list:
 
 def _don_gia(r):
 	cf = flt(r.conversion_factor)
-	return flt(r.net_rate) / cf if cf > 0 else None
+	return flt(r.base_net_rate) / cf if cf > 0 else None
 
 
 def _ban_lech(ctx, dong: list) -> dict:
@@ -79,7 +85,7 @@ def _ban_lech(ctx, dong: list) -> dict:
 	ma = sorted({r.item_code for r in dong if r.item_code})
 	nen: dict = {}
 	if ma:
-		for r in frappe.db.sql(f"""SELECT si.customer_group, sii.item_code, sii.net_rate, sii.conversion_factor
+		for r in frappe.db.sql(f"""SELECT si.customer_group, sii.item_code, sii.base_net_rate, sii.conversion_factor
 				FROM `tabSales Invoice` si JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
 					AND sii.parenttype = 'Sales Invoice'
 				WHERE {_BAN} AND sii.item_code IN %(ma)s""", {"tu": tu - datetime.timedelta(days=SO_NGAY_NEN),
@@ -111,10 +117,10 @@ def _chiet_khau(ctx, dong: list) -> dict:
 	hit = [r for r in dong if cut is not None and flt(r.discount_percentage) > cut]
 	rows = [{"doctype": "Sales Invoice", "name": r.name, "posting_date": iso(r.posting_date), "customer": r.customer,
 		"item_code": r.item_code, "item_name": r.item_name or r.item_code, "kenh": _kenh(r.customer_group)[1],
-		"ck_pct": round(flt(r.discount_percentage), 2), "gia_tri": round(flt(r.net_amount), 2)} for r in hit]
+		"ck_pct": round(flt(r.discount_percentage), 2), "gia_tri": round(flt(r.base_net_amount), 2)} for r in hit]
 	rows.sort(key=lambda x: (-x["ck_pct"], -x["gia_tri"], x["name"]))
 	return {"nguong": cut, "so_dong": len(hit), "so_hd": len({r.name for r in hit}),
-		"gia_tri": round(sum(flt(r.net_amount) for r in hit), 2), "rows": rows[:DONG_MAX]}
+		"gia_tri": round(sum(flt(r.base_net_amount) for r in hit), 2), "rows": rows[:DONG_MAX]}
 
 
 def _mua(tu, den, ma=None) -> dict:
@@ -154,7 +160,8 @@ def _mua_tang(ctx) -> dict:
 	if tang:
 		p = {"tu": tu, "den": den, "ma": tuple(x["item_code"] for x in tang)}
 		ncc, hd = {}, {}
-		for r in frappe.db.sql(f"""SELECT pii.item_code, pi.supplier, SUM(pii.base_net_amount) AS tien
+		for r in frappe.db.sql(f"""SELECT pii.item_code, pi.supplier AS ma_ncc,
+					MAX(COALESCE(NULLIF(pi.supplier_name, ''), pi.supplier)) AS supplier, SUM(pii.base_net_amount) AS tien
 				FROM `tabPurchase Invoice` pi JOIN `tabPurchase Invoice Item` pii ON pii.parent = pi.name
 					AND pii.parenttype = 'Purchase Invoice'
 				WHERE {_MUA} AND pii.item_code IN %(ma)s GROUP BY pii.item_code, pi.supplier

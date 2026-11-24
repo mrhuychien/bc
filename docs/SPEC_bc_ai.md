@@ -214,7 +214,7 @@ chạy thành công gần nhất > 26 giờ → view hiện dải đỏ.
 | Rule | Ý | Mặc định |
 |---|---|---|
 | `ct.huy_nhieu` | Số chứng từ bị huỷ 7 ngày (Sales Invoice, Purchase Invoice, Payment Entry, Journal Entry, Stock Entry) so trung bình 8 tuần | > 2× và ≥ 5 |
-| `ct.ghi_lui` | Chứng từ duyệt trong 7 ngày có `posting_date` lùi so ngày tạo | lùi > 10 ngày |
+| `ct.ghi_lui` | Chứng từ tạo trong 7 ngày (đã duyệt) có `posting_date` lùi so ngày tạo | lùi > 10 ngày |
 | `ct.but_toan_tay_lon` | Journal Entry nhập tay đã duyệt 7 ngày | `total_debit` ≥ 100 tr |
 | `gia.ban_lech` | Dòng Sales Invoice 7 ngày có `net_rate` thấp hơn trung vị 90 ngày của cùng mã × kênh (bỏ dòng giá 0) | thấp hơn > 15% |
 | `gia.chiet_khau_cao` | Dòng Sales Invoice 7 ngày có `discount_percentage` cao | > 15% |

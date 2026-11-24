@@ -134,7 +134,7 @@ def _run(run: str, run_type: str, now, t0: float) -> dict:
 	pack[registry.TRO_LY] = registry.run_detectors(now, registry.TRO_LY, pack)
 	rr = registry.run_rules(pack, registry.overrides_from_settings())   # 3
 	items, sigs = _rule_items(pack, rr)
-	stats = store.sync_signals(items, rr.ran, now)                # 4
+	stats = store.sync_signals(items, rr.ran, now, keep=rr.keep)  # 4
 	frappe.db.commit()
 	names = stats.get("names") or {}
 	by_name = {names[k]: s for k, s in sigs.items() if names.get(k)}

@@ -289,7 +289,8 @@ tuần / tháng"), lời AI bị loại.
 OpenAI (Responses API, ép đầu ra theo JSON schema, `store: false` — OpenAI không giữ lại câu trả lời) nhận **đúng gói số
 người viết đã nhận** (đã che tên, đã bỏ mảng ẩn) cùng các lời AI vừa lưu (đã thay số, còn mã giả) và chấm từng lời:
 `dong-y` hoặc `nghi-ngo` (khẳng định không có số đỡ, nguyên nhân không bằng chứng, dùng số sai nghĩa, mức đỏ / vàng
-không tương xứng) kèm ghi chú ≤ 30 từ. Ghi chú qua đúng bộ soát số như lời người viết (sai → bỏ ghi chú, giữ verdict).
+không tương xứng) kèm ghi chú ≤ 30 từ. Ghi chú qua đúng bộ soát số như lời người viết, thêm luật không thời hạn viết
+tay ("45 ngày", "chín mươi ngày" — phản biện không có số ngày để đối chiếu) (sai → bỏ ghi chú, giữ verdict).
 `nghi-ngo` → thẻ có badge "Cần kiểm chứng" (mọi người); ghi chú chỉ quản trị thấy. Phản biện không đổi lời, mức, trạng
 thái, không ẩn gì; lời AI mới hôm sau xoá verdict cũ. Không model → không dòng Run nào; có model mà thiếu khoá / vượt
 trần / hết credit → MỘT dòng `review:<nhóm>` của trạng thái đó rồi thôi phản biện cho cả lượt. Lời có số ngoài đề bài
@@ -303,12 +304,12 @@ ngưỡng đỏ ở `#/ai`.
 | Quy tắc | Báo khi (ngưỡng vàng mặc định) |
 |---|---|
 | `ct.huy_nhieu` | Số chứng từ bị huỷ trong 7 ngày (hoá đơn bán / mua, phiếu thu chi, bút toán nhập tay, phiếu kho) ≥ 5 **và** > 2 × trung bình mỗi tuần của 8 tuần trước |
-| `ct.ghi_lui` | Chứng từ duyệt, tạo trong 7 ngày, có ngày hạch toán lùi quá 10 ngày so với ngày tạo |
+| `ct.ghi_lui` | Chứng từ tạo trong 7 ngày (đã duyệt; xét theo ngày TẠO bản nháp — v16 không có cột thời điểm duyệt có chỉ mục), có ngày hạch toán lùi quá 10 ngày so với ngày tạo |
 | `ct.but_toan_tay_lon` | Bút toán nhập tay (không phải bút toán do chứng từ / tác vụ khác sinh) đã duyệt trong 7 ngày, tổng nợ ≥ 100 triệu |
-| `gia.ban_lech` | Dòng hoá đơn bán 7 ngày có đơn giá (theo đơn vị kho) thấp hơn trung vị 90 ngày trước của cùng mã × kênh quá 15% (cần ≥ 5 dòng nền; bỏ giá 0, trả hàng) |
-| `gia.chiet_khau_cao` | Dòng hoá đơn bán 7 ngày có chiết khấu dòng > 15% |
+| `gia.ban_lech` | Dòng hoá đơn bán 7 ngày có đơn giá (theo đơn vị kho, **tiền công ty** — hoá đơn ngoại tệ đã quy đổi) thấp hơn trung vị 90 ngày trước của cùng mã × kênh quá 15% (cần ≥ 5 dòng nền; bỏ giá 0, trả hàng) |
+| `gia.chiet_khau_cao` | Dòng hoá đơn bán 7 ngày có chiết khấu dòng > 15% (giá trị các dòng tính bằng tiền công ty) |
 | `gia.mua_tang` | Giá mua bình quân 30 ngày của một mã tăng > 10% so 90 ngày trước đó (chỉ mã mua ≥ 20 triệu trong 30 ngày) |
-| `kpi.lech_chuan` | Một trong 70 chỉ số đầu màn lệch khỏi trung vị 28 ngày quá 3 lần độ lệch trung vị (MAD), đủ lớn để không phải nhiễu; cần ≥ 14 ngày ảnh chụp. Một tín hiệu / chỉ số, nằm ở **mảng của chỉ số đó** (ẩn theo mảng đó). Bỏ chỉ số cộng dồn trong kỳ và tỷ lệ tính trên kỳ tới hôm nay (đổi kỳ là đổi nền) |
+| `kpi.lech_chuan` | Một trong 70 chỉ số đầu màn lệch khỏi trung vị 28 ngày quá 3 lần độ lệch trung vị (MAD), đủ lớn để không phải nhiễu; cần ≥ 14 ngày ảnh chụp (lời nêu số ngày có số thật sự làm nền). Một tín hiệu / chỉ số, nằm ở **mảng của chỉ số đó** (ẩn theo mảng đó). Bỏ chỉ số cộng dồn trong kỳ và tỷ lệ tính trên kỳ tới hôm nay (đổi kỳ là đổi nền). Ngày màn nguồn của chỉ số lỗi (hoặc lịch sử tụt dưới 14 ngày) → tín hiệu đang mở **giữ nguyên**, không đóng rồi mở lại |
 
 Nhóm Kiểm soát chỉ gọi mô hình khi có tín hiệu và không nhận nhận định tự do (như nhóm Hệ thống). Lịch sử chỉ số
 không bao giờ gửi mô hình (có số của mọi mảng). Gói số chỉ có số đếm, số tiền, ngày, mã chứng từ, mã + tên hàng, tên
@@ -317,13 +318,16 @@ tỷ lệ theo kỳ / ảnh chụp) và điều kiện SQL từng khối: `docs/
 
 **Bản tin tuần / tháng (P2).** Thứ Hai 06:00 (cron `0 6 * * 1`, `bc.ai.jobs.weekly`) viết bản tin của tuần trọn trước
 (thứ Hai → Chủ nhật); ngày 2 lúc 07:00 (`0 7 2 * *`, `bc.ai.jobs.monthly`) bản tin của tháng trước; quản trị bấm được ở
-`#/ai`. Hàng đợi `long`, khoá riêng (bản tin không chặn lượt ngày và ngược lại); chạy lại trong cùng tuần / tháng thì ghi
-đè cùng bản tin. Đầu vào do Python tính sẵn từ ảnh chụp chỉ số hằng ngày: giá trị cuối kỳ, so kỳ trước, so 4 tuần / 3
+`#/ai`. Hàng đợi `long`, khoá riêng từng loại (bản tin không chặn lượt ngày và ngược lại; bản tin tuần còn chạy lúc 07:00
+ngày 2 không chặn bản tin tháng); chạy lại trong cùng tuần / tháng thì ghi đè cùng bản tin. Đầu vào do Python tính sẵn từ ảnh chụp chỉ số hằng ngày: giá trị cuối kỳ, so kỳ trước, so 4 tuần / 3
 tháng trước, cùng kỳ năm trước (tháng), thấp nhất / cao nhất 8 tuần / 12 tháng; chỉ số cộng dồn trong kỳ chỉ có giá trị
-(không phép so). Kèm tiêu đề các việc của kỳ (mới mở, đã đóng, còn tồn ≥ 7 / 30 ngày) — không gửi thân lời, ghi chú,
-chứng từ. Claude (model deep) viết ba phần "Điều đáng chú ý", "Việc tồn chưa xử lý", "Ưu tiên tuần / tháng tới" (≤ 5
+(không phép so). Kèm tiêu đề các việc của kỳ (mới mở, đã đóng, còn tồn ≥ 7 / 30 ngày; che tên NGẶT — cả tên khách / NCC
+một từ ngắn như "Hùng", vì tiêu đề đã lưu mang tên thật) và số ngày đã kéo dài của từng việc ở dạng trích được — không
+gửi thân lời, ghi chú, chứng từ. Thời hạn trong bản tin chỉ qua chỗ giữ số ngày đó; "45 ngày", "chín mươi ngày", "trong
+7 ngày" viết tay làm hỏng mục. Claude (model deep) viết ba phần "Điều đáng chú ý", "Việc tồn chưa xử lý", "Ưu tiên tuần / tháng tới" (≤ 5
 mục mỗi phần), số chỉ qua chỗ giữ và qua đúng bộ soát của lượt ngày; mục hỏng bị bỏ. AI tắt / hỏng / mọi mục bị loại →
-**bản tin theo quy tắc**: tối đa 5 chỉ số đổi nhiều nhất (≥ 10%), 5 việc tồn lâu nhất, 3 việc đỏ đang mở. Bản tin hiện
+**bản tin theo quy tắc**: tối đa 5 chỉ số đổi nhiều nhất (≥ 10%; chỉ số là tỷ lệ thì ≥ 2 điểm phần trăm — 1,0% → 1,1%
+không phải "+10%"), 5 việc tồn lâu nhất, 3 việc đỏ đang mở. Bản tin hiện
 dưới bản tin ngày ở `#/tro-ly` (tuần ≤ 14 ngày, tháng ≤ 45 ngày), badge "AI" / "Quy tắc". Mục AI mang mọi mảng mô hình
 đã thấy: người xem bị ẩn một trong các mảng đó thì không thấy mục đó (bản tin hết mục thì vắng; tiêu đề AI đổi thành
 tiêu đề trung tính); mục theo quy tắc chỉ mang mảng của chính nó.
@@ -398,8 +402,7 @@ khi AI tắt; khoá bản tin là "loại:ngày sau kỳ" (một bản / tuần 
 trung tính. **Giới hạn đã biết của P2**: một số chi tiết API OpenAI chưa đối chiếu được trên tài liệu (mẫu đầy đủ của
 thân lỗi, `usage` khi lượt hỏng, thử lại 502 / 504, header `retry-after-ms`) — làm theo dạng thường gặp, ghi ở đầu
 `bc/ai/llm/openai.py`; `ct.huy_nhieu` lọc theo `modified` không có chỉ mục trên v16 → mỗi bảng quét một lượt lúc 5:30;
-dòng chứng từ hiện mã khách (`customer` của chứng từ), không tên hiển thị; nút bản tin ở `#/ai` không tự làm mới (tải
-lại trang để thấy bản mới); chưa có lượt gọi OpenAI thật nào.
+nút bản tin ở `#/ai` không tự làm mới (tải lại trang để thấy bản mới); chưa có lượt gọi OpenAI thật nào.
 
 ## Kiểm thử
 
@@ -412,8 +415,8 @@ lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gia
 (desktop + điện thoại), tab mở trước deploy 6. **Trợ lý AI** (mô hình giả, không bộ nào ra mạng): dựng lời + soát số
 923, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
 kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
-tĩnh 59, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 122, cửa gọi OpenAI 140, phản biện 81, nhóm
-Kiểm soát 96, chỉ số lệch chuẩn 62, bản tin tuần / tháng 145, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
+tĩnh 59, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 123, cửa gọi OpenAI 140, phản biện 84, nhóm
+Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
 ## Cài đặt / deploy

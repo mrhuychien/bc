@@ -170,6 +170,10 @@ def chay(pack, ov=None):
 	return run_
 
 
+def keep_(r):
+	return getattr(r, "keep", set())
+
+
 def dat(p, path, x):
 	"""Đặt giá trị x tại path (tạo dict / danh sách trung gian)."""
 	segs = registry.split_path(path)
@@ -228,7 +232,21 @@ eq("n < 14 trong dòng → bỏ; path không phải KPI → bỏ", [M(PCT, 99, 2
 p = GP(PCT, 99, 20, 1)
 del p["cong-no"]
 r = chay(p)
-eq("giá trị hôm nay không có trong gói → chạy, không tín hiệu (không làm hỏng quy tắc)", (K in r.ran, r.signals), (True, []))
+eq("giá trị hôm nay không có trong gói → chạy, không tín hiệu (không làm hỏng quy tắc), khoá KPI được GIỮ (không đóng)",
+	(K in r.ran, r.signals, f"{K}:{PCT}" in keep_(r)), (True, [], True))
+eq("… KPI có khối nguồn VẮNG hẳn trong gói (gói dựng tay chỉ có tro-ly) cũng được giữ", f"{K}:{TIEN}" in keep_(r), True)
+# Màn nguồn của KPI lỗi hôm nay: detector không có dòng (không số hôm nay) → giữ tín hiệu của KPI đó, KPI khác vẫn chạy.
+p = GP(TIEN, 130_000_000, 100_000_000, 5_000_000)
+p["cong-no"]["receivables"]["kpis"].pop("overdue_pct", None)
+p["kiem-ke"] = {"overview": {"_error": True}}
+r = chay(p)
+eq("khối nguồn của KPI _error (kiem-ke.overview) → mọi KPI của khối đó được giữ; KPI tiền vẫn báo; overdue_pct (khối tốt, "
+	"không số) không giữ", (sorted(s.key for s in r.signals), sorted(k for k in keep_(r) if "kiem-ke" in k) != [],
+	f"{K}:{PCT}" in keep_(r), all(k.split(":", 1)[1].startswith("kiem-ke.overview") for k in keep_(r) if "kiem-ke" in k)),
+	([f"{K}:{TIEN}"], True, False, True))
+p = dat({T: {"kpi": {"cua_so": 28, "rows": []}}}, PCT, 30)
+eq("có số hôm nay nhưng lịch sử < 14 ngày (không có dòng) → giữ", f"{K}:{PCT}" in keep_(chay(p)), True)
+eq("đánh giá được, không lệch → không giữ (đóng như thường)", keep_(chay(GP(PCT, 20, 20, 1))) & {f"{K}:{PCT}"}, set())
 p = GP(PCT, 99, 20, 1)
 p["cong-no"]["receivables"]["kpis"]["overdue_pct"] = "99"
 eq("giá trị hôm nay không phải số → không tín hiệu", chay(p).signals, [])
@@ -244,24 +262,25 @@ s = chay(p).signals[0]
 TP = f"cong-no._ai.{registry.slug(K + ':' + PCT)}"
 eq("khoá / mảng / route / audience theo KPI", (s.key, s.rule, s.section, s.route, s.audience),
 	(f"{K}:{PCT}", K, "cong-no", "#/cong-no", "lanh-dao"))
-eq("số tự tính ở mảng CỦA KPI; paths gồm path thật của KPI", (registry.resolve(p, TP), sorted(s.paths)),
-	({"nhan": "Tỷ lệ nợ quá hạn", "so_ngay": 28, "trung_vi": 20}, sorted([PCT, f"{TP}.nhan", f"{TP}.so_ngay",
-	f"{TP}.trung_vi"])))
+eq("số tự tính ở mảng CỦA KPI (so_ngay = n THẬT của dòng: 20); paths gồm path thật của KPI", (registry.resolve(p, TP),
+	sorted(s.paths)), ({"nhan": "Tỷ lệ nợ quá hạn", "so_ngay": 20, "cua_so": 28, "trung_vi": 20}, sorted([PCT,
+	f"{TP}.nhan", f"{TP}.so_ngay", f"{TP}.cua_so", f"{TP}.trung_vi"])))
 eq("tro-ly không có _ai (không số tự tính nào ở mảng của quy tắc)", "_ai" in p[T], False)
-eq("lời: nhãn + giá trị hôm nay qua path thật + trung vị 28 ngày; không nêu nguyên nhân",
+eq("lời: nhãn + giá trị hôm nay qua path thật + trung vị của n ngày có số trong 28 ngày; không nêu nguyên nhân",
 	render.fill(s.title + " | " + s.detail, p).text, "Tỷ lệ nợ quá hạn khác thường so với 28 ngày qua | Hôm nay là 23,5%, "
-	"trung vị 28 ngày trước đó là 20,0%; cần đối chiếu số trên màn gốc trước khi kết luận.")
-p = GP(TIEN, 130_000_000, 100_000_000, 5_000_000)
+	"trung vị của 20 ngày có số trong 28 ngày trước đó là 20,0%; cần đối chiếu số trên màn gốc trước khi kết luận.")
+p = GP(TIEN, 130_000_000, 100_000_000, 5_000_000, n=14)
 s = chay(p).signals[0]
-eq("tiền: lời", render.fill(s.title + " | " + s.detail, p).text, "Nợ phải thu quá hạn khác thường so với 28 ngày qua | "
-	"Hôm nay là 130 triệu, trung vị 28 ngày trước đó là 100 triệu; cần đối chiếu số trên màn gốc trước khi kết luận.")
+eq("tiền, chỉ 14 ngày có số: lời nói 14 ngày (không nói 28)", render.fill(s.title + " | " + s.detail, p).text,
+	"Nợ phải thu quá hạn khác thường so với 28 ngày qua | Hôm nay là 130 triệu, trung vị của 14 ngày có số trong 28 "
+	"ngày trước đó là 100 triệu; cần đối chiếu số trên màn gốc trước khi kết luận.")
 p = GP(QUA30, 9, 2, 0)
 s = chay(p).signals[0]
 eq("nhãn có chữ số (Kho quá 30 ngày chưa kiểm) đi qua chỗ giữ chu, mảng kiem-ke", (s.section, render.fill(s.title, p).text),
 	("kiem-ke", "Kho quá 30 ngày chưa kiểm khác thường so với 28 ngày qua"))
 eq("kind_map: trung vị cùng kiểu với KPI", {k: v for k, v in registry.kind_map([s]).items() if "_ai" in k},
 	{f"kiem-ke._ai.{registry.slug(K + ':' + QUA30)}.so_ngay": "so", f"kiem-ke._ai.{registry.slug(K + ':' + QUA30)}"
-	".trung_vi": "so"})
+	".cua_so": "so", f"kiem-ke._ai.{registry.slug(K + ':' + QUA30)}.trung_vi": "so"})
 
 # Mọi KPI không cộng dồn: một tín hiệu dựng được, E5 với kinds + nguon (mảng KPI).
 TAT_CA = {}
@@ -377,5 +396,29 @@ o2 = pipeline.run_daily(run_type="tay")
 eq("ẩn cong-no: lượt chạy ok, tín hiệu vẫn còn, nhóm tai-chinh không được gọi (tín hiệu dùng số mảng ẩn)",
 	(o2.get("status"), o2.get("signals"), [g["nhom"] for g in GOI]), ("ok", 1, ["kinh-doanh", "kho-sx"]))
 single("BC Settings", hidden_sections="")
+
+# Màn nguồn của KPI lỗi một ngày (cong-no.receivables _error): tín hiệu GIỮ NGUYÊN (không đóng rồi mở lại với first_seen
+# mới); ngày số trở lại bình thường thì đóng.
+def ins_kpi():
+	r = frappe.db.sql("SELECT status, first_seen FROM `tabBC AI Insight` WHERE signal_key = %s", (f"{K}:{PCT}",),
+		as_dict=True)
+	return (r[0].status, r[0].first_seen) if r else None
+
+
+truoc = ins_kpi()
+loi_cn = copy.deepcopy(PACK_NAY)
+loi_cn["cong-no"]["receivables"] = {"_error": True}
+collect.build = lambda today: copy.deepcopy(loi_cn)
+frappe.cache().store.clear()
+o3 = pipeline.run_daily(run_type="tay")
+eq("màn Công nợ lỗi hôm nay: lượt ok, kpi.lech_chuan vẫn chạy, tín hiệu overdue_pct còn mở, first_seen không đổi",
+	(o3.get("status"), K in (o3.get("not_run") or {}), ins_kpi()), ("ok", False, truoc))
+c("… (đối chứng) tín hiệu đó đang mở trước lượt lỗi", bool(truoc) and truoc[0] == "mo", truoc)
+binh = copy.deepcopy(PACK_NAY)
+binh["cong-no"]["receivables"]["kpis"]["overdue_pct"] = 20.0
+collect.build = lambda today: copy.deepcopy(binh)
+frappe.cache().store.clear()
+pipeline.run_daily(run_type="tay")
+eq("số trở lại trung vị → tín hiệu đóng", (ins_kpi() or ("?",))[0], "dong")
 
 c.done()

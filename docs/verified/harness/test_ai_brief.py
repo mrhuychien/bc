@@ -77,7 +77,7 @@ c("chặn mạng: MariaDB vẫn chạy, socket AF_INET nổ", frappe.db.sql("SEL
 bc_settings()
 insert("Customer", name="NPP-A", customer_name=TEN)
 
-from bc.ai import brief, jobs, llm, prompt, registry, render, store  # noqa: E402
+from bc.ai import brief, jobs, llm, prompt, redact, registry, render, store  # noqa: E402
 
 P1 = "cong-no.receivables.kpis.overdue"          # tien — "Nợ phải thu quá hạn"
 P2 = "cong-no.receivables.kpis.overdue_pct"      # pct
@@ -309,6 +309,21 @@ few = {"a": {"nhan": "Mười", "gia_tri": 110, "tuan_truoc": 100, "d_tuan": 10,
 	"b": {"nhan": "Chín", "gia_tri": 109.99, "tuan_truoc": 100, "d_tuan": 9.99, "d_tuan_pct": 9.99}}
 eq("biên: 10 % vào, 9,99 % không", [t["text"].split(":")[0] for t in brief.rule_parts("tuan", few, [])[0]["items"]],
 	["Mười"])
+# KPI kiểu pct (tỷ lệ): xét bằng ĐIỂM phần trăm (≥ NGUONG_DIEM = 2), không bằng % tương đối của một tỷ lệ.
+nho = {P2: {"nhan": "Tỷ lệ nợ quá hạn", "gia_tri": 1.1, "tuan_truoc": 1.0, "d_tuan": 0.1, "d_tuan_pct": 10.0},
+	P1: {"nhan": "Nợ phải thu quá hạn", "gia_tri": 1.12e9, "tuan_truoc": 1e9, "d_tuan": 1.2e8, "d_tuan_pct": 12.0}}
+eq("tỷ lệ nhỏ 1,0% → 1,1% (+10% tương đối, 0,1 điểm) KHÔNG đáng chú ý; tiền +12% vẫn vào",
+	[t["text"] for t in brief.rule_parts("tuan", nho, [])[0]["items"]],
+	["Nợ phải thu quá hạn: 1,1 tỷ, tăng 12,0% so với tuần trước (1 tỷ)."])
+bien = lambda v: {P2: {"nhan": "Tỷ lệ nợ quá hạn", "gia_tri": v, "tuan_truoc": 20.0, "d_tuan": round(v - 20, 6),  # noqa: E731
+	"d_tuan_pct": round((v - 20) / 20 * 100, 6)}}
+eq("biên điểm: +2 điểm vào, +1,99 điểm không (dù % tương đối ~10%)", [len(brief.rule_parts("tuan", bien(v), [])[0]
+	["items"]) for v in (22.0, 21.99)], [1, 0])
+xep = {P2: {"nhan": "Tỷ lệ nợ quá hạn", "gia_tri": 3.0, "tuan_truoc": 1.0, "d_tuan": 2.0, "d_tuan_pct": 200.0},
+	P1: {"nhan": "Nợ phải thu quá hạn", "gia_tri": 1.15e9, "tuan_truoc": 1e9, "d_tuan": 1.5e8, "d_tuan_pct": 15.0}}
+eq("xếp cùng thang mức: tiền +15% (1,5 lần ngưỡng) trước tỷ lệ +2 điểm (= ngưỡng, dù +200% tương đối)",
+	[t["text"].split(":")[0] for t in brief.rule_parts("tuan", xep, [])[0]["items"]],
+	["Nợ phải thu quá hạn", "Tỷ lệ nợ quá hạn"])
 
 
 def nd(name, tt, so_ngay, sev="vang", status="mo", rank=0, secs=("cong-no",)):
@@ -417,7 +432,15 @@ for bi_mat in (TEN, "THAN-BI-MAT", "GHI-CHU-BI-MAT", "NHAN-SU-AN", "BO-QUA-AN", 
 	c(f"đề bài (user + system) không chứa {bi_mat!r}", bi_mat not in U and bi_mat not in SYS)
 eq("user: đúng các khoá", sorted(OBJ), ["kieu", "ky", "loai", "nhan_dinh", "pack"])
 eq("ky / loai", (OBJ["loai"], OBJ["ky"]), ("tuan", {"tu": "2026-11-16", "den": "2026-11-22"}))
-eq("pack: chỉ mảng không ẩn", sorted(OBJ["pack"]), ["cong-no", "ton-kho", "tong-quan"])
+eq("pack: số KPI chỉ của mảng không ẩn", sorted(k for k, v in OBJ["pack"].items() if "_tuan" in v),
+	["cong-no", "ton-kho", "tong-quan"])
+eq("pack: số ngày của ĐÚNG các nhận định đã gửi, trích được ở <mang>._viec.<id>.so_ngay (kiểu so)",
+	({k: v["_viec"] for k, v in OBJ["pack"].items() if "_viec" in v}, {p: k for p, k in OBJ["kieu"].items()
+	if "._viec." in p}), ({"cong-no": {"N1": {"so_ngay": 22}}, "van-chuyen": {"N2": {"so_ngay": 10}},
+	"ton-kho": {"N3": {"so_ngay": 5}}}, {"cong-no._viec.N1.so_ngay": "so", "van-chuyen._viec.N2.so_ngay": "so",
+	"ton-kho._viec.N3.so_ngay": "so"}))
+c("system: luật bản tin bắt nêu thời hạn bằng placeholder _viec, cấm viết tay", "_viec.N1.so_ngay|so}}" in SYS
+	and "chín mươi ngày" in SYS and "bằng chữ thường" not in SYS)
 eq("pack: số đã tính sẵn (P1)", OBJ["pack"]["cong-no"]["_tuan"]["cong_no_receivables_kpis_overdue"]["d_tuan_pct"], 20.0)
 c("kieu: đúng path của gói đã gửi, *_pct → pct, không mảng ẩn", OBJ["kieu"] and all(registry.has(OBJ["pack"], p)
 	for p in OBJ["kieu"]) and all(v == "pct" for p, v in OBJ["kieu"].items() if p.endswith("_pct"))
@@ -491,6 +514,8 @@ finally:
 BR = store.latest_briefs(("tuan",))[0]
 c("đề bài vượt trần → còn 2 nhận định, mã của nhận định bị bớt không có trong đề bài",
 	len(GOI[0]["obj"]["nhan_dinh"]) == 2 and MA2 not in GOI[0]["user"], GOI[0]["obj"]["nhan_dinh"])
+eq("… khối _viec của đề bài chỉ còn id của nhận định còn gửi (dựng lại khi cắt)", sorted(i for v in
+	GOI[0]["obj"]["pack"].values() for i in (v.get("_viec") or {})), sorted(x["id"] for x in GOI[0]["obj"]["nhan_dinh"]))
 c("mục chép mã đã bị bớt → bị loại, không thành tên thật", o["rejected"] == 1 and o["items"] == 1
 	and TEN2 not in json.dumps(BR, ensure_ascii=False, default=str), (o, BR["parts"]))
 c("mục AI: sections = mảng đã THỰC gửi (nhận định bị bớt không tính)", set(BR["parts"][1]["items"][0]["sections"])
@@ -504,6 +529,58 @@ GOI.clear()
 brief.run_brief("tuan")
 eq("ai_claude_model_deep trống → model ngày", GOI[0]["model"], DAILY)
 single("BC Settings", ai_claude_model_deep=DEEP)
+
+# Tên khách MỘT TỪ ngắn ("Hùng" < 6 ký tự) trong tiêu đề ĐÃ LƯU (nhận định tự do: tên thật đã hoàn nguyên) và trong
+# rule_title (lời quy tắc đã thay {{…customer|chu}}) → che NGẶT (mask_text tat_ca=True), không rời máy chủ.
+insert("Customer", name="NPP-S", customer_name="Hùng")
+insert("Supplier", name="NCC-S", supplier_name="Tín")
+ins("ai:cong-no:hung", first=D(2026, 11, 20, 5, 30), title="Công nợ của Hùng tăng mạnh")
+ins("cn.hung", first=D(2026, 11, 21, 5, 30), title="x", rule_title="Khách Hùng quá hạn, NCC Tín giao trễ")
+KB["f"] = None
+GOI.clear()
+brief.run_brief("tuan")
+TD = [x["tieu_de"] for x in GOI[0]["obj"]["nhan_dinh"]]
+c("tên một từ ngắn (khách 'Hùng', NCC 'Tín') không có trong đề bài; tiêu đề mang mã giả", GOI and not any(
+	__import__("re").search(r"\b(Hùng|Tín)\b", g["user"]) for g in GOI) and any(t.startswith("Công nợ của KH#")
+	for t in TD) and any("NCC#" in t and t.startswith("Khách KH#") for t in TD), TD)
+def _ngat(t):
+	try:
+		return redact.build(True).mask_text(t, tat_ca=True)
+	except TypeError:          # bản trước khi có chế độ ngặt
+		return t
+
+
+c("… (đối chứng) che thường (mask_text mặc định) để lọt 'Hùng' — chế độ ngặt mới che",
+	"Hùng" in redact.build(True).mask_text("Công nợ của Hùng tăng mạnh") and "Hùng" not in _ngat("Công nợ của Hùng tăng mạnh"))
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE name IN ('ai:cong-no:hung', 'cn.hung')")
+
+# Thời hạn: mô hình chỉ nêu được số ngày bằng placeholder <mang>._viec.<id>.so_ngay; viết tay (số / chữ) → bỏ mục.
+KB["f"] = lambda obj: {"data": {"title": "Việc tồn đã 45 ngày", "dang_chu_y": [], "viec_ton": [
+	"Công nợ quá hạn đã kéo dài {{cong-no._viec.N1.so_ngay|so}} ngày, cần kiểm tra: kế hoạch thu.",   # giữ: 22 ngày
+	"Công nợ khách lớn chậm trả đã kéo dài chín mươi ngày, cần kiểm tra: kế hoạch thu.",              # chữ → bỏ
+	"Việc giao trễ đã kéo dài 45 ngày.",                                                              # số tay → bỏ
+	"Việc tồn đã kéo dài {{cong-no._viec.N9.so_ngay|so}} ngày."],                                     # id không gửi → bỏ
+	"uu_tien": ["Kế toán: thu hồi nợ trong 7 ngày.", "Kho: rà soát tồn chậm bán, so với bốn tuần trước."]},
+	"tokens_in": 5, "tokens_out": 5, "model": DEEP}
+o = brief.run_brief("tuan")
+BR = store.latest_briefs(("tuan",))[0]
+eq("thời hạn: chỉ placeholder _viec được nhận; 'chín mươi ngày', '45 ngày', 'trong 7 ngày', id lạ → bỏ; mốc so cố định "
+	"'bốn tuần trước' giữ; tiêu đề có thời hạn tay → mặc định", (o["source"], o["items"], o["rejected"], BR["title"],
+	[[it["text"] for it in p["items"]] for p in BR["parts"]]), ("ai", 2, 4, "Bản tin tuần 16/11 – 22/11/2026", [[],
+	["Công nợ quá hạn đã kéo dài 22 ngày, cần kiểm tra: kế hoạch thu."],
+	["Kho: rà soát tồn chậm bán, so với bốn tuần trước."]]))
+def _rt_th(t):
+	try:
+		return render.render_text(t, {}, set(), thoi_han=False)["ok"]
+	except TypeError:          # bản trước khi có thoi_han
+		return "?"
+
+
+eq("render_text thoi_han=False: thời hạn tay bị loại; mặc định (lượt ngày) vẫn nhận", [
+	(_rt_th(t), render.render_text(t, {}, set())["ok"]) for t in (
+	"Việc tồn đã kéo dài 45 ngày.", "Đã kéo dài bốn mươi lăm ngày.", "Nợ quá hạn đã 3 tháng.", "Trong nửa tháng.",
+	"Họp thứ hai tuần này.", "Số của tháng 11 năm 2026.", "Theo dõi hai quy trình.")],
+	[(False, True), (False, True), (False, True), (False, True), (True, True), (True, True), (True, True)])
 
 # tiêu đề hỏng → tiêu đề mặc định; vẫn source ai
 KB["f"] = lambda obj: {"data": {"title": "Nợ tăng 20%", "dang_chu_y": ["Kế toán: rà soát nợ quá hạn."],
@@ -615,7 +692,8 @@ eq("không ảnh chụp, không nhận định → không gọi, không dòng Ru
 nap_insight()
 GOI.clear()
 o = brief.run_brief("tuan")
-c("chỉ có nhận định (không KPI) → vẫn gọi, gói rỗng", len(GOI) == 1 and GOI[0]["obj"]["pack"] == {}
+c("chỉ có nhận định (không KPI) → vẫn gọi, gói chỉ có số ngày của nhận định", len(GOI) == 1
+	and all(set(v) == {"_viec"} for v in GOI[0]["obj"]["pack"].values()) and GOI[0]["obj"]["pack"]
 	and len(GOI[0]["obj"]["nhan_dinh"]) == 3)
 single("BC Settings", hidden_sections="")
 nap_tuan()
@@ -663,33 +741,42 @@ eq("tháng: ưu tiên tháng tới", BT["parts"][2]["title"], "Ưu tiên tháng 
 print("J. Khoá, không bao giờ ném, không lưu đề bài")
 cache = frappe.cache()
 hom_nay(d(2026, 11, 23))
-cache.set_value(jobs.BRIEF_LOCK_KEY, 1)
+_khoa = getattr(jobs, "brief_lock_key", lambda k: jobs.BRIEF_LOCK_KEY)     # bản trước: một khoá chung
+KT, KTH = _khoa("tuan"), _khoa("thang")
+cache.set_value(KT, 1)
 nb = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]
-eq("khoá bản tin đang giữ → dang-chay, không ghi gì", (brief.run_brief("tuan"), brief.run_brief("thang"),
-	frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]), ({"status": "dang-chay"}, {"status": "dang-chay"}, nb))
-c("… khoá của người khác không bị xoá", cache.get_value(jobs.BRIEF_LOCK_KEY))
-cache.delete_value(jobs.BRIEF_LOCK_KEY)
+eq("khoá bản tin TUẦN đang giữ → tuần dang-chay, không ghi gì", (brief.run_brief("tuan"),
+	frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]), ({"status": "dang-chay"}, nb))
+o_th = brief.run_brief("thang")
+eq("… bản tin THÁNG vẫn chạy trọn trong lúc tuần giữ khoá (khoá riêng từng loại), khoá tuần còn nguyên",
+	(o_th.get("status"), bool(o_th.get("brief")), cache.get_value(KT), cache.get_value(KTH)), ("ok", True, 1, None))
+c("… khoá của người khác không bị xoá", cache.get_value(KT))
+cache.delete_value(KT)
+cache.set_value(KTH, 1)
+eq("khoá bản tin THÁNG đang giữ → tháng dang-chay", brief.run_brief("thang"), {"status": "dang-chay"})
+cache.delete_value(KTH)
+nb = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]
 cache.set_value(jobs.LOCK_KEY, 1)            # lượt ngày đang chạy
 o = brief.run_brief("tuan")
 c("lượt ngày giữ khoá → bản tin vẫn chạy; khoá lượt ngày giữ nguyên", o["status"] == "ok"
-	and cache.get_value(jobs.LOCK_KEY) and not cache.get_value(jobs.BRIEF_LOCK_KEY))
+	and cache.get_value(jobs.LOCK_KEY) and not cache.get_value(KT))
 cache.delete_value(jobs.LOCK_KEY)
 KHOA = []
 _goc_call = llm.call
 
 
 def thay_khoa(*a, **k):
-	KHOA.append((cache.get_value(jobs.BRIEF_LOCK_KEY), cache.get_value(jobs.LOCK_KEY)))
+	KHOA.append((cache.get_value(KT), cache.get_value(KTH), cache.get_value(jobs.LOCK_KEY)))
 	return fake_call(*a, **k)
 
 
 llm.call = thay_khoa
 brief.run_brief("tuan")
 llm.call = _goc_call
-eq("trong lúc chạy: giữ khoá bản tin, không đặt khoá lượt ngày", KHOA, [(1, None)])
+eq("trong lúc chạy: giữ khoá bản tin CỦA LOẠI ĐÓ, không đặt khoá loại kia / lượt ngày", KHOA, [(1, None, None)])
 eq("loại lạ → loi, không ghi gì, không khoá", (brief.run_brief("nam")["status"], brief.run_brief(None)["status"],
-	frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0] - nb, cache.get_value(jobs.BRIEF_LOCK_KEY)),
-	("loi", "loi", 2, None))
+	frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0] - nb, cache.get_value(KT), cache.get_value(KTH)),
+	("loi", "loi", 2, None, None))
 _up = store.upsert_brief
 
 
@@ -706,7 +793,7 @@ try:
 finally:
 	store.upsert_brief = _up
 c("lỗi ngoài dự kiến → không ném, status loi, nhả khoá, trả user cũ", ok_khong_nem and o["status"] == "loi"
-	and not cache.get_value(jobs.BRIEF_LOCK_KEY) and frappe.session.user == "viewer@example.com", o)
+	and not cache.get_value(KT) and frappe.session.user == "viewer@example.com", o)
 LG = frappe.LOGGED[n_log:]
 c("… Error Log 'bc.ai bản tin tuan', chỉ tên loại lỗi, không khoá", LG and all(KEY not in str(x) for x in LG)
 	and any("bc.ai bản tin tuan" in str(x) for x in LG), LG)

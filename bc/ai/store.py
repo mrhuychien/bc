@@ -216,12 +216,13 @@ def _sections(it, section: str) -> str:
 
 
 # ─── Tín hiệu theo quy tắc ───────────────────────────────────────────────────
-def sync_signals(items: list, ran, now) -> dict:
+def sync_signals(items: list, ran, now, keep=()) -> dict:
 	"""Đồng bộ tín hiệu theo quy tắc của một lượt chạy.
 
 	items: tín hiệu ĐÃ dựng lời — dict {"key", "rule", "section", "audience", "severity", "route", "title", "body",
 	"paths": [..], "sections_used": [..], "documents": [..]}. ran: tập mã quy tắc đã chạy (gồm quy tắc đang tắt) —
-	Insight (rule ≠ "ai") của các quy tắc này không còn trong items thì đóng. Trả {"new", "kept", "reopened", "closed",
+	Insight (rule ≠ "ai") của các quy tắc này không còn trong items thì đóng — trừ khoá trong `keep` (registry.RuleRun.keep:
+	quy tắc đã chạy nhưng không đánh giá được khoá đó lượt này, vd KPI có màn nguồn lỗi → giữ nguyên). Trả {"new", "kept", "reopened", "closed",
 	"muted", "names": {key: name}}."""
 	now = get_datetime(now)
 
@@ -237,8 +238,10 @@ def sync_signals(items: list, ran, now) -> dict:
 
 	dem, names, cham = _upsert(items, loi, now)
 	closed = 0
+	giu = {cstr(k) for k in (keep or ()) if k}
 	for lo in _lo(sorted({cstr(r) for r in (ran or ()) if r and r != "ai"})):
-		closed += _dong_vang(_rows("rule IN %(rules)s AND IFNULL(status, '') != 'dong'", {"rules": lo}), cham, now)
+		rows = _rows("rule IN %(rules)s AND IFNULL(status, '') != 'dong'", {"rules": lo})
+		closed += _dong_vang([r for r in rows if cstr(r.get("signal_key")) not in giu], cham, now)
 	return {**dem, "closed": closed, "names": names}
 
 

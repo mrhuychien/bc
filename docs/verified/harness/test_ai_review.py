@@ -492,6 +492,14 @@ out = chay(rv=lambda obj: [{"id": "N1", "verdict": "nghi-ngo", "note": "Cần ki
 eq("note chép mã chứng từ KHÔNG có trong đề bài phản biện (SR900) → bỏ note, giữ verdict (nguon = đề bài phản biện)",
 	(R("p2r.cn").review_verdict, R("p2r.cn").review_note or "", rv_rows(out)[0].rejected), ("nghi-ngo", "", 1))
 
+out = chay(rv=lambda obj: [{"id": "N1", "verdict": "nghi-ngo", "note": "Khoản nợ này đã kéo dài 45 ngày, không phải mới."},
+	{"id": "N2", "verdict": "nghi-ngo", "note": "Việc này đã kéo dài chín mươi ngày."}]
+	if obj["nhom"] == "tai-chinh" else [])
+eq("note nêu thời hạn viết tay ('45 ngày', 'chín mươi ngày' — phản biện không có số ngày để đối chiếu) → bỏ note, giữ "
+	"verdict", [(R(k).review_verdict, R(k).review_note or "") for k in ("p2r.cn", FREE)] + [rv_rows(out)[0].rejected],
+	[("nghi-ngo", ""), ("nghi-ngo", ""), 2])
+c("system phản biện cấm thời hạn viết tay", "chín mươi ngày" in review.system_prompt())
+
 # ═══════════════════════════════════════════════════════════════════════════
 print("9. Gọi thẳng run_group: rỗng / hết giờ / im lặng theo state / trần độ dài")
 frappe.db.sql(f"DELETE FROM `tab{RUN}`")

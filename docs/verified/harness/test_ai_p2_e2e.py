@@ -79,8 +79,8 @@ def ban(ngay, rate, ck=0):
 	doc("Sales Invoice", n, posting_date=ngay, customer=KH_ID, customer_group="NPP", is_return=0, is_opening="No",
 		base_grand_total=0)
 	insert("Sales Invoice Item", parent=n, parenttype="Sales Invoice", parentfield="items", idx=1, item_code="E2E-BDX",
-		item_name="Bánh đậu xanh E2E", net_rate=rate, conversion_factor=1, discount_percentage=ck, qty=1, net_amount=rate,
-		**AI)
+		item_name="Bánh đậu xanh E2E", net_rate=rate, base_net_rate=rate, conversion_factor=1, discount_percentage=ck,
+		qty=1, net_amount=rate, base_net_amount=rate, **AI)
 	return n
 
 

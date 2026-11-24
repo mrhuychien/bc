@@ -115,13 +115,14 @@ def _co_bang(dt: str) -> bool:
 
 
 def _doi_tac_sql(dt: str) -> str:
-	"""(loại, tên) đối tác của chứng từ — chỉ khách / NCC."""
+	"""(loại, tên) đối tác của chứng từ — chỉ khách / NCC. Tên = TÊN HIỂN THỊ chụp trên chứng từ (trống thì mã hồ sơ),
+	như các màn khác của bc; doi_tac() bỏ loại đối tác khác (nhân viên, cổ đông) nên không có tên người."""
 	if dt == "Sales Invoice":
-		return "'Customer' AS pt, customer AS party"
+		return "'Customer' AS pt, COALESCE(NULLIF(customer_name, ''), customer) AS party"
 	if dt == "Purchase Invoice":
-		return "'Supplier' AS pt, supplier AS party"
+		return "'Supplier' AS pt, COALESCE(NULLIF(supplier_name, ''), supplier) AS party"
 	if dt == "Payment Entry":
-		return "party_type AS pt, party AS party"
+		return "party_type AS pt, COALESCE(NULLIF(party_name, ''), party) AS party"
 	return "NULL AS pt, NULL AS party"
 
 

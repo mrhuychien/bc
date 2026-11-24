@@ -566,19 +566,24 @@ from frappe.utils import background_jobs as bj  # noqa: E402
 frappe.ENQUEUE_RUN = False
 frappe.cache().store.clear()
 bj.FAKE_ENQUEUED_IDS.clear()
-c("khoá bản tin khác khoá lượt ngày, không tiền tố bc:", jobs.BRIEF_LOCK_KEY == "bcai:lock:brief"
-	and jobs.BRIEF_LOCK_KEY != jobs.LOCK_KEY and not jobs.BRIEF_LOCK_KEY.startswith("bc:"))
+eq("khoá bản tin riêng từng loại, khác khoá lượt ngày, không tiền tố bc:", {k: jobs.brief_lock_key(k)
+	for k in jobs.BRIEF_KINDS}, {"tuan": "bcai:lock:brief:tuan", "thang": "bcai:lock:brief:thang"})
 eq("job id riêng từng loại", jobs.BRIEF_JOB_IDS, {"tuan": "bc_ai_brief_tuan", "thang": "bc_ai_brief_thang"})
 frappe.cache().set_value(jobs.LOCK_KEY, 1)
 c("lượt ngày đang giữ khoá → bản tin vẫn xếp được", not jobs.brief_running("tuan") and jobs.enqueue_brief("tuan") is True)
 eq("… đúng job", frappe.ENQUEUED[-1], ("bc.ai.brief.run_brief", {"queue": "long", "timeout": jobs.BRIEF_TIMEOUT,
 	"job_id": "bc_ai_brief_tuan", "deduplicate": True}, {"kind": "tuan"}))
 frappe.cache().delete_value(jobs.LOCK_KEY)
-frappe.cache().set_value(jobs.BRIEF_LOCK_KEY, 1)
+frappe.cache().set_value(jobs.brief_lock_key("tuan"), 1)
 c("bản tin giữ khoá → lượt ngày vẫn xếp được", not jobs.is_running() and jobs.enqueue_run("ngay") is True)
-c("bản tin giữ khoá → bản tin khác (kể cả loại kia) không xếp", jobs.brief_running("thang")
-	and jobs.enqueue_brief("thang") is False)
-frappe.cache().delete_value(jobs.BRIEF_LOCK_KEY)
+c("bản tin TUẦN giữ khoá → tuần không xếp; THÁNG vẫn xếp (thứ Hai trùng ngày 2: tuần chạy quá 07:00 không làm mất "
+	"bản tin tháng)", jobs.brief_running("tuan") and jobs.enqueue_brief("tuan") is False
+	and not jobs.brief_running("thang") and jobs.enqueue_brief("thang") is True and frappe.ENQUEUED[-1][2] == {"kind": "thang"})
+frappe.cache().delete_value(jobs.brief_lock_key("tuan"))
+frappe.cache().set_value(jobs.brief_lock_key("thang"), 1)
+c("bản tin THÁNG giữ khoá → tháng không xếp, tuần xếp được", jobs.enqueue_brief("thang") is False
+	and jobs.enqueue_brief("tuan") is True)
+frappe.cache().delete_value(jobs.brief_lock_key("thang"))
 bj.FAKE_ENQUEUED_IDS.add("bc_ai_brief_tuan")
 c("job tuần đang chờ → tuần không xếp, tháng xếp được", jobs.enqueue_brief("tuan") is False
 	and jobs.enqueue_brief("thang") is True and frappe.ENQUEUED[-1][2] == {"kind": "thang"})
