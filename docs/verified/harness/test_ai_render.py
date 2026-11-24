@@ -358,6 +358,12 @@ BAT = [
 	("được 95/100 điểm", ["95/100"], "a/b có 3 chữ số"),
 	("hạn 05/11/1999", ["05/11/1999"], "năm ngoài 20xx trong ngày"),
 	("kỳ 13/2026", ["13/2026"], "tháng 13"),
+	# H4: ngày viết tay phải đủ năm 20xx — d/m trơ trọi / d/m/yy là số trần, dù chữ nào đứng trước
+	("chốt ngày 5/11, hạn đến 30/11", ["5/11", "30/11"], "H4: d/m trơ trọi (kể cả sau 'ngày', 'đến')"),
+	("xấp xỉ 1/2, khoảng 2/3 khách, mục tiêu 9/10 đơn, tương đương 3/1", ["1/2", "2/3", "9/10", "3/1"],
+		"H4: phân số dạng ngày (verify3 N22–N24, N55–N58)"),
+	("hạn 05/11/26", ["05/11/26"], "H4: năm hai chữ số"),
+	("hạn 31/2/2026", ["31/2/2026"], "H4: ngày không có thật"),
 	("chiếm một nửa nợ quá hạn", ["một nửa"], "'một nửa'"),
 	("một phần ba số khách", ["một phần ba"], "phân số bằng chữ"),
 	("chiếm ½ doanh số", ["½"], "ký tự phân số"),
@@ -385,7 +391,7 @@ BAT = [
 	# G1 — chữ số viết tay chỉ được ở 4 dạng (năm, ngày, mã, thời hạn / thứ tự ≤ 2 chữ số sau / trước từ chỉ thời gian)
 	("99 khách quá hạn, tăng 5 lần", ["99", "5"], "G1: số đếm / bội số ≤ 2 chữ số không kèm đơn vị KHÔNG còn lọt"),
 	("top 10 khách, 18 x 10 đơn", ["10", "18"], "G1: 'top 10', '18 x 10' (mẩu trùng báo một lần)"),
-	("từ 5-7/11 phải xong", ["5"], "G1: khoảng ngày viết tắt — chỉ vế d/m là ngày, '5-' thì không"),
+	("từ 5-7/11 phải xong", ["5", "7/11"], "G1 + H4: khoảng ngày viết tắt — '5-' và d/m thiếu năm đều bị bắt"),
 	("xử lý trong 24h, lúc 5:30, họp 17h30", ["24", "5", "30", "17"], "G1: giờ viết tay"),
 	("quý 3, top 5, tuần 45, ca 2, lần 2, thứ 2", ["5", "2"], "G1: 'top' và 'lần' không phải từ chỉ thời gian / thứ tự"),
 	("diện tích 50 m², mục x2", ["50", "2"], "G1: chữ số dính chữ thường không phải mã"),
@@ -412,13 +418,12 @@ GIU = [
 	("Rà soát trong 30 ngày tới, nhóm quá hạn trên 90 ngày", "số ngày ≤ 2 chữ số"),
 	("Kế hoạch năm 2026 và mùa Tết 2027", "năm 20xx"),
 	("giai đoạn 2025-2026", "khoảng năm"),
-	("chốt ngày 5/11", "ngày d/m"),
-	("tăng ca từ 6/11, giảm tải sau 7/11, còn hạn đến 30/11, khoảng 5/11 sẽ giao", "động từ tăng giảm nhưng có chữ khác "
-		"chen trước ngày; 'khoảng d/m' là ngày"),
+	("chốt ngày 5/11/2026", "ngày d/m/yyyy (H4: d/m phải kèm năm)"),
+	("tăng ca từ 6/11/2026, giảm tải sau 7/11/2026, còn hạn đến 30/11/2026, khoảng 5/11/2026 sẽ giao", "động từ tăng "
+		"giảm nhưng có chữ khác chen trước ngày; 'khoảng d/m/yyyy' là ngày"),
 	("hoàn tất trước 05/11/2026", "ngày d/m/yyyy"),
-	("hạn 05/11/26", "ngày d/m/yy"),
 	("kỳ tháng 10/2026 và quý 3/2026", "tháng/năm, quý/năm"),
-	("đến 5/11 phải xong, từ 5/11 đến 7/11", "ngày"),
+	("đến 5/11/2026 phải xong, từ 5/11/2026 đến 7/11/2026", "ngày"),
 	("ngày 05.11.2026, ngày 5-11-2026, mốc 2026-11-05", "G1: ngày đủ viết bằng dấu chấm / gạch"),
 	("chuẩn ISO 22000:2018, HACCP 2020, TCVN 5603:2008, TT 200/2014/TT-BTC", "G1: số hiệu tiêu chuẩn / văn bản"),
 	("quý4, tháng10, T10, tuần 2, ngày 5, mùng 3, thứ 2, ca 2, đợt 3, bước 1, kỳ 2, Tết 2027, lần thứ 3",
@@ -426,13 +431,14 @@ GIU = [
 	("trong 2 tuần, 3 tháng, 24 giờ, 15 phút, 2 hôm, 2 năm, 1 quý", "G1: thời hạn trước từ chỉ thời gian"),
 	("2025-26 và 2026/27", "G1: cặp năm"),
 	("Quý IV, QĐ II, mục III", "số La Mã không kèm đơn vị"),
-	("giao được ngày 5/11", "có chữ 'ngày' chen giữa nên không phải 'được a/b'"),
-	("mốc 5/11 tổng kết quý, mốc 7/11 tổng hợp số", "'tổng kết', 'tổng hợp' sau ngày (không có chữ chỉ ngày đứng trước)"),
-	("ngày 2/3 số đơn tăng", "'a/b số …' nhưng có chữ 'ngày' đứng trước → ngày"),
-	("từ 2/3 tỷ lệ trả hàng tăng, 5/11 đã giao, 7/11 khách nhận", "ngày + 'tỷ lệ' / 'đã' / 'khách': không phải đơn vị"),
-	("5/11 số liệu được chốt, đến 5/11 tổng hợp", "'số liệu', 'tổng hợp' sau ngày"),
+	("giao được ngày 5/11/2026", "có chữ 'ngày' chen giữa nên không phải 'được a/b'"),
+	("mốc 5/11/2026 tổng kết quý, mốc 7/11/2026 tổng hợp số", "'tổng kết', 'tổng hợp' sau ngày đủ"),
+	("ngày 2/3/2026 số đơn tăng", "'a/b/yyyy số …' → ngày"),
+	("từ 2/3/2026 tỷ lệ trả hàng tăng, 5/11/2026 đã giao, 7/11/2026 khách nhận", "ngày + 'tỷ lệ' / 'đã' / 'khách': không "
+		"phải đơn vị"),
+	("5/11/2026 số liệu được chốt, đến 5/11/2026 tổng hợp", "'số liệu', 'tổng hợp' sau ngày"),
 	("năm tài chính 2026/2027, niên độ 2026/27", "năm/năm"),
-	("kỳ Q3/2026 và T10/2026 (05/11), từ 5/11-10/11", "mã kỳ, ngày trong ngoặc, khoảng ngày"),
+	("kỳ Q3/2026 và T10/2026 (05/11/2026), từ 5/11/2026-10/11/2026", "mã kỳ, ngày trong ngoặc, khoảng ngày đủ"),
 	("xử lý chậm nhất trong 48 giờ", "số giờ ≤ 2 chữ số"),
 	("quý 3 tỷ giá tăng", "'tỷ giá'"),
 	("quý 3, tuần 45, ca 2, lần thứ 2, thứ 2", "số thứ tự"),
@@ -482,7 +488,7 @@ DAI = [
 	("chuỗi chữ số bằng chữ không có đơn vị", "một hai ba bốn năm sáu bảy tám chín mười " * 1000, []),
 	("mã nối gạch rất dài", "A" + "-123" * 10000, ["123"]),       # quá 40 ký tự đầu thì không còn là mã
 	("rất nhiều số nhỏ", "1 " * 20000, ["1 " * 19999 + "1"]),     # D7: dãy số rời cách dấu cách là MỘT số trần
-	("rất nhiều ngày", "5/11 " * 8000, []),
+	("rất nhiều ngày", "5/11/2026 " * 4000, []),
 ]
 for nhan, text, want in DAI:
 	t0 = time.monotonic()
@@ -609,7 +615,7 @@ RAW = {
 		f"nợ {{{{{R}.kpis.total|tien}}}}). KH#0001 và {{{{{R}.top_overdue[1].customer_name|chu}}}} quá hạn lâu nhất, từ "
 		f"{{{{{R}.top_overdue[0].oldest|ngay}}}}. Cần kiểm tra: lịch thanh toán với NCC#0001."),
 	"advice": ["Phòng Kế toán đối chiếu và thu hồi trong 7 ngày.", "   ",
-		"- Phòng Kinh doanh tạm dừng bán chịu cho KH#0001 trước 30/11.",
+		"- Phòng Kinh doanh tạm dừng bán chịu cho KH#0001 trước 30/11/2026.",
 		"1. Ban giám đốc duyệt hạn mức mới\ntrong quý 4.",
 		"Dòng thứ tư bị cắt.", "Dòng thứ năm có 1.250.000 nhưng đã bị cắt nên không xét."],
 }
@@ -626,9 +632,9 @@ eq("tiêu đề: thay số TRƯỚC, hoàn nguyên tên SAU (tên có '268' khô
 eq("thân: tỷ / triệu / % / ngày đúng định dạng, mã giả → tên thật, 'chu' lấy tên thật từ pack gốc", r["body"],
 	f"Nợ quá hạn chiếm 35,3% phải thu (quá hạn 33 triệu, tổng nợ 1,6 tỷ). {LAN_ANH} và {ABC} quá hạn lâu nhất, từ 8/7/2026. "
 	f"Cần kiểm tra: lịch thanh toán với {BAO_BI}.")
-eq("khuyến nghị: bỏ dòng rỗng, bỏ gạch / số đầu dòng, gộp một dòng, tối đa 3; 'trong 7 ngày', '30/11', 'quý 4' được giữ",
+eq("khuyến nghị: bỏ dòng rỗng, bỏ gạch / số đầu dòng, gộp một dòng, tối đa 3; 'trong 7 ngày', '30/11/2026', 'quý 4' giữ",
 	r["advice"], ["Phòng Kế toán đối chiếu và thu hồi trong 7 ngày.",
-	f"Phòng Kinh doanh tạm dừng bán chịu cho {LAN_ANH} trước 30/11.", "Ban giám đốc duyệt hạn mức mới trong quý 4."])
+	f"Phòng Kinh doanh tạm dừng bán chịu cho {LAN_ANH} trước 30/11/2026.", "Ban giám đốc duyệt hạn mức mới trong quý 4."])
 eq("paths của cả tiêu đề + thân, theo thứ tự", r["paths"], [f"{R}.top_overdue[0].overdue", f"{R}.kpis.overdue_pct",
 	f"{R}.kpis.overdue", f"{R}.kpis.total", f"{R}.top_overdue[1].customer_name", f"{R}.top_overdue[0].oldest"])
 eq("sections_used", r["sections_used"], ["cong-no"])
@@ -714,16 +720,16 @@ r = ri(body=f"Phải thu cuối quý 3 {{{{{R}.kpis.total|tien}}}}.")
 c("D7: chữ số + dấu cách + placeholder tien → loại", r["ok"] is False
 	and f"so-tran:3 {{{{{R}.kpis.total|tien}}}}" in r["errors"], str(r["errors"]))
 # over_limit = 3. Ngày (11 đứng sau "/"), năm (4 chữ số), mã (900 dính chữ), giờ (30 đứng sau ":") KHÔNG phải đầu nhóm nghìn
-r = ri(body=f"Đến 5/11 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 {{{{{R}.kpis.over_limit|so}}}} khách; "
+r = ri(body=f"Đến 5/11/2026 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 {{{{{R}.kpis.over_limit|so}}}} khách; "
 	f"mã SR900 {{{{{R}.kpis.over_limit|so}}}} phiếu; lúc 5:30 {{{{{R}.kpis.over_limit|so}}}} đơn.")
 c("G2: ngày / năm / mã đứng SÁT trước placeholder → loại (trước placeholder chỉ được chữ thường hoặc ( , : ; )",
-	r["ok"] is False and all(f"so-tran:{x} {{{{{R}.kpis.over_limit|so}}}}" in r["errors"] for x in ("5/11", "2026", "SR900",
+	r["ok"] is False and all(f"so-tran:{x} {{{{{R}.kpis.over_limit|so}}}}" in r["errors"] for x in ("5/11/2026", "2026", "SR900",
 	"5:30")),
 	str(r["errors"]))
-r = ri(body=f"Đến 5/11, có {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 có {{{{{R}.kpis.over_limit|so}}}} "
+r = ri(body=f"Đến 5/11/2026, có {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 có {{{{{R}.kpis.over_limit|so}}}} "
 	f"khách; mã SR900 còn {{{{{R}.kpis.over_limit|so}}}} phiếu.")
 eq("G2: ngày / năm / mã rồi một từ (hoặc dấu phẩy + từ) trước placeholder → nhận", (r["ok"], r["errors"], r["body"]),
-	(True, [], "Đến 5/11, có 3 khách vượt hạn mức; năm 2026 có 3 khách; mã SR900 còn 3 phiếu."))
+	(True, [], "Đến 5/11/2026, có 3 khách vượt hạn mức; năm 2026 có 3 khách; mã SR900 còn 3 phiếu."))
 # Hai số THẬT đặt cạnh nhau có dấu phân cách rõ ("3/5"), chu dính so, so cách tien: không tạo ra con số nào mới
 r = ri(body=f"{{{{{R}.kpis.over_limit|so}}}}/{{{{{R}.kpis.qua_120|so}}}} khách đã trả; "
 	f"{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}} đơn trễ.")
@@ -1024,7 +1030,7 @@ GHEP_MOI = [
 	(f"Có 12 {{{{tong-quan.summary.rows[0].sales|tien}}}}.", "số rời + dấu cách + placeholder tien"),
 	(f"Từ {{{{{P0}.boxes|so}}}}-{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp.", "G2: hai placeholder nối gạch"),
 	(f"Mã KK-{{{{{P0}.boxes|so}}}}.", "G2: gạch dính chữ trước placeholder (kể cả nối mã)"),
-	(f"Đến 5/11 {{{{{P0}.boxes|so}}}} hộp.", "G2: ngày đứng sát trước placeholder"),
+	(f"Đến 5/11/2026 {{{{{P0}.boxes|so}}}} hộp.", "G2: ngày đứng sát trước placeholder"),
 ]
 for body, nhan in GHEP_MOI:
 	r = rs(body)
@@ -1034,7 +1040,7 @@ GIU_MOI = [
 	f"Mã {{{{{P0}.item_name|chu}}}} bán {{{{{P0}.boxes|so}}}} hộp, đạt {{{{{P0}.ty_le|chu}}}} chỉ tiêu.",
 	f"Doanh số ({{{{tong-quan.summary.rows[0].sales|tien}}}}) từ {{{{tong-quan.summary.rows[0].invoices|so}}}} hoá đơn.",
 	f"Từ {{{{{P0}.boxes|so}}}} đến {{{{tong-quan.summary.rows[0].invoices|so}}}} hộp; mã KK-2026-002.",
-	f"Đến 5/11, còn {{{{{P0}.boxes|so}}}} hộp, trong 7 ngày, quý 4.",
+	f"Đến 5/11/2026, còn {{{{{P0}.boxes|so}}}} hộp, trong 7 ngày, quý 4.",
 ]
 for body in GIU_MOI:
 	r = rs(body)
@@ -1055,7 +1061,7 @@ LINT_MOI = [
 for text, want in LINT_MOI:
 	got = render.lint(text)
 	c(f"D7: lint bắt — {text!r} → {want!r}", want in got, str(got))
-LINT_GIU = ["năm 2026", "ngày 5/11", "mã SR900", "phiếu KK-2026-002", "trong 7 ngày", "quý 4", "quý 3 ty le",
+LINT_GIU = ["năm 2026", "ngày 5/11/2026", "mã SR900", "phiếu KK-2026-002", "trong 7 ngày", "quý 4", "quý 3 ty le",
 	"PNTP-X120", "KKE-TP10", "TON-TRAD1", "HAN-SINV-90", "KKE-SR-26", "SE-NL-X8", "TET1", "X12", "LO-TET-01",
 	"công ty Ba Tiến", "hàng ty vi", "trong 7 ngày (bảy ngày)", "Bước 1. Gọi khách"]
 for text in LINT_GIU:
@@ -1064,7 +1070,7 @@ for text, want in (("3 ty le", "3"), ("Top 5 Mart", "5"), ("trong 7 (bảy) ngà
 		("5 khách, 12 đơn", "12")):
 	c(f"G1: lint bắt (trước đây lọt) — {text!r} → {want!r}", want in render.lint(text), str(render.lint(text)))
 t0 = time.monotonic()
-dai = ("Nợ quá hạn của nhóm khách trong 12 ngày, mã SR900, ngày 5/11, công ty ABC tăng. " * 1200)[:80000]
+dai = ("Nợ quá hạn của nhóm khách trong 12 ngày, mã SR900, ngày 5/11/2026, công ty ABC tăng. " * 1100)[:80000]
 got = render.lint(dai)
 dt = time.monotonic() - t0
 c(f"D7: lint 80.000 ký tự lời thường < 5 s ({dt:.2f} s), sạch", dt < 5 and got == [], f"{dt:.2f} s {got[:3]}")
@@ -1699,6 +1705,117 @@ for nhan, fn in (
 	got = fn()
 	dt = time.monotonic() - t0
 	c(f"G1/G2: {nhan} < 2 s ({dt:.2f} s)", dt < 2, f"{dt:.2f} s")
+
+# ══ 7f. Vòng sửa 4: H1–H8 (các họ lỗi lọt của lần soát lại thứ ba — verify3) ══════════════════════════════
+print("\n— H1–H8: mỗi luật có dòng PHẢI LOẠI và dòng PHẢI NHẬN (lời mô hình qua render_insight) —")
+
+
+def r4(body="Nội dung.", title="Tiêu đề", advice=(), nguon=None):
+	return render.render_insight({"title": title, "body": body, "advice": list(advice)}, PW, None, None, kinds={},
+		nguon=nguon)
+
+
+def h_loai(h, body, ho="so-tran:", **kw):
+	r = r4(body, **kw)
+	c(f"{h}: loại — {(kw.get('title') or '') + body!r}", r["ok"] is False and any(e.startswith(ho) for e in r["errors"]),
+		f"{r['ok']} {r['errors']} {r['body']!r}")
+
+
+def h_nhan(h, body, **kw):
+	r = r4(body, **kw)
+	c(f"{h}: nhận — {body!r}", r["ok"] is True and r["errors"] == [], f"{r['errors']} {r['body']!r}")
+
+
+for body in ("Nhóm khách lớn nợ HAI TỶ.", "Ngân hàng còn Năm Trăm Triệu.", "Phạt tối đa ba mươi TRIỆU.",
+		"Ước thêm hai_tỷ chưa ghi sổ.", "Còn hai~tỷ chưa đối chiếu.", "Còn hai*tỷ chưa đối chiếu.",
+		"Còn hai`tỷ chưa đối chiếu.", "Riêng NPP nợ hai trieu dong.", "Kênh MT khoảng ba tram trieu.",
+		"Dự phòng thêm muoi lam ty.", "Kênh MT chừng chín mươi tr.", "Phí mỗi khách hai mươi k.",
+		"Mục tiêu tám mươi ٪.", "Mục tiêu tám mươi per cent.", "Dự phòng thêm five million.",
+		"Tức là half phải thu.", "Ước thiệt hại hai vé.", "Chi phí khắc phục năm xị.", "Còn ba lố hàng.",
+		"Chỉ ba phần năm đã đóng BHXH.", "Hai phần bảy chưa ký hợp đồng.", "Thiệt hại nhân đôi khi tính hàng hoàn.",
+		"Thiệt hại tăng ba lần so với tháng trước.", "Nợ tăng gần hai mươi lần.", "Nợ gap doi cung ky.",
+		"Thu được ba đô.", "Còn vài nghìn hộp tồn.", "Bán được mấy chai.", "Khoảng năm ; tỷ chưa thu."):
+	h_loai("H1", body)
+for body in ("Hai khách lớn nhất chưa trả nợ.", "Kế toán gọi khách hai lần mỗi tuần.", "Cả năm đồng thời tăng tỷ lệ trả.",
+		"Ba đồng nghiệp nghỉ phép.", "Một phần nợ đã thu.", "Công nhân hai ca làm thêm.",
+		"Đầu tư triển khai kênh mới.", "Ba Đình tăng doanh số.", "Năm nay cần thu gấp."):
+	h_nhan("H1", body)
+for body in ("Kênh MT khoảng I2O triệu.", "Trả hàng khoảng lOO triệu.", "Mã 1O0 và l00 chưa kiểm.",
+		"Có I2O khách mới.", "Đơn IO5 chưa giao."):     # chữ giống số trộn chữ số: là số, không bao giờ là mã
+	h_loai("H2", body)
+for body in ("Riêng hàng Tết ЗОО triệu.", "Có 4 trӑm khách quá hạn.", "Nhóm lớn hai tу̉ chưa thu.", "Tỷ lệ μ tăng."):
+	h_loai("H2", body, ho="chu-la:")
+for body in ("Mã TOP10 bán chậm.", "Mã IO chưa kiểm.", "Kế toán đối chiếu ngày đầu tháng."):
+	h_nhan("H2", body)
+for body in ("Nợ quá hạn 5/11/2026 tỷ.", "Nợ quá hạn 2026/27 tỷ.", "Dự kiến thu 10/2026 triệu.",
+		"Nợ quá hạn 5.11.2026 tỷ.", "Riêng mùa Tết 26 tỏi.", "Riêng tháng 10 tỏi rưỡi.", "Số dư TK 131 triệu.",
+		"Mã SR900 triệu.", "Kiểm kê tháng 10 lần.", "Năm 2026 đô."):
+	h_loai("H3", body)
+for body in ("Thu hồi trong 7 ngày.", "Kế hoạch quý 4 năm 2026.", "Tuần 2 vừa qua chưa thu.", "Ca 2, lần thứ 2 kiểm lại.",
+		"Năm 2026 đồng thời mở kênh mới."):
+	h_nhan("H3", body)
+for body in ("Chốt ngày 5/11.", "Xấp xỉ 1/2 phải thu.", "Mục tiêu 9/10 đơn.", "Hạn 5/11/26.", "Hạn 30/2/2026."):
+	h_loai("H4", body)
+for body in ("Chốt ngày 5/11/2026.", "Trực 24/7.", "Kỳ 10/2026 và ngày 05.11.2026."):
+	h_nhan("H4", body)
+NG4 = json.dumps({"pack": {"kho": {"phieu": ["KK-2026-002", "SR900"]}}, "ghi_chu": "dòng\nKK-2026-003"},
+	ensure_ascii=False)
+for body in ("Khách KH-0099 nợ lâu nhất.", "Nợ xấu nằm ở SL-350 khách nhỏ.", "Mã AB12 bán chậm.", "Mã SR90 bán chậm.",
+		"Phiếu KK-2026-0021 chưa duyệt."):
+	h_loai("H5", body, nguon=NG4)
+for body in ("Phiếu KK-2026-002 chưa duyệt.", "Mã SR900 bán chậm.", "Phiếu KK-2026-003 chưa duyệt.",
+		"Kỳ T10, Q3/2026, chuẩn ISO 22000.", "Phiếu KK-2026-002."):
+	h_nhan("H5", body, nguon=NG4)
+h_nhan("H5 (nguon=None: không xét — lời quy tắc, gọi trực tiếp)", "Khách KH-0099 nợ lâu nhất.")
+h_loai("H6", "Nội dung.", title=f"Mã {KHO}\nNghìn hộp tồn")
+h_loai("H6", "Nội dung.", advice=[f"Kho xả mã {KHO}\nTrăm hộp trong tuần."])
+# gộp dòng TRƯỚC khi soát: "{{…}}\ntrừ …" ở thân là xuống dòng (được), ở tiêu đề / khuyến nghị là "{{…}} trừ" (bị loại)
+h_loai("H6", "Nội dung.", title=f"Có {X}\ntrừ hàng hoàn")
+h_loai("H6", "Nội dung.", advice=[f"Kế toán thu {X}\ncộng dồn trong tuần."])
+for body in (f"Đang làm {NSD}\nNghìn người chưa đóng.", f"Mã {KHO}\nNăm hộp.", f"Mã {KHO}\n- Trăm hộp.",
+		f"Mã {KHO}\n1. Trăm hộp.", f"Mã {KHO}\n12 hộp.", f"Có {X},\nNghìn khách.", f"Có {X}\ntriệu khách."):
+	h_loai("H6", body)
+for body in (f"Có {X} khách.\nKế toán gọi từng khách.", f"Mã {KHO}\nKho kiểm lại.", f"Có {X} khách. Nghìn việc phải làm."):
+	h_nhan("H6", body)
+r = r4("Nội dung.", title=f"Mã {MA}\n  còn hàng")
+eq("H6: tiêu đề gộp một dòng TRƯỚC khi soát (thứ được soát là thứ được hiện)", (r["ok"], r["title"]),
+	(True, "Mã TET1 còn hàng"))
+for body in (f"Doanh thu xuất khẩu {X} đô.", f"Khách mua {X} yên hàng mẫu.", f"Thu {X} đồng bằng tiền mặt.",
+		f"Khách trả {X2} đồng đều mỗi tháng.", f"Thu {X} đồng loạt.", f"Còn {Z} bảng Anh.", f"Còn {X} nhân dân tệ.",
+		f"Còn {X} euro.", f"Đơn chờ giao {VCG} lố.", f"Còn {X} dong."):
+	h_loai("H7", body)
+for body in (f"Có {X} đồng hồ đo.", f"Có {X} đồng nghiệp nghỉ.", f"Có {X} đô thị mới.", f"Có {X} xu hướng mới.",
+		f"Nợ {Z}, đồng nghĩa với rủi ro cao.", f"Vùng {NHAN} đồng bằng tăng."):
+	h_nhan("H7", body)
+for body in ("Có XII khách mới.", "XV mẫu chưa kiểm.", "Còn XX đơn.", "Có II kho lệch."):
+	h_loai("H8", body)
+for body in ("Kết quả quý IV tốt.", "Giai đoạn II đã xong.", "Thế kỷ XX.", "Lần thứ III kiểm lại.", "QĐ II đã ban hành.",
+		"Kho CV và MC đủ hàng.", "Mã XV-2026 chưa duyệt."):
+	h_nhan("H8", body)
+
+print("\n— H1–H8: tốc độ (lượt mới tuyến tính, lời 80 KB < 2 s) —")
+NG_DAI = json.dumps({"rows": [{"ma": f"MA-{i:05d}", "qty": i} for i in range(6000)]})
+for nhan, fn in (
+		("lint 80 KB từ chỉ số + dấu", lambda: render.lint(("hai ; ba _ năm ~ " * 6000)[:80000])),
+		("lint 80 KB từ chỉ số + đơn vị", lambda: render.lint(("hai mươi lăm triệu, " * 5000)[:80000])),
+		("lint 80 KB số La Mã", lambda: render.lint(("XII khách quý IV " * 5000)[:80000])),
+		("lint 80 KB chữ giống số", lambda: render.lint(("I2O lOO triệu " * 6000)[:80000])),
+		("render 80 KB chữ Kirin", lambda: rw(("Ж" * 80000))),
+		("render 80 KB ngày + đơn vị", lambda: rw(("5/11/2026 tỷ tháng 10 tỏi " * 3000)[:80000])),
+		("render 80 KB placeholder + xuống dòng + từ chỉ số", lambda: rw((f"{X}\nNghìn " * 3000)[:80000])),
+		("render 80 KB mã khác nhau + đề bài 120 KB (H5)", lambda: r4(" ".join(f"AB{i}" for i in range(16000))[:80000],
+			nguon=NG_DAI)),
+		("render 80 KB mã có trong đề bài (H5)", lambda: r4(("MA-00001 " * 9000)[:80000], nguon=NG_DAI))):
+	t0 = time.monotonic()
+	got = fn()
+	dt = time.monotonic() - t0
+	c(f"H: {nhan} < 2 s ({dt:.2f} s)", dt < 2, f"{dt:.2f} s")
+for nhan, unit in (("'1/' lặp", "1/"), ("'1-' lặp", "1-")):
+	body = (unit * 40001)[:80000]
+	t0 = time.monotonic()
+	r = render.render_insight({"title": "T", "body": body, "advice": [body[:20000]]}, PW, None, None, kinds={})
+	dt = time.monotonic() - t0
+	c(f"H: render 80 KB {nhan} (+ 20 KB khuyến nghị) < 1 s ({dt:.2f} s), loại", dt < 1 and r["ok"] is False, f"{dt:.2f} s")
 
 # ══ 8. Luật tĩnh ══════════════════════════════════════════════════════════════
 print("\n— luật tĩnh: render thuần (không DB), không module nào đụng mạng / khoá —")

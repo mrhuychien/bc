@@ -190,15 +190,35 @@ vẫn hiện đủ tín hiệu với nhãn "Quy tắc".
 **Luật số.** Mô hình **không được viết con số**. Mọi số trong lời là chỗ giữ `{{path|kiểu}}` trỏ vào gói số
 (`{{cong-no.receivables.kpis.overdue_pct|pct}}`), kiểu `tien | so | pct | ngay | chu`; máy chủ chèn số thật theo
 đúng cách viết của màn báo cáo ("1,6 tỷ", "251 triệu", "35,0%", "5/11/2026"). Sau khi chèn, phần lời do mô hình viết
-được soát lại: còn số viết tay ("1.250.000", "35%", "2 tỷ", "gấp đôi", "hai tỷ"), path không có thật, sai kiểu, hoặc
-path của nhóm khác → bỏ cả nhận định (đếm ở cột "Bị loại" của lượt chạy, quản trị xem ở `#/ai`). Chỉ số ngắn chỉ thời
-hạn ("trong 7 ngày") được viết thường. Lời theo quy tắc cũng dựng bằng chỗ giữ nên luôn khớp màn gốc tại lúc chạy.
+được soát lại; phạm một luật dưới đây, hoặc path không có thật, sai kiểu, path của nhóm khác → bỏ cả nhận định (đếm ở
+cột "Bị loại" của lượt chạy, quản trị xem ở `#/ai`), thẻ giữ lời của quy tắc. Lời theo quy tắc cũng dựng bằng chỗ
+giữ nên luôn khớp màn gốc tại lúc chạy.
 
-Hai lớp kiểm thêm cho lời của mô hình: (1) **kiểu phải đúng với con số** — số đếm không được viết thành %, tiền không
-được viết thành số đếm (đối chiếu với 70 chỉ số đã khai kiểu, với lời quy tắc của lượt đó, còn lại xét theo tên
-khoá); (2) quanh một chỗ giữ số không được có đơn vị, dấu cộng trừ, chữ số hay "lần" viết tay ("{{…}}%", "-{{…}}",
-"3 {{…}}"), và hai chỗ giữ số không được đứng liền nhau. Soát nhầm thì thẻ chỉ quay về lời quy tắc; soát sót mới là
-lỗi, nên bộ soát nghiêng về phía loại.
+Bộ soát là **danh sách cho phép** — cái gì không nằm trong danh sách thì bị loại:
+
+- **Chữ số viết tay** chỉ được ở bốn dạng: (1) năm `20xx` hoặc cặp năm "2026/27"; (2) ngày **đủ năm** ("5/11/2026",
+  "05.11.2026", "2026-11-05"), tháng/năm "10/2026", riêng "24/7" — "5/11" thiếu năm bị loại; (3) mã chứng từ / mã
+  hàng viết hoa **chép nguyên văn từ dữ liệu đã gửi cho mô hình** (mã bịa, mã của dòng bị cắt khỏi đề bài, kiểu
+  "SL-350 khách" bị loại), số hiệu sau ISO / HACCP / TCVN / QCVN / TK / QĐ / NĐ / TT, và cách viết tắt "T10",
+  "Q3/2026"; (4) thời hạn / thứ tự tối đa hai chữ số đứng sát từ chỉ thời gian ("trong 7 ngày", "quý 4", "tuần 2").
+  Cả bốn dạng vẫn bị loại khi có đơn vị đi sau ("5/11/2026 tỷ", "Tết 26 tỏi", "tháng 10 lần").
+- **Số viết bằng chữ** bị loại khi đứng trước đơn vị, dù viết hoa, không dấu, viết tắt, tiếng lóng hay tiếng Anh
+  ("HAI TỶ", "ba tram trieu", "hai mươi k", "năm xị", "five million"); cũng bị loại phân số bằng chữ ("ba phần
+  năm"), bội số ("nhân đôi", "gấp ba", "tăng ba lần"). Số La Mã I / V / X chỉ được đứng sau từ chỉ thứ tự ("quý IV").
+- **Chỉ chữ La-tinh**: chữ của bảng chữ khác (Nga, Hy Lạp…) bị loại; chữ trông như chữ số ("I2O", "lOO triệu") được
+  tính là số.
+- **Quanh mỗi chỗ giữ** (mọi kiểu): ngay trước chỉ được là đầu câu, một từ thường, hoặc `( , : ;` rồi dấu cách;
+  ngay sau chỉ được là hết câu, một từ thường, hoặc dấu đóng / ngắt rồi dấu cách. Không được là chữ số, dấu cộng
+  trừ, đơn vị, tên tiền tệ, "đồng" (trừ "đồng hồ", "đồng thời", "đồng nghiệp"…), "lần", "năm", từ chỉ số, từ phép
+  tính ("trừ", "cộng", "trên", "gấp", "âm"…), "điểm" sau tỷ lệ. Giữa hai chỗ giữ luôn phải có một từ thường.
+- Tiêu đề và mỗi khuyến nghị được soát như một dòng; trong thân, xuống dòng sau chỗ giữ không tính là hết câu.
+- **Kiểu phải đúng với con số** — số đếm không được viết thành %, tiền không được viết thành số đếm (đối chiếu với
+  70 chỉ số đã khai kiểu, với lời quy tắc của lượt đó, còn lại xét theo tên khoá).
+
+Lời nhắc gửi mô hình nêu đủ các luật trên kèm ví dụ đúng / sai (test kiểm từng ví dụ đúng như lời nhắc nói). Soát
+nhầm thì thẻ chỉ quay về lời quy tắc; soát sót mới là lỗi, nên bộ soát nghiêng về phía loại. **Giới hạn đã biết**
+(máy không phân biệt được thật / giả): dạng chữ số được phép nhưng dùng sai nghĩa ("DSO 62 ngày"); số bằng chữ không
+kèm đơn vị và không sát chỗ giữ ("hai khách lớn nhất"); số La Mã có L, C, D, M không kèm đơn vị.
 
 Thẻ của quy tắc **không chạy được** ở lượt gần nhất (nguồn số lỗi) vẫn hiện nhưng mang nhãn "Số ngày … — chưa cập
 nhật được", để số cũ không bị đọc như số sáng nay.
@@ -305,8 +325,8 @@ bench): sản xuất 54 (gồm kiểm kê đưa về 0 rồi nhập lại), kên
 120, hạn dùng 88, kiểm kê 73, nhập TP 99, nền dùng chung 39 + giao diện 4 màn trên sổ kho gộp 113 / 70 (+ 72 / 66 / 52
 lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gian thực trên sổ kho 14; giao diện Playwright chung 138
 (desktop + điện thoại), tab mở trước deploy 6. **Trợ lý AI** (mô hình giả, không bộ nào ra mạng): dựng lời + soát số
-555, mã giả khách / NCC 43, cửa gọi Claude + trần chi + đề bài 277, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
-kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 74, API 127, một lượt chạy trọn vẹn 242, luật
+923, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
+kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 127, một lượt chạy trọn vẹn 274, luật
 tĩnh 42, giao diện hai màn 227 + 158 (lượt "đã cũ"). Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 

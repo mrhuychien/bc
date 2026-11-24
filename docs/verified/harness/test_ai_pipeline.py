@@ -751,12 +751,12 @@ _ri = render.render_insight
 dem_ri = {"n": 0}
 
 
-def _ri_hong(raw, pack, sections, mask=None, kinds=None):
+def _ri_hong(raw, pack, sections, mask=None, kinds=None, nguon=None):
 	if "cong-no" in sections:
 		dem_ri["n"] += 1
 		if dem_ri["n"] == 2:
 			raise ZeroDivisionError("hỏng giữa chừng")
-	return _ri(raw, pack, sections, mask, kinds=kinds)
+	return _ri(raw, pack, sections, mask, kinds=kinds, nguon=nguon)
 
 
 render.render_insight = _ri_hong
@@ -1460,6 +1460,62 @@ c("E6: nhãn cố định 'Chưa gán chuỗi' gửi nguyên; chuỗi thật (Sa
 	in U.get("tai-chinh", "") and "Saigon Co.op" not in U.get("tai-chinh", ""), "Chưa gán chuỗi" in U.get("tai-chinh", ""))
 frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"status": "mo"})
 luu()
-eq("không một lần ra mạng (cả phần L–Q)", MANG, [])
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("R. Vòng sửa 4 — H5: mã trong lời phải có NGUYÊN VĂN trong đề bài cuối đã gửi (pipeline truyền nguon = user)")
+# Gói thêm một danh sách 40 dòng có mã (không phải tên khách / NCC: không bị che) → đề bài giữ 30 dòng đầu.
+# MA-005 có trong đề bài; MA-035 ở dòng bị cắt; KH-0099 / AB12 bịa; SL-350 là mã dùng làm số lượng.
+NGUON_R = {}
+_ri_r = render.render_insight
+
+
+def _ri_ghi(raw, pack, sections, mask=None, kinds=None, nguon=None):
+	NGUON_R.setdefault("nguon", []).append(nguon)
+	return _ri_r(raw, pack, sections, mask, kinds=kinds, nguon=nguon)
+
+
+def build_r(today=None):
+	pack = _build(today)
+	pack["ton-kho"]["overview"]["zz_ma"] = [{"ma": f"MA-{i:03d}", "qty": i, "value": 1000.0 * i} for i in range(1, 41)]
+	return pack
+
+
+ZQ = "{{ton-kho.overview.zz_ma[4].qty|so}}"
+
+
+def kho_r(obj):
+	NGUON_R["n_rows"] = len(obj["pack"]["ton-kho"]["overview"]["zz_ma"])
+	return [ins(None, "Mã có trong đề bài", "Mã MA-005 còn tồn " + ZQ + " đơn vị.", priority=5),
+		ins(None, "Mã của dòng bị cắt", "Mã MA-035 còn tồn " + ZQ + " đơn vị.", priority=4),
+		ins(None, "Mã bịa", "Khách KH-0099 và mã AB12 còn tồn " + ZQ + " đơn vị.", priority=3),
+		ins(None, "Mã làm số lượng", "Tồn " + ZQ + " đơn vị, nằm ở SL-350 khách nhỏ.", priority=2)]
+
+
+xoa_run()
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE rule = 'ai'")
+luu()
+_collect.build, render.render_insight = build_r, _ri_ghi
+try:
+	out = chay(**{"kho-sx": tl(kho_r)})
+finally:
+	_collect.build, render.render_insight = _build, _ri_r
+U_R = {g["nhom"]: g["user"] for g in GOI}
+cc = {r.step: r for r in con(out["run"])}
+c("H5 (tiền đề): đề bài kho-sx giữ 30 / 40 dòng: có 'MA-005', không có 'MA-035', 'KH-0099', 'AB12', 'SL-350'",
+	NGUON_R.get("n_rows") == 30 and "MA-005" in U_R.get("kho-sx", "") and not any(x in U_R.get("kho-sx", "") for x in
+	("MA-035", "KH-0099", "AB12", "SL-350")), NGUON_R.get("n_rows"))
+c("H5: pipeline truyền nguon = đúng chuỗi đề bài đã gửi ở mọi lần gọi render_insight", bool(NGUON_R.get("nguon"))
+	and all(x == U_R.get("kho-sx") for x in NGUON_R["nguon"]), len(NGUON_R.get("nguon", [])))
+fr = R("ai:ton-kho.overview.zz_ma.qty")
+c("H5: mã CÓ trong đề bài được nhận (lưu nguyên 'MA-005')", fr is not None and fr.status == "mo"
+	and fr.body == "Mã MA-005 còn tồn 5 đơn vị.", fr and fr.body)
+eq("H5: mã của dòng bị cắt / mã bịa / mã dùng làm số lượng → loại (kho-sx rejected 3, insights_ai 1)",
+	(cc["kho-sx"].rejected, cc["kho-sx"].insights_ai), (3, 1))
+eq("H5: không lời nào lưu 'MA-035' / 'KH-0099' / 'AB12' / 'SL-350'", [r.signal_key for r in frappe.db.sql(
+	f"SELECT signal_key, body FROM `tab{INSIGHT}`", as_dict=True) if any(x in (r.body or "") for x in ("MA-035", "KH-0099",
+	"AB12", "SL-350"))], [])
+eq("H5: sau lượt chạy, render không còn giữ đề bài trong bộ nhớ (pipeline gọi forget_source sau mỗi lượt gọi)",
+	render._nguon.cache_info().currsize, 0)
+eq("không một lần ra mạng (cả phần L–R)", MANG, [])
 
 c.done()

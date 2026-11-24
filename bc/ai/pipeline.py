@@ -285,7 +285,7 @@ def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: f
 def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
 		out, kinds=None) -> str:
 	"""Một lượt gọi cho một nhóm + gắn lời → status của dòng Run (đã chốt). Không ném."""
-	from bc.ai import llm, prompt, store
+	from bc.ai import llm, prompt, render, store
 
 	res = None
 	try:
@@ -298,15 +298,15 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
 		res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
 			timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
-		del user
 		ti, to = cint(res.get("tokens_in")), cint(res.get("tokens_out"))
 		served = res.get("model") or model
 		data = res.get("data")
 		# mảng mô hình đã thấy = mảng của gói gửi đi + mảng của tín hiệu gửi đi (lời AI gắn với TẤT CẢ: ẩn một mảng
 		# sau lượt chạy thì lời AI của nhóm đó ẩn với người xem tới lượt sau)
 		da_thay = [*pack_group, *(r["section"] for r in rows)]
+		# H5: mã trong lời phải có nguyên văn trong ĐỀ BÀI CUỐI đã gửi (user) — mã bịa / mã của dòng bị cắt bị loại
 		acc, rej = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now,
-			kinds=kinds, da_thay=da_thay)
+			kinds=kinds, da_thay=da_thay, nguon=user)
 	except llm.LLMError as e:
 		st = llm.run_status(e.kind)
 		# Lượt bị từ chối / cắt cụt / sai schema vẫn bị tính tiền → ghi token + chi phí nếu máy chủ đã trả lời.
@@ -333,6 +333,8 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		store.sync_ai_free(sections, [], now)
 		out["status"] = "loi"
 		return "loi"
+	finally:
+		render.forget_source()   # đề bài không ở lại bộ nhớ sau lượt gọi (render giữ tạm để soát mã — H5)
 	out["accepted"] += acc
 	out["rejected"] += rej
 	store.finish_run(row, status="ok", now=now_datetime(), tokens_in=ti, tokens_out=to, model=served,
@@ -378,7 +380,8 @@ def _moi_path(raw: dict, paths) -> set:
 	return out
 
 
-def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now, kinds=None, da_thay=()) -> tuple:
+def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now, kinds=None, da_thay=(),
+		nguon=None) -> tuple:
 	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại).
 
 	sections: mọi mảng của nhóm (nhận định tự do cũ của chúng không được nêu lại → đóng). da_thay: mảng mô hình đã
@@ -386,7 +389,7 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 	sections_used của MỌI lời AI lưu cộng thêm chúng (lời không placeholder vẫn có thể kể số của mảng khác). Trống →
 	mọi mảng của nhóm. kinds: kiểu đúng của số (registry.kind_map) — lời sai kiểu bị loại. Nhận định tự do có path
 	nào (tiêu đề / thân / lời khuyên) đang bo-qua (store.blocked_paths) → loại; path đầu chỉ lặp một tín hiệu quy tắc
-	đang mở → bỏ qua lặng lẽ."""
+	đang mở → bỏ qua lặng lẽ. nguon: đề bài cuối cùng đã gửi (render_insight, H5)."""
 	from bc.ai import render, store
 
 	acc = rej = 0
@@ -408,7 +411,7 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 			if not row or sid in da_gan:      # S lạ / trùng → lấy cái đầu
 				continue
 			da_gan.add(sid)
-			r = render.render_insight(raw, pack, duoc, mask, kinds=kinds)
+			r = render.render_insight(raw, pack, duoc, mask, kinds=kinds, nguon=nguon)
 			if r["ok"]:
 				store.apply_ai(row["name"], title=r["title"], body=r["body"], advice=r["advice"], severity=sev,
 					priority=prio, paths=r["paths"], sections_used=[*r["sections_used"], *thay], now=now)
@@ -419,7 +422,7 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 			continue
 		if group == registry.HE_THONG:       # nhóm hệ thống không nhận nhận định tự do
 			continue
-		r = render.render_insight(raw, pack, duoc, mask, kinds=kinds)
+		r = render.render_insight(raw, pack, duoc, mask, kinds=kinds, nguon=nguon)
 		body = raw["body"] if isinstance(raw["body"], str) else ""
 		dau = next((p for p, _ in registry.placeholders(body)), None) or (r["paths"][0] if r["paths"] else None)
 		if not r["ok"] or not dau:            # nhận định tự do phải trích ít nhất một số trong gói

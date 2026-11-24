@@ -111,13 +111,21 @@ tên) hoặc dùng placeholder kiểu chu; không bịa mã, không đoán tên 
 chu — viết tay sẽ bị loại.
 - Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số ("hai tỷ", "gấp đôi", "một nửa", "hai phần ba số \
 khách"), không dùng số La Mã cho số lượng.
+  • Số bằng chữ đứng trước đơn vị bị loại dù viết hoa, không dấu, viết tắt hay tiếng lóng: không viết "Năm Trăm \
+Triệu", "ba tram trieu", "năm mươi phần trăm", "hai mươi k", "hai vé", "five million"; không viết phân số bằng chữ \
+("ba phần năm") hay bội số ("nhân đôi", "tăng ba lần").
+  • Số La Mã chỉ dùng cho thứ tự ngay sau quý / tháng / kỳ / đợt / giai đoạn / mục …: được viết "quý IV"; không viết \
+"XII khách".
+  • Chỉ dùng chữ tiếng Việt (chữ La-tinh): không dùng chữ Nga, chữ Hy Lạp hay chữ cái trông như chữ số \
+("I2O", "lOO triệu").
 - Chữ số viết tay CHỈ được dùng ở bốn dạng, ngoài ra đều bị loại (kể cả "5 khách", "top 5", "tăng 5 lần"):
   • Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số, đứng ngay sau quý / tháng / tuần / ngày / \
 mùng / thứ / ca / đợt / bước / kỳ / Tết hoặc ngay trước ngày / tuần / tháng / giờ / phút / năm / quý: được viết \
 "trong 7 ngày", "quý 4", "tuần 2"; không viết "7, {{…}}" hay "top 5".
-  • năm viết đủ bốn chữ số: "năm 2026";
-  • ngày chép đúng dạng: "5/11", "5/11/2026";
-  • mã chứng từ viết HOA chép nguyên: "KK-2026-002".
+  • năm viết đủ bốn chữ số dạng 20xx: "năm 2026" (không viết "năm 1998");
+  • ngày: dùng placeholder kiểu ngay; chép tay thì chép đủ ngày/tháng/năm: "5/11/2026" (không viết "5/11");
+  • mã chứng từ viết HOA chép nguyên văn như trong dữ liệu: "KK-2026-002". Chỉ chép mã có trong dữ liệu của lượt \
+này, không bịa mã ("AB12"); mã chỉ có một chữ HOA thì kèm tối đa hai chữ số ("T10"; không viết "A100").
 - Ngay TRƯỚC một placeholder (bất kỳ kiểu nào) chỉ được là đầu câu, một từ thường (mã KH#… / NCC#… không tính là \
 từ), hoặc một trong các dấu ( , : ; có dấu cách trước placeholder. Được viết "Nợ quá hạn {{…}}", "gồm: {{…}}", \
 "KH#… nợ {{…}}"; không viết "tháng 5 {{…}}", "cả năm {{…}}", "x{{…}}", "trên {{…}}", "1/{{…}}"; không đặt dấu "-", \
@@ -126,6 +134,12 @@ từ), hoặc một trong các dấu ( , : ; có dấu cách trước placeholde
 chấm luôn có dấu cách). Từ đó không được là đơn vị, từ chỉ số, "năm", "trên", "phần": được viết "{{…}} khách", \
 "{{…}} lượt", "{{…}}, tăng"; không viết "lần" hay bất kỳ đơn vị nào ("{{…}} lần", "{{…}} triệu", "{{…}}%", \
 "{{…}} năm", "{{…}} trên tổng {{…}}"), không mở ngoặc "{{…}} (".
+- Không đặt từ phép tính hay dấu âm sát trước hoặc sát sau placeholder (trừ, cộng, nhân, chia, gấp, âm, mũ, trên, \
+phần, x): không viết "sau khi trừ {{…}}", "{{…}} cộng dồn"; viết "sau khi bớt phần hàng trả lại là {{…}}", \
+"{{…}}, tính cộng dồn". Sau một tỷ lệ không viết "điểm" ("{{…}} điểm"); sau placeholder không viết "lẻ" \
+("{{…}} lẻ"). Sau một số tiền / số lượng không viết tên tiền tệ hay "đồng" ("{{…}} đô", "{{…}} đồng bằng tiền mặt"); \
+viết "{{…}} thu bằng tiền mặt".
+- Tiêu đề và mỗi khuyến nghị là một dòng; không xuống dòng ngay sau placeholder.
 - Giữa hai placeholder luôn có ít nhất một từ thường, kể cả khi cách nhau bằng dấu câu: viết "{{…}}, tổng là {{…}}"; \
 không viết "{{…}} ({{…}})", "{{…}}: {{…}}", "{{…}}/{{…}}".
 - Giữa một số viết tay (kể cả số tháng, số quý) hoặc một từ chỉ số (một … mười, mươi, chục, trăm, rưỡi, tá, lẻ, \
