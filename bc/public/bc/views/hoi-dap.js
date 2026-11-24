@@ -1,7 +1,7 @@
 // #/hoi-dap — Hỏi đáp với Trợ lý AI (P3). Vào từ nút "Hỏi trợ lý" trên #/tro-ly; không có mục menu. Máy chủ chặn
 // bằng _guard("tro-ly") — mảng Trợ lý AI ẩn với người xem thì shell không đăng ký route này (chuyển về #/tro-ly).
 // bc.api.ai.get_qa → bật / còn mấy câu; ask(question, history) → {id}; get_answer(id) hỏi lại mỗi 2 giây, tối đa
-// 150 giây. Lịch sử hỏi đáp CHỈ nằm trong bộ nhớ của tab (biến của module — tải lại trang là mất, không lưu đâu cả);
+// 180 giây (máy chủ dừng câu hỏi trong 150 giây kể từ lúc hỏi — chờ thêm 30 giây để luôn lấy được kết quả cuối). Lịch sử hỏi đáp CHỈ nằm trong bộ nhớ của tab (biến của module — tải lại trang là mất, không lưu đâu cả);
 // 3 lượt hỏi đáp xong gần nhất gửi kèm câu mới làm `history`.
 // Lời trả lời là VĂN BẢN THUẦN: mọi chuỗi máy chủ qua escapeHtml, giữ xuống dòng; đoạn u = true (số máy chưa đối
 // chiếu được) gạch chấm + title "chưa kiểm". Câu SQL đã chạy chỉ vẽ cho quản trị (System Manager) — người xem không
@@ -15,13 +15,13 @@ import { skeleton } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
 
 const POLL_MS = 2000;
-const POLL_MAX_MS = 150 * 1000;
+const POLL_MAX_MS = (150 + 30) * 1000;   // = qa.TOTAL_SECONDS + 30
 const HISTORY_TURNS = 3;
 const NOTE = 'ⓘ Trợ lý chỉ đọc đúng số liệu bạn xem được trên các màn báo cáo. Câu trả lời do mô hình ngôn ngữ viết; '
     + 'số gạch chấm là số máy chưa đối chiếu được.';
 const UNV_NOTE = 'Số gạch chấm: máy chưa đối chiếu được với số liệu đã tra — kiểm lại ở màn gốc trước khi dùng.';
 const WAIT = 'Đang tra số liệu…';
-const TIMEOUT = 'Quá 150 giây chưa có câu trả lời. Câu hỏi có thể vẫn đang chạy — thử hỏi lại sau ít phút.';
+const TIMEOUT = 'Quá 3 phút chưa có câu trả lời. Câu hỏi có thể vẫn đang chạy — thử hỏi lại sau ít phút.';
 
 // Trạng thái của PHIÊN TRÌNH DUYỆT (sống cùng module, mất khi tải lại trang). items: cũ → mới.
 // item = {key, q, id, status: 'cho' | 'xong' | 'loi' | 'het-gio', t0, segments, unverified, sources, steps, message}

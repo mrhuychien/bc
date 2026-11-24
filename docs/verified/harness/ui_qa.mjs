@@ -7,7 +7,7 @@
 // dấu, giữ xuống dòng, ghi chú số gạch chấm, nguồn là link "#/…" (route lạ không thành link); lời có HTML hiện thành
 // chữ; lỗi của câu (loi) hiện thành chữ; ask bị từ chối (417) → lời báo, câu hỏi còn trong ô; 3 lượt hỏi đáp xong gần
 // nhất gửi kèm làm history (lượt lỗi không tính); hết lượt → nút tắt; lịch sử chỉ trong phiên (đổi màn còn, tải lại
-// mất); quá 150 giây (đồng hồ giả) → lời báo hết giờ; người xem KHÔNG có khối SQL (kể cả khi máy chủ lỡ gửi câu SQL),
+// mất); quá 180 giây (đồng hồ giả) → lời báo hết giờ; người xem KHÔNG có khối SQL (kể cả khi máy chủ lỡ gửi câu SQL),
 // quản trị có khối gập; mảng Trợ lý AI ẩn với người xem → #/hoi-dap không mở được, get_qa 403; 390 px không cuộn ngang.
 import { createRequire } from 'module';
 import fs from 'fs';
@@ -246,7 +246,7 @@ try {
     await M.page.waitForFunction(() => document.querySelector('[data-qa]')?.dataset.state === 'cho', null, { timeout: 10000 });
     const before = M.reqs.filter((r) => r.m === 'bc.api.ai.get_answer').length;
     let sawWait = false;
-    for (let i = 0; i < 90 && (await newest(M.page))?.state === 'cho'; i++) {
+    for (let i = 0; i < 110 && (await newest(M.page))?.state === 'cho'; i++) {
         if (i === 30) sawWait = (await text(M.page, '[data-qa] .bc-ai-qa-wait'))?.includes('Đang tra số liệu…');
         await M.page.clock.runFor(2000);
         await sleep(120);
@@ -254,9 +254,10 @@ try {
     const tp = M.reqs.filter((r) => r.m === 'bc.api.ai.get_answer').length - before;
     const it = await newest(M.page);
     check('chờ lâu: dòng chờ vẫn hiện ở giây ~60', sawWait);
-    check('quá 150 giây → báo hết giờ rõ ràng', it?.state === 'het-gio'
-        && (await text(M.page, '[data-qa] .bc-ai-qa-err'))?.startsWith('Quá 150 giây chưa có câu trả lời'), JSON.stringify(it?.state));
-    check(`hết giờ: dừng hỏi sau ~75 lượt (${tp})`, tp >= 70 && tp <= 77);
+    // máy chủ dừng câu hỏi trong 150 giây kể từ lúc hỏi; màn chờ 150 + 30 giây để luôn lấy được kết quả cuối
+    check('quá 180 giây → báo hết giờ rõ ràng', it?.state === 'het-gio'
+        && (await text(M.page, '[data-qa] .bc-ai-qa-err'))?.startsWith('Quá 3 phút chưa có câu trả lời'), JSON.stringify(it?.state));
+    check(`hết giờ: dừng hỏi sau ~90 lượt (không bỏ cuộc trước hạn 150 giây của máy chủ) (${tp})`, tp >= 85 && tp <= 92);
     const tpAfter = M.reqs.filter((r) => r.m === 'bc.api.ai.get_answer').length;
     await M.page.clock.runFor(10000); await sleep(300);
     check('hết giờ: không hỏi thêm', M.reqs.filter((r) => r.m === 'bc.api.ai.get_answer').length === tpAfter);

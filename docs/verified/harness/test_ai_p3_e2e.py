@@ -245,7 +245,11 @@ def b_tra(body):
 	ma = re.findall(r"KH#\d+", json.dumps(kq_cn, ensure_ascii=False))
 	B["ma"] = ma[0] if ma else ""
 	return tra(f"- Phải thu: {vn_nghin(B['trieu'])} triệu, lớn nhất {B['ma']}.\n- Cộng với tồn kho (tự tính): {TU_TINH}.\n"
-		f"Ghi chú {MA} năm 2026, ngày 5/11/2026.", u=usage(1500, 120, doc=900, ghi=300))
+		f"Ghi chú {MA} năm 2026, ngày {NGAY_HN}.", u=usage(1500, 120, doc=900, ghi=300))
+
+
+_hn = qa._hom_nay()
+NGAY_HN = f"{_hn.day}/{_hn.month}/{_hn.year}"   # ngày hôm nay — có trong đề bài hệ thống → ngày đã kiểm
 
 
 Q_B = f"Phải thu của {KH_TEN} và tồn kho hiện tại thế nào? {MQ}"
@@ -288,8 +292,8 @@ chua = [s["t"] for s in ab["segments"] if s["u"]]
 eq("đúng một con số chưa kiểm: số tự tính", (chua, ab["unverified"]), ([TU_TINH], 1))
 c("số làm tròn từ kết quả tra cứu (… triệu) là số đã kiểm", f"{vn_nghin(B['trieu'])} triệu" in chu(ab) and not any(
 	vn_nghin(B["trieu"]) in t for t in chua), chu(ab))
-c("năm 2026 và ngày 5/11/2026 không bị tính là số cần kiểm", "năm 2026" in chu(ab) and "5/11/2026" in chu(ab)
-	and not any("2026" in t for t in chua))
+c("năm 2026 không bị tính; ngày hôm nay (có trong đề bài hệ thống) là ngày đã kiểm", "năm 2026" in chu(ab)
+	and NGAY_HN in chu(ab) and not any("2026" in t for t in chua))
 ten_ma = None
 if B.get("ma"):
 	ten_ma = next((m for m in TEN_DOI_TAC if m in chu(ab)), None)

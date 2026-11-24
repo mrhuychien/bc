@@ -93,6 +93,7 @@ frappe.conf["db_socket"] = SOCK
 
 from bc.ai import budget, collect, llm, qa, store  # noqa: E402
 from bc.api import ai as api  # noqa: E402
+IN_KEY = getattr(qa, "IN_KEY", "bcai:qa:in")   # getattr: bộ thử chạy được trên bản trước khi sửa (BC_APP_ROOT) để thấy đỏ
 
 # Đồng hồ giả của qa (monotonic: hạn 150 giây; time: hạn cache 30 phút / khoá đang hỏi)
 LECH = {"mono": 0.0, "time": 0.0, "dung": False}   # dung: đồng hồ monotonic chỉ chạy theo LECH (đo chính xác)
@@ -232,7 +233,10 @@ SAI = [
 	(("ngay", "daily"), {"year": 1999}), (("ngay", "daily"), {"year": 2101}), (("ngay", "daily"), {"month": 0}),
 	(("ngay", "daily"), {"month": 13}), (("ngay", "daily"), {"month": "10"}), (("ngay", "daily"), {"day": 1}),
 	(("san-pham", "top_products"), {"group": ""}), (("san-pham", "top_products"), {"group": "x" * 61}),
-	(("san-pham", "top_products"), {"group": 5}), (("sx-tet", "items"), {"from_date": "2026-13-01"}),
+	(("san-pham", "top_products"), {"group": 5}), (("san-pham", "top_products"), {"group": "Hàng Tết"}),
+	(("san-pham", "top_products"), {"group": "TET"}), (("sx-tet", "items"), {"from_date": "2027-06-01"}),
+	(("sx-tet", "items"), {"to_date": "2020-01-01"}), (("sx-tet", "items"), {"from_date": "2020-01-01", "to_date": "2026-10-01"}),
+	(("sx-tet", "items"), {"from_date": "2024-01-01", "to_date": "2026-01-02"}), (("sx-tet", "items"), {"from_date": "2026-13-01"}),
 	(("sx-tet", "items"), {"from_date": "26-1-1"}), (("sx-tet", "items"), {"to_date": "2026-02-30"}),
 	(("sx-tet", "items"), {"from_date": "2026-03-01", "to_date": "2026-02-01"}),
 	(("kiem-ke", "overview"), {"thang": "2026-13"}), (("kiem-ke", "overview"), {"thang": "2026-1"}),
@@ -246,7 +250,9 @@ DUNG = [
 	(("tong-quan", "summary"), None, {}), (("tong-quan", "summary"), {}, {}),
 	(("tong-quan", "top_customers"), {"limit": 20}, {"limit": 20}), (("tong-quan", "top_customers"), {"limit": 1}, {"limit": 1}),
 	(("ngay", "daily"), {"year": 2026, "month": 10}, {"year": 2026, "month": 10}),
-	(("san-pham", "top_products"), {"group": " Hàng Tết "}, {"group": "Hàng Tết"}),
+	(("san-pham", "top_products"), {"group": " tet "}, {"group": "tet"}),
+	(("san-pham", "top_products"), {"group": "traditional"}, {"group": "traditional"}),
+	(("sx-tet", "items"), {"from_date": "2024-01-01", "to_date": "2026-01-01"}, {"from_date": "2024-01-01", "to_date": "2026-01-01"}),
 	(("sx-tet", "items"), {"from_date": "2025-08-01", "to_date": "2026-02-28"}, {"from_date": "2025-08-01", "to_date": "2026-02-28"}),
 	(("kiem-ke", "overview"), {"thang": "2026-09"}, {"thang": "2026-09"}),
 	(("attp", "report"), {"thang": "2026-10"}, {"thang": "2026-10"}),
@@ -267,6 +273,15 @@ c("quản trị (cùng cài đặt ẩn): vẫn nêu mọi mảng — như màn 
 	and "mang=nhan-su" in T_AN_ADMIN[0]["description"])
 single("BC Settings", hidden_sections="")
 c("mô tả công cụ không có chữ refresh", "refresh" not in json.dumps(T_VIEW, ensure_ascii=False))
+c("mô tả công cụ: group của top_products là all | tet | traditional, sx-tet nêu luật hai ngày", "group: một trong all | tet | "
+	"traditional" in T_VIEW[0]["description"] and "≤ 731 ngày" in T_VIEW[0]["description"])
+n_log = len(frappe.LOGGED)
+LOI_API["kd.get_top_products"] = frappe.ValidationError("Nhóm không hợp lệ")
+cau_ = qa._Cau("x", VIEWER, False)
+x_ = as_user(VIEWER, qa._xem_mang, cau_, "t1", {"mang": "san-pham", "ten": "top_products"}, ["san-pham"], None)
+LOI_API.clear()
+c("method từ chối tham số (ValidationError) → 'tham số không hợp lệ' cho mô hình, KHÔNG Error Log, không 'màn đang lỗi'",
+	x_.get("is_error") and "tham số không hợp lệ" in x_["content"] and len(frappe.LOGGED) == n_log, (x_, frappe.LOGGED[n_log:]))
 
 # ═══════════════════════════════════════════════════════════════════════════
 print("C. Một câu hỏi trọn vẹn (người xem) + tham số sai tới tận mô hình")
@@ -303,9 +318,12 @@ eq("dòng Run: hoi-dap / hoi-dap / claude / ok, signals = 5 bước, 4 lượt g
 eq("dòng Run: token cộng dồn 4 lượt, chi phí theo giá model", (row.tokens_in, row.tokens_out, round(float(row.cost_usd), 6),
 	row.cost_known), (4000, 200, round((4000 * 3 + 200 * 15) / 1e6, 6), 1))
 eq("dòng Run không lời lỗi", row.error, None)
-eq("job xếp hàng default, timeout 300, đúng 4 tham số", (frappe.ENQUEUED[-1][0], frappe.ENQUEUED[-1][1]["queue"],
-	frappe.ENQUEUED[-1][1]["timeout"], sorted(frappe.ENQUEUED[-1][2])), ("bc.ai.qa.run", "default", 300,
-	["history", "qid", "question", "user"]))
+eq("job xếp hàng default, timeout 300, CHỈ qid + user (câu hỏi / lịch sử không nằm trong tham số job — RQ giữ tham "
+	"số 10 phút / 7 ngày, màn RQ Job hiện chúng)", (frappe.ENQUEUED[-1][0], frappe.ENQUEUED[-1][1]["queue"],
+	frappe.ENQUEUED[-1][1]["timeout"], sorted(frappe.ENQUEUED[-1][2])), ("bc.ai.qa.run", "default", 300, ["qid", "user"]))
+c("không chữ nào của câu hỏi trong mọi tham số job đã xếp", not any(MARK_Q in json.dumps(kw, ensure_ascii=False)
+	for _m, _c, kw in frappe.ENQUEUED))
+c("câu hỏi chờ job nằm trong cache đã bị job xoá ngay khi đọc", not any(k.startswith(IN_KEY) for k in frappe.cache().store))
 R0 = rq[0]
 eq("request: provider claude, model của ngày (ai_qa_model trống), max_tokens 6000 (gồm phần suy nghĩ), tool_choice auto",
 	(R0["provider"], R0["model"], R0["max_tokens"], R0["tool_choice"]), ("claude", MODEL, 6000, None))
@@ -366,8 +384,44 @@ _r, a, rq = hoi(VIEWER, "Chậm", cham(dung(tu("xem_mang", {"mang": "thang", "te
 	cham(dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})), 50),
 	cham(dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})), 50), tra("muộn"))
 LECH["mono"], LECH["dung"] = 0.0, False
-eq("mỗi lượt gọi 50 giây: dừng trước lượt 4, loi quá giờ", (a["status"], a.get("message"), len(rq)), ("loi", qa.M_GIO, 3))
-eq("timeout từng lượt chia theo thời gian còn lại (3 lần thử + 25 s chờ vừa 150 s)", [q["timeout"] for q in rq], [41, 25, 8])
+eq("mỗi lượt gọi 50 giây: dừng trước lượt 3 (lượt tệ nhất không còn vừa), loi quá giờ", (a["status"], a.get("message"),
+	len(rq)), ("loi", qa.M_GIO, 2))
+eq("chờ đọc từng lượt: lượt tệ nhất 3 × (10 + T) + 25 s vừa phần còn lại trừ 5 s", [q["timeout"] for q in rq], [30, 13])
+_t, _da = [], 0.0
+for q, giay in zip(rq, (50, 50)):
+	_t.append(_da + 3 * (q["timeout"] + 10) + 25)
+	_da += giay
+c("mọi lượt gọi, kể cả khi thử lại hết, xong trước 150 giây kể từ lúc hỏi", all(x <= qa.TOTAL_SECONDS - 5 for x in _t), _t)
+from bc.ai.llm import anthropic as _anth  # noqa: E402
+eq("hằng số lượt tệ nhất của qa khớp bc.ai.llm.anthropic (CONNECT_TIMEOUT, tổng RETRY_WAITS, số lần thử)",
+	tuple(getattr(qa, x, None) for x in ('CHO_NOI', 'CHO_THU_LAI', 'LAN_THU')), (_anth.CONNECT_TIMEOUT, sum(_anth.RETRY_WAITS), len(_anth.RETRY_WAITS) + 1))
+CL = "cho.lau@x.vn"
+frappe.ROLES[CL] = ["BC Viewer"]
+frappe.ENQUEUE_RUN = False
+_r = as_user(CL, api.ask, "Chờ lâu trong hàng đợi")
+frappe.ENQUEUE_RUN = True
+LECH["time"] = 140                      # job bắt đầu 140 giây sau khi hỏi (hàng đợi đông)
+kb(tra("muộn"))
+n0 = len(REQ)
+frappe.get_attr(frappe.ENQUEUED[-1][0])(**frappe.ENQUEUED[-1][2])
+LECH["time"] = 0.0
+eq("hạn 150 giây tính từ lúc HỎI: chờ hàng đợi 140 giây → quá giờ, không gọi mô hình", (as_user(CL, api.get_answer,
+	_r["id"]).get("message"), len(REQ) - n0), (qa.M_GIO, 0))
+frappe.ENQUEUE_RUN = False
+_r = as_user(CL, api.ask, "Mất câu hỏi trong cache")
+frappe.ENQUEUE_RUN = True
+frappe.cache().delete_value(f"{IN_KEY}:{CL}:{_r['id']}")
+n0 = len(REQ)
+frappe.get_attr(frappe.ENQUEUED[-1][0])(**frappe.ENQUEUED[-1][2])
+eq("câu hỏi mất khỏi cache (quá hạn) → loi 'không chạy xong', không gọi mô hình, Run loi", (as_user(CL, api.get_answer,
+	_r["id"]).get("message"), len(REQ) - n0, run_row(_r["id"]).status), (qa.M_CHET, 0, "loi"))
+LECH["mono"], LECH["dung"] = 0.0, True
+GOI_API.clear()
+_r, a, rq = hoi(CL, "Công cụ chậm", dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})),
+	cham(dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})), 147), tra("muộn"))
+LECH["mono"], LECH["dung"] = 0.0, False
+eq("hết giờ giữa chừng (lượt 2 trả về ở giây 147): công cụ xin sau hạn KHÔNG chạy, rồi dừng quá giờ",
+	(a.get("message"), len(rq), [d for d, _u, _k in GOI_API]), (qa.M_GIO, 2, ["kd.get_monthly"]))
 eq("Run loi, lời lỗi ngắn cố định", (run_row(_r["id"]).status, run_row(_r["id"]).error), ("loi", "quá giờ"))
 
 print("C4. Lỗi của mô hình / công cụ → trạng thái có lời, job không bao giờ ném")
@@ -479,7 +533,7 @@ BANG = [
 	("Có 63 khách", ["63"]), ("Giá 1.250.000 đ", []), ("Giá 1.250.001 đ", ["1.250.001 đ"]), ("Giá 1.250.000đ.", []),
 	("Giá 1.300.000đ", ["1.300.000đ"]), ("Tồn 4.500 hộp", []), ("Tồn 4,5 nghìn hộp", []), ("Tổng 12,3 tỷ", []),
 	("Giảm 12,3 điểm", []), ("Năm 2026 tốt", []), ("Lãi 2026 tỷ", ["2026 tỷ"]), ("Ngày 5/11/2026", []),
-	("Ngày 2026-11-05", []), ("Tháng 10/2026", []), ("Ngày 05.11.2026", []), ("Ngày 5/11 giao", ["5/11"]),
+	("Ngày 2026-11-05", []), ("Tháng 10/2026", []), ("Ngày 05.11.2026", []), ("Ngày 5/11 giao", []),
 	("Khách KH#0007 nợ", []), ("Chứng từ SINV-2026-00012", []), ("Phiếu KK-2026-002", []), ("Quý Q3/2026", []),
 	("Do NV#01 lập", []), ("1. Doanh số ổn\n2. Phải thu ổn", []), ("Tổng 1.863 triệu (tự tính)", ["1.863 triệu"]),
 	("Tỷ số 6,4", ["6,4"]), ("Doanh thu 1,250,000", []), ("Số pi 3,14", []), ("Số 3,15", ["3,15"]), ("Có 99 dòng", []),
@@ -488,6 +542,18 @@ BANG = [
 	("Tổng 12.345.678.901 đồng", []), ("Tổng 12 tỷ 345 triệu", ["345 triệu"]), ("Mã hàng T10 bán", []),
 	("Tăng 1,6tỷ", []), ("Còn 5 khách", ["5"]), ("Còn 0 khách", []),
 	("KH#0003 mua 1,6 tỷ, KH#0004 mua 251 triệu, bịa 999 triệu.", ["999 triệu"]),
+	# soát chéo P3 — đơn vị viết tắt dính liền / cách: tr, k; "2tỷ5" = 2,5 tỷ; đuôi chữ khác kiểm như số trần
+	("Còn 251tr", []), ("Còn 250tr", ["250tr"]), ("Còn 251 tr", []), ("Còn 250 tr.", ["250 tr"]), ("Tồn 4,5k hộp", []),
+	("Quá hạn 999k", ["999k"]), ("Lãi 1tỷ6", []), ("Lãi 1tỷ7", ["1tỷ7"]), ("Tổng 12tỷ3", []), ("Tổng 12TR", ["12TR"]),
+	("Nặng 62kg", []), ("Nặng 63kg", ["63kg"]), ("Lớp 10A1", ["10A1"]), ("Lúc 8h30", []),
+	# khoảng: gạch ngang dài / "đến" / "tới" — đầu dưới dùng chung đơn vị với đầu trên
+	("Mỗi khoản 7–251 triệu", ["7–251 triệu"]), ("Mỗi khoản từ 7 đến 251 triệu", ["7"]), ("Từ 7 tới 251tr", ["7"]),
+	("Từ 1,6 tỷ đến 12,3 tỷ", []), ("Khoảng 1,6–12,3 tỷ", []), ("Từ 7 - 251 triệu", ["7"]), ("Năm 2025–2026 ổn", []),
+	# ngày: d/m và ngày đủ năm so với ngày trong kết quả (ISO); tháng / năm và năm vẫn không tính
+	("Hạn ngày 9/1", ["9/1"]), ("Hạn ngày 30/11/2026", ["30/11/2026"]), ("Hạn ngày 5/11/2025", ["5/11/2025"]),
+	("Hạn ngày 5/11", []), ("Hạn 5-11-2026", []), ("Hạn ngày 45/13/2026", ["45/13/2026"]),
+	# "%": chỉ so với lá tỷ lệ (khoá ty_le / pct / rate / growth…, don_vi "%") hoặc thang 0–1 — không với số đếm / ngày
+	("Chiếm 62%", ["62%"]), ("Chiếm 7%", ["7%"]), ("Chiếm 99 phần trăm", ["99 phần trăm"]),
 ]
 sai = []
 for text, want in BANG:
@@ -498,8 +564,13 @@ eq(f"bảng đối chiếu {len(BANG)} dòng: số đã kiểm / chưa kiểm đ
 c("bảng ≥ 40 dòng", len(BANG) >= 40, len(BANG))
 eq("cùng lời, kết quả của câu hỏi KHÁC (không có số đó) → chưa kiểm", [s["t"] for s in qa.verify("Doanh số 1,6 tỷ.",
 	[{"x": 250_960_000}]) if s["u"]], ["1,6 tỷ"])
-eq("không kết quả tra cứu nào → mọi số chưa kiểm, năm / ngày / mã vẫn không tính", [s["t"] for s in qa.verify(
-	"Năm 2026, ngày 5/11/2026, KH#0001 mua 3 lần, 1,6 tỷ.", []) if s["u"]], ["3", "1,6 tỷ"])
+eq("không kết quả tra cứu nào → mọi số / ngày chưa kiểm, năm / tháng / mã vẫn không tính", [s["t"] for s in qa.verify(
+	"Năm 2026, tháng 10/2026, ngày 5/11/2026, KH#0001 mua 3 lần, 1,6 tỷ.", []) if s["u"]], ["5/11/2026", "3", "1,6 tỷ"])
+KQ2 = [{"bang": [{"chi_tieu": "Đạt chuẩn", "gia_tri": 12.5, "don_vi": "%"}, {"chi_tieu": "Số mẫu", "gia_tri": 26,
+	"don_vi": "mẫu"}], "growth": {"sales": 248.0}, "days_overdue": 26, "rows": [{"qty_no_rate": 30, "return_rate": 1.1}]}]
+eq("%: lá có don_vi '%' / khoá growth, rate được nhận; số đếm (26 ngày, 26 mẫu, qty_no_rate 30) không xác nhận %",
+	[s["t"] for s in qa.verify("Đạt 12,5%, tăng 248%, trả 1,1%, quá hạn 26%, chiếm 30%, có 26 mẫu.", KQ2) if s["u"]],
+	["26%", "30%"])
 eq("bool không phải số (True ≠ 1)", [s["t"] for s in qa.verify("Có 1 khách", [{"a": True}]) if s["u"]], ["1"])
 eq("segments liền nhau u False được gộp, không đoạn rỗng", qa.verify("A 1,6 tỷ B 9 C", KQ),
 	[{"t": "A 1,6 tỷ B ", "u": False}, {"t": "9", "u": True}, {"t": " C", "u": False}])
@@ -521,14 +592,14 @@ eq("câu 1: số đúng → đã kiểm", (a1["status"], chua_kiem(a1)), ("xong"
 v1, v2 = sorted(la_so(PT, set()))[-2:]
 _r, a2, rq = hoi(VIEWER, f"Còn {KH_SO} thì sao?", dung(tu("xem_mang", {"mang": "tong-quan", "ten": "summary"})),
 	lambda req: tra(f"Theo câu trước phải trả {trieu(la_max(PT))}; {qa_kh(req)} tự tính tổng {trieu(v1 + v2 + 7e6)}; "
-		f"bịa 98.765.432 đ; năm 2026, ngày 5/11/2026."),
+		f"bịa 98.765.432 đ; năm 2026, hôm nay {qa._hom_nay().day}/{qa._hom_nay().month}/{qa._hom_nay().year}."),
 	history=[{"q": "Phải trả?", "a": chu(a1)}])
 
-eq("số của câu trước, số tự tính, số bịa → chưa kiểm; năm / ngày không tính", chua_kiem(a2),
+eq("số của câu trước, số tự tính, số bịa → chưa kiểm; năm không tính; ngày hôm nay (đề bài hệ thống) đã kiểm", chua_kiem(a2),
 	[trieu(la_max(PT)), trieu(v1 + v2 + 7e6), "98.765.432 đ"])
 c("tên khách có chữ số đã đổi lại trong lời (sau khi chia đoạn) và chữ số của tên KHÔNG bị đánh dấu", KH_SO in chu(a2)
 	and "365" not in "".join(chua_kiem(a2)), a2["segments"])
-eq("Run: số đã kiểm / chưa kiểm", (run_row(_r["id"]).insights_ai, run_row(_r["id"]).rejected), (0, 3))
+eq("Run: số đã kiểm (ngày hôm nay) / chưa kiểm", (run_row(_r["id"]).insights_ai, run_row(_r["id"]).rejected), (1, 3))
 eq("get_answer.unverified = số đoạn chưa kiểm", a2["unverified"], 3)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -564,6 +635,26 @@ c("kết quả top_customers gửi đi: chỉ mã khách", "KH#" in json.dumps(t
 	for t in TEN_DOI_TAC if len(t) >= 5), json.dumps(top, ensure_ascii=False)[:300])
 c("câu trả lời hiển thị: mã đã gửi đổi lại thành tên thật (khách, NCC, người), mã bịa giữ nguyên", all(t in chu(a) for t in
 	(KH_DAI, KH_NGAN, NCC_TEN, NGUOI_TEN, NV_TEN)) and "KH#9999" in chu(a), chu(a))
+import unicodedata  # noqa: E402
+
+
+def bo_dau(x):
+	return "".join(ch for ch in unicodedata.normalize("NFD", x) if not unicodedata.combining(ch)).replace("đ", "d").replace(
+		"Đ", "D")
+
+
+CAU2 = (f"{KH_DAI.lower()} và {KH_DAI.upper()}, {unicodedata.normalize('NFD', KH_DAI)}; {NCC_TEN.upper()}; "
+	f"{bo_dau(KH_DAI).lower()}; {KH_NGAN.upper()} ở trung tâm; {NGUOI_TEN.lower()} báo")
+LS2 = [{"q": f"còn {KH_DAI.lower()}?", "a": f"{NCC_TEN.lower()} nợ nhiều."}]
+frappe.ROLES["che.ten@x.vn"] = ["BC Viewer"]
+_r, a, rq = hoi("che.ten@x.vn", CAU2, tra("ok"), history=LS2)
+g2 = unicodedata.normalize("NFC", json.dumps(rq[0]["messages"], ensure_ascii=False))
+eq("tên gõ chữ thường / VIẾT HOA / NFD trong câu hỏi + lịch sử → không còn (so không phân biệt hoa thường)",
+	sorted({t for t in TEN_DOI_TAC + NGUOI_DS if len(t) >= 5 and unicodedata.normalize("NFC", t).casefold() in g2.casefold()}),
+	[])
+c("tên khách ≥ 2 từ gõ không dấu → không còn", bo_dau(KH_DAI).lower() not in bo_dau(g2).lower(), g2[:300])
+c("tên khách một từ ngắn VIẾT HOA → mã; chữ thường trùng tên ('trung tâm') giữ nguyên",
+	KH_NGAN.upper() not in g2 and "trung tâm" in g2, g2[:400])
 single("BC Settings", ai_mask_parties=0)
 _r, a, rq = hoi(VIEWER, f"Còn {KH_DAI}?", tra("Không có số liệu."))
 c("tắt che tên (ai_mask_parties 0) → không che khách (như lượt ngày)", KH_DAI in rq[0]["messages"][-1][
@@ -632,6 +723,26 @@ if True:   # tài khoản được xoá ở cuối bộ thử (và DROP IF EXIST
 		([SQL1, SQL2, SQL3], [True, True, True]))
 	c("bước get_schema bị từ chối không ghi thành bước", [s["label"] for s in a["steps"] if s["tool"] == "get_schema"] ==
 		["Cấu trúc Customer", "Cấu trúc Employee"])
+	_gm = frappe.get_meta
+	frappe.get_meta = lambda dt, cached=True: _gm({"employee": "Employee", "EMPLOYEE": "Employee", "user": "User"}.get(dt, dt))
+	_r, a, rq = hoi(ADMIN, "Cấu trúc?", dung(tu("get_schema", {"doctype": "employee"}), tu("get_schema", {"doctype": "EMPLOYEE"}),
+		tu("get_schema", {"doctype": "user"})), tra("ok"))
+	frappe.get_meta = _gm
+	sc = [json.loads(x["content"]) if not x.get("is_error") else {"fields": [{"fieldname": "LỖI"}]} for x in
+		rq[1]["messages"][-1]["content"]]
+	c("get_schema('employee' / 'EMPLOYEE' / 'user' — meta nạp không phân biệt hoa thường như MariaDB) vẫn chỉ cột được phép",
+		all(x["fields"] for x in sc) and all({f["fieldname"] for f in x["fields"]} <= set(sqlguard.ALLOWED_COLUMNS[T])
+		for x, T in zip(sc, ("tabEmployee", "tabEmployee", "tabUser"))), [[f["fieldname"] for f in x["fields"]][:8] for x in sc])
+	SQL4 = (f"SELECT CONCAT(REPEAT('x', 185), ', ', customer_name, ', abc') AS ghep, UPPER(customer_name) AS hoa, "
+		f"LOWER(customer_name) AS thuong, CONCAT(REPEAT('y', 195), ' ', customer_name) AS sat FROM `tabCustomer` WHERE name = '{KH_DAI_ID}'")
+	_r, a, rq = hoi(ADMIN, "Ghép chuỗi", dung(tu("run_select", {"sql": SQL4})), tra("ok"))
+	o4 = rq[1]["messages"][-1]["content"][0]
+	t4 = unicodedata.normalize("NFC", o4["content"]).casefold()
+	c("ô SQL: che tên TRƯỚC rồi mới cắt 200 ký tự (tên nằm ở chỗ cắt không lọt nửa tên); UPPER / LOWER(tên) vẫn che",
+		not o4.get("is_error") and not any(x in t4 for x in ("tân phát", "công ty tân", "phát lộc", "công ty")) and "kh#" in t4,
+		o4["content"][:600])
+	c("ô SQL sau khi che vẫn ≤ 200 ký tự", all(len(v) <= 200 for v in json.loads(o4["content"])["rows"][0]),
+		[len(v) for v in json.loads(o4["content"])["rows"][0]])
 	_r, a, rq = hoi(ADMIN, "Xoá giúp",
 		dung(tu("run_select", {"sql": f"DELETE FROM `tabCustomer` WHERE name = '{KH_DAI_ID}'"}),
 			tu("run_select", {"sql": "SELECT * FROM `tabEmployee`"}), tu("run_select", {"sql": "SELECT 1; SELECT 2"}),
@@ -709,6 +820,49 @@ eq("job chết: quá hạn khoá → get_answer loi + lời, hỏi lại đượ
 LECH["time"] = 0.0
 frappe.ENQUEUE_RUN = True
 eq("dọn hai job treo", chay_treo(i0), 2)
+
+SS = "song.song@x.vn"
+frappe.ROLES[SS] = ["BC Viewer"]
+_goc_can = budget.can_call_qa
+TRONG = []
+CHEN = {}
+
+
+def _chen(*a_, **k_):
+	"""Yêu cầu song song của CÙNG người lọt vào đúng giữa lúc yêu cầu đầu đang đếm giới hạn (nhiều worker gunicorn)."""
+	if not CHEN.get("da"):
+		CHEN["da"] = True
+		TRONG.extend(tu_choi(SS, f"Câu song song {i}") for i in range(4))
+	return _goc_can(*a_, **k_)
+
+
+budget.can_call_qa = _chen
+frappe.ENQUEUE_RUN = False
+i0 = len(frappe.ENQUEUED)
+try:
+	as_user(SS, api.ask, "Câu đầu song song")
+finally:
+	budget.can_call_qa = _goc_can
+	frappe.ENQUEUE_RUN = True
+eq("4 yêu cầu cùng người chen vào lúc yêu cầu đầu đang kiểm → đều 'đang có câu khác' (khoá giữ NGUYÊN TỬ trước khi đếm)",
+	TRONG, [qa.M_BAN] * 4)
+eq("… chỉ 1 dòng Run hoi-dap của người đó", frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}` WHERE owner = %s AND run_type = "
+	"'hoi-dap'", (SS,))[0][0], 1)
+eq("dọn job treo", chay_treo(i0), 1)
+import pymysql  # noqa: E402  (phiên MariaDB thứ hai: giữ khoá đếm như một yêu cầu khác đang đếm)
+_khac = pymysql.connect(user="root", unix_socket=SOCK, charset="utf8mb4", autocommit=True)
+_kc = _khac.cursor()
+_kc.execute("SELECT GET_LOCK(%s, 0)", (f"bcai_qa_{DB}"[:64],))
+qa.START_LOCK_WAIT = 1
+KD = "khoa.dem@x.vn"
+frappe.ROLES[KD] = ["BC Viewer"]
+n_run = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]
+eq("khoá đếm toàn site đang bị phiên khác giữ → chờ rồi từ chối 'đang nhận nhiều câu', không ghi Run",
+	(tu_choi(KD, "Khi khoá đếm bị giữ"), frappe.db.sql(f"SELECT COUNT(*) FROM `tab{RUN}`")[0][0]), (getattr(qa, 'M_DONG', 'M_DONG'), n_run))
+_kc.execute("SELECT RELEASE_LOCK(%s)", (f"bcai_qa_{DB}"[:64],))
+_khac.close()
+qa.START_LOCK_WAIT = 5
+c("từ chối đó nhả khoá 'đang hỏi' của người hỏi → hỏi lại được", hoi(KD, "Hỏi lại sau khoá", tra("ok"))[1]["status"] == "xong")
 
 single("BC Settings", ai_qa_enabled=0)
 eq("AI hỏi đáp tắt → từ chối; get_qa.enabled False", (tu_choi(VIEWER2, "Có gì?"), as_user(VIEWER2, api.get_qa)["enabled"]),
@@ -792,7 +946,7 @@ eq("khoá / mật khẩu không trong bảng, log, kết quả API, request, cac
 eq("lỗi trong dòng Run hỏi đáp chỉ là lời cố định", sorted({r[0] for r in frappe.db.sql(f"""SELECT DISTINCT error FROM
 	`tab{RUN}` WHERE run_type = 'hoi-dap' AND error IS NOT NULL""")}), sorted({"quá giờ", "lỗi gọi mô hình: credit",
 	"lỗi gọi mô hình: refusal", "lỗi gọi mô hình: rate", "lỗi gọi mô hình: timeout", "lỗi gọi mô hình: no_key",
-	"lỗi không lường: RuntimeError", "mô hình không trả lời", "đã chi tới trần kỳ này"}))
+	"lỗi không lường: RuntimeError", "mô hình không trả lời", "đã chi tới trần kỳ này", "mất câu hỏi trong hàng đợi"}))
 c("cache 'cho' / khoá đang hỏi không chứa câu hỏi", not any(MARK_Q in v for k, v in frappe.cache().store.items()
 	if k.startswith(qa.LOCK_KEY)))
 

@@ -415,17 +415,23 @@ như màn ẩn).
 
 **Luồng.** `bc.api.ai.ask(question, history)` (POST, `_guard("tro-ly")`) kiểm bật / khoá / giới hạn / trần chi, tạo
 một dòng `BC AI Run` loại `hoi-dap` (đếm lượt ngay), xếp job `bc.ai.qa.run` (hàng `default`, timeout 300) và trả
-`{id, status: "cho"}`. Job chạy **dưới chính người hỏi**: dựng đề bài (vai trò, luật trả lời, bối cảnh công ty đã
+`{id, status: "cho"}`. Khoá "đang hỏi" của người hỏi lấy **nguyên tử** (Redis `SET NX EX`) trước khi đếm; đếm giới hạn
++ ghi dòng Run nằm trong khoá MariaDB `GET_LOCK` theo CSDL của site — yêu cầu song song (nhiều tab, nhiều worker) không
+lọt qua giới hạn. Tham số job chỉ có `qid` + `user`; câu hỏi + lịch sử nằm trong cache (hạn 330 giây), job đọc xong xoá
+ngay. Job chạy **dưới chính người hỏi**: dựng đề bài (vai trò, luật trả lời, bối cảnh công ty đã
 che tên, ngày hôm nay, năm tài chính — không số liệu kinh doanh), rồi vòng tool use ≤ 7 lượt gọi Claude, ≤ 6 bước tra;
-hết lượt tra thì lượt cuối buộc trả lời bằng số đã có (`tool_choice: none`). Màn hình hỏi `get_answer(id)` mỗi 2 giây,
-tối đa 150 giây. Câu trả lời nằm trong cache 30 phút dưới khoá gắn với người hỏi — người khác (kể cả quản trị) không
+hết lượt tra thì lượt cuối buộc trả lời bằng số đã có (`tool_choice: none`). Hạn 150 giây tính **từ lúc hỏi** (gồm
+thời gian chờ trong hàng đợi); một lượt gọi chỉ bắt đầu khi trường hợp tệ nhất của nó (3 lần thử × (10 giây nối + chờ
+đọc) + 25 giây chờ giữa các lần) vẫn xong trước hạn; công cụ xin sau hạn không chạy. Màn hình hỏi `get_answer(id)` mỗi 2
+giây, tối đa 180 giây (hạn máy chủ + 30 giây, để luôn lấy được kết quả cuối). Câu trả lời nằm trong cache 30 phút dưới khoá gắn với người hỏi — người khác (kể cả quản trị) không
 lấy được.
 
 **Hai tầng công cụ.**
 
 - `xem_mang(mang, ten, tham_so)` — mọi người: 23 khối của `bc.ai.collect.CALLS` (bỏ khối vận chuyển tháng trước) trên
-  16 mảng; tham số theo bảng cố định (`limit` 1–20, `year` / `month`, `group`, `from_date` / `to_date`, `thang`) —
-  lạ, sai kiểu, ngoài khoảng → lỗi cho mô hình, không gọi; **không bao giờ** `refresh` (đọc cache như màn). Gọi thẳng
+  16 mảng; tham số theo bảng cố định (`limit` 1–20, `year` / `month`, `group` = `all` | `tet` | `traditional`,
+  `from_date` + `to_date` đi cùng nhau ≤ 731 ngày, `thang`) — lạ, sai kiểu, ngoài khoảng → lỗi cho mô hình, không gọi;
+  method vẫn từ chối tham số (`frappe.throw`) → lỗi "tham số không hợp lệ" cho mô hình, không Error Log; **không bao giờ** `refresh` (đọc cache như màn). Gọi thẳng
   method `bc.api.*` dưới phiên người hỏi: mảng đang ẩn với họ bị chặn hai lớp (trước khi gọi và `_guard` của method),
   và không có trong mô tả công cụ gửi mô hình. Kết quả: danh sách cắt 30 phần tử (khoá `_cat` ghi số bị cắt),
   ≤ 40.000 ký tự JSON, che tên khách / NCC, rồi mới gửi.
@@ -434,17 +440,26 @@ lấy được.
   trên đúng CSDL của site; thấy quyền khác, `*.*`, CSDL khác, `WITH GRANT OPTION`, vai trò → không dùng). Ba lớp chặn:
   tài khoản chỉ đọc; phiên `SET SESSION TRANSACTION READ ONLY` + `max_statement_time` 10 giây; bộ soát
   `bc/ai/sqlguard.py` (hàm thuần): một câu `SELECT` / `WITH` ≤ 4.000 ký tự, không chú thích, không biến, không từ khoá
-  ghi / khoá / hàm ngủ, không CSDL hệ thống, không bảng nhạy cảm (phiên, khoá, OAuth, Error Log, Singles, bảng lương,
-  bảng con của Employee…), `tabEmployee` / `tabUser` chỉ cột được phép và không `*`. Câu bị chặn → lý do ngắn cho mô
+  ghi / khoá / hàm ngủ, ngoặc phải cân, không CSDL hệ thống, không bảng nhạy cảm (phiên, khoá, OAuth, Error Log, Singles,
+  bảng lương, bảng con của Employee…) và **không bảng chép lại dữ liệu của bảng khác** (`tabVersion`, `tabDeleted
+  Document`, Comment / Communication, các log, Prepared Report, Submission Queue, Data Import, Webhook*, Bank Account),
+  `tabEmployee` / `tabUser` chỉ cột được phép và không `*` (từ đứng ngay sau hai bảng đó luôn coi là bí danh, kể cả
+  `END` / `FULL`… — CTE cùng tên không mở được cột cấm). Câu bị chặn → lý do ngắn cho mô
   hình, mô hình viết lại câu khác. Chạy dạng `SET STATEMENT max_statement_time=10 FOR SELECT * FROM (<câu>) AS _t LIMIT
-  …`: ≤ 200 dòng, ô chuỗi cắt 200 ký tự, ≤ 40.000 ký tự. Ô chuỗi được che tên khách / NCC và tên người; cột người
+  …`: ≤ 200 dòng, ≤ 40.000 ký tự. Ô chuỗi được che tên khách / NCC và tên người (không phân biệt hoa thường — `UPPER(tên)`
+  cũng che) **rồi mới** cắt 200 ký tự (cắt trước thì tên nằm ở chỗ cắt lọt một nửa); cột người
   (`owner`, `modified_by`, tên cột có `user`, `employee_name`, `full_name`) thành `NV#01…`, đổi lại khi hiển thị.
 
-**Đối chiếu số.** Sau khi có câu trả lời (còn mã giả), máy chủ tách mọi con số kèm đơn vị (tỷ, triệu, nghìn, %, đ),
+**Đối chiếu số.** Sau khi có câu trả lời (còn mã giả), máy chủ tách mọi con số kèm đơn vị (tỷ, triệu, nghìn, %, đ, và
+dạng viết tắt / dính liền "47tr", "999k", "2tỷ5" = 2,5 tỷ; khoảng "1–30 triệu", "từ 9 đến 30 triệu" — đầu dưới dùng chung
+đơn vị đầu trên),
 đổi mỗi số thành khoảng theo độ chính xác nó được viết ("1,6 tỷ" → [1,55; 1,65) tỷ, "35,2%" → [35,15; 35,25) và dạng tỷ
 số 0,3515–0,3525, "1.250.000 đ" → đúng 1.250.000) và tìm trong **mọi kết quả tra cứu của chính lượt hỏi đó** (bản mô
-hình đã thấy) một giá trị rơi vào khoảng. Không tìm thấy → số "chưa kiểm": màn gạch chấm dưới số đó và ghi một dòng
-nhắc kiểm ở màn gốc. Không tính: năm `20xx`, ngày đủ năm, giờ, mã (`KH#0007`, mã chứng từ), số thứ tự đầu dòng. Bước
+hình đã thấy) một giá trị rơi vào khoảng. Số "%" chỉ so với lá tỷ lệ (khoá có `pct` / `ty_le` / `rate` / `growth`…,
+hoặc dòng có `don_vi` = "%") và thang tỷ số 0–1 — không với số đếm / số ngày. Ngày ("5/11", "5/11/2026") so với ngày có
+trong kết quả (chuỗi ISO) và ngày của đề bài hệ thống (hôm nay, năm tài chính). Không tìm thấy → "chưa kiểm": màn gạch
+chấm dưới số đó và ghi một dòng nhắc kiểm ở màn gốc. Không tính: năm `20xx`, tháng / năm, giờ, mã (`KH#0007`, mã chứng
+từ), số thứ tự đầu dòng; số dính chữ không đọc được ("10A1") luôn "chưa kiểm". Bước
 này không sửa, không xoá chữ nào của mô hình. **Giới hạn**: số viết bằng chữ ("hai tỷ") không được tách; so theo trị
 tuyệt đối ("giảm 12,3%" khớp số −12,34); một số tự tính tình cờ rơi vào khoảng của một giá trị bất kỳ trong kết quả
 (nhất là số nhỏ, tỷ số nhỏ) vẫn được tính là đã kiểm — "đã kiểm" nghĩa là "có số như vậy trong dữ liệu đã tra", không
@@ -452,7 +467,9 @@ phải "đúng nghĩa".
 
 **Riêng tư.** Gửi Claude chỉ có: đề bài hệ thống, câu hỏi + tối đa 3 lượt hỏi đáp trước (trình duyệt giữ, ≤ 4.000 ký
 tự, máy chủ không lưu), kết quả công cụ đã cắt, đã che. Câu hỏi, lịch sử, bối cảnh công ty, ô chuỗi của kết quả SQL
-được che **ngặt**: mọi tên khách / NCC đã biết (kể cả tên một từ ngắn) và tên người đã biết (tài khoản, nhân viên); chỉ
+được che **ngặt**: mọi tên khách / NCC đã biết (kể cả tên một từ ngắn; chữ đưa về NFC, không phân biệt hoa thường với
+tên ≥ 2 từ / ≥ 6 ký tự, tên một từ ngắn thêm dạng VIẾT HOA, tên ≥ 2 từ cả khi gõ không dấu) và tên người đã biết (tài
+khoản, nhân viên); chỉ
 mã đã thật sự gửi trong câu hỏi đó được đổi lại thành tên. Không lưu câu hỏi, câu trả lời, đề bài, kết quả tra cứu vào
 CSDL: `BC AI Run` chỉ ghi model, token, chi phí, số bước tra, số con số đã kiểm / chưa kiểm, số lượt gọi, trạng thái
 và một lời báo ngắn cố định. Error Log của phần này chỉ có tên loại lỗi + dòng code. Khoá Claude chỉ `bc/ai/llm/` đọc;
@@ -463,7 +480,7 @@ gửi dữ liệu ra ngoài. **Lưu ý cho quản trị**: `run_select` gửi k�
 **Giới hạn và chi phí.** `ai_qa_per_day` câu / người / ngày (mặc định 20; đếm dòng `BC AI Run` `hoi-dap` của người đó
 trong ngày, cả câu lỗi; câu bị từ chối lúc hỏi không tính); 200 câu / ngày toàn site; mỗi người một câu tại một thời
 điểm; câu hỏi ≤ 500 ký tự; ≤ 6 bước tra, ≤ 7 lượt gọi, `max_tokens` 6.000 mỗi lượt (gồm phần suy nghĩ), cả câu ≤ 150 giây (thời gian chờ
-mỗi lượt gọi thu theo thời gian còn lại). Chi phí tính vào **cùng trần chi theo kỳ của Claude** (`ai_cap_claude_usd`;
+tính từ lúc hỏi; chờ đọc mỗi lượt gọi thu theo thời gian còn lại sao cho cả các lần thử lại vẫn vừa). Chi phí tính vào **cùng trần chi theo kỳ của Claude** (`ai_cap_claude_usd`;
 chạm trần → từ chối), ghi theo token thực tế sau mỗi lượt gọi (đọc cache × 0,1, ghi cache × 1,25 giá token vào —
 `cache_control` cấp trên cho phần lặp lại giữa các lượt của một câu). Lượt gọi hỏi đáp **không** tính vào 30 lượt / ngày
 của lượt sáng; có giới hạn riêng 300 lượt gọi / ngày (câu đang chạy giữ chỗ 7 lượt). Mọi lỗi (tắt, thiếu khoá, hết
@@ -504,12 +521,15 @@ ra đúng chuỗi này). Bật: đặt `ai_qa_model` nếu muốn model khác l�
 
 **Khác `docs/SPEC_bc_ai_p3.md`** (đã cân nhắc): `get_qa.enabled` chỉ đúng khi bật **và** có khoá Claude dùng được;
 `get_qa.sql` nối thử và kiểm `SHOW GRANTS` thật (không chỉ xem đã khai); bộ soát SQL chặt hơn đặc tả (thêm mọi bảng `__…`,
+bảng chép lại dữ liệu (Version, Deleted Document, Comment, Communication, log, Webhook, Bank Account…), số dính chữ
+"1e0union",
 mọi bảng `tabEmployee …`, bảng email / webhook / tích hợp / thưởng / thuế lương, từ khoá `TABLE` `SHOW` `PROCEDURE`
 `OUTFILE` …; quyền đọc chỉ được trên CSDL của site); câu có `ORDER BY` mà không `LIMIT` được thêm `LIMIT` bên trong
 (MariaDB bỏ `ORDER BY` của bảng dẫn xuất không `LIMIT`); "bước tra" đếm theo từng khối `tool_use` (một lượt xin 4 khối
 là 4 bước; khối vượt trần nhận lỗi "đã hết lượt tra"); che cả tên người trong câu hỏi / lịch sử / bối cảnh / ô SQL (đặc
 tả chỉ nói cột người); `steps` mang cờ `ok`, bước bị chặn trước khi chạy (tham số sai, mảng ẩn, DocType cấm) không liệt
-kê, câu SQL bị soát chặn vẫn liệt kê cho quản trị; câu chờ quá 330 giây báo lỗi; job đã xếp mà quản trị tắt hỏi đáp trước
+kê, câu SQL bị soát chặn vẫn liệt kê cho quản trị; câu chờ quá 330 giây báo lỗi; quá đông yêu cầu cùng lúc (khoá đếm
+không lấy được trong 5 giây) → "đang nhận nhiều câu hỏi cùng lúc"; job đã xếp mà quản trị tắt hỏi đáp trước
 khi chạy → không gọi mô hình (Run `tat`); trả lời bị cắt vì `max_tokens` → báo lỗi, không trả nửa câu; lỗi lạ của lượt
 gọi mô hình chỉ ghi tên loại + dòng code (không lời của lỗi — có thể chép câu hỏi).
 
@@ -518,8 +538,9 @@ gọi mô hình chỉ ghi tên loại + dòng code (không lời của lỗi —
 thường xuyên thì nâng `MAX_TOKENS` trong `bc/ai/qa.py`. Giá đọc cache tính 0,1× (Sonnet / Opus 5.5 thật là 0,05×) — chi phí ghi
 hơi cao hơn thực, an toàn cho trần. Vì tên khách đã thành mã, SQL của quản trị không lọc được theo tên / mã khách cụ thể
 (hỏi theo nhóm, kênh, tỉnh thì được). Chữ tự do trong payload màn báo cáo (ghi chú, diễn giải) chỉ che tên khách / NCC
-từ 2 từ hoặc 6 ký tự (như lượt ngày) — tên một từ ngắn nằm giữa câu trong ô đó có thể lọt. Câu hỏi nằm tạm trong tham
-số job của hàng đợi Redis cho tới khi job chạy xong. Khối "Thời gian thực" chưa tra được. **Chưa kiểm trên site
+từ 2 từ hoặc 6 ký tự (như lượt ngày) — tên một từ ngắn nằm giữa câu trong ô đó có thể lọt. Tên gọi tắt ("Tân Phát"),
+tên một từ ngắn gõ chữ thường, tên dính liền chữ khác (`CONCAT(x, tên)` không dấu cách) không nhận ra được. Câu hỏi +
+lịch sử nằm tạm trong cache Redis (không trong tham số job) từ lúc hỏi tới lúc job bắt đầu, tối đa 330 giây. Khối "Thời gian thực" chưa tra được. **Chưa kiểm trên site
 thật**: chưa có lượt gọi Claude thật nào với công cụ (bộ thử dựng request thật nhưng mô hình giả), chưa chạy tài khoản
 chỉ đọc trên MariaDB của bench thật.
 
@@ -535,7 +556,7 @@ lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gia
 923, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
 kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
 tĩnh 65, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 123, cửa gọi OpenAI 140, phản biện 84, nhóm
-Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58; P3 hỏi đáp: `llm.chat` 117, bộ soát SQL + kết nối chỉ đọc trên MariaDB thật 125, máy hỏi đáp 160, đầu-cuối P3 (request thật, cửa HTTP giả, tài khoản chỉ đọc thật, ẩn mảng, lỗi, giới hạn, tắt) 105, giao diện `#/hoi-dap` 65. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
+Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58; P3 hỏi đáp: `llm.chat` 117, bộ soát SQL + kết nối chỉ đọc trên MariaDB thật 130, máy hỏi đáp 181, đầu-cuối P3 (request thật, cửa HTTP giả, tài khoản chỉ đọc thật, ẩn mảng, lỗi, giới hạn, tắt) 105, giao diện `#/hoi-dap` 65. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
 ## Cài đặt / deploy

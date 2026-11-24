@@ -22,6 +22,11 @@ Chi tiết:
 - mask_text(text, tat_ca=True) — chế độ NGẶT cho chữ do MÁY CHỦ đã điền tên thật vào (tiêu đề nhận định đã lưu gửi
   vào bản tin tuần / tháng): thay MỌI tên đã biết đứng riêng thành từ, kể cả tên một từ ngắn ("Hùng", "ABC"). Thay
   nhầm một chữ thường trùng tên thì chấp nhận (che thừa được, lọt tên thì không).
+- mask_text(text, tat_ca=True, bo_hoa=True) — thêm cho chữ NGƯỜI DÙNG GÕ (câu hỏi / lịch sử của hỏi đáp P3, ô chuỗi
+  SQL): chữ đưa về NFC (gõ kiểu NFD của macOS / bộ gõ), rồi sau lượt khớp đúng còn hai lượt khớp lỏng: không phân biệt
+  hoa / thường cho tên ≥ 2 từ hoặc ≥ TEN_TOI_THIEU ký tự (tên một từ ngắn chỉ thêm dạng VIẾT HOA HẾT — "tâm" trong
+  "trung tâm" không bị che), và bỏ dấu + không phân biệt hoa / thường cho tên ≥ 2 từ ("cong ty tan phat loc"). Mã giả đã
+  có trong chữ không bị khớp lại (ranh giới tính cả "#"). Tên gọi tắt vẫn không nhận ra được.
 - Hai đối tác trùng một chuỗi: chuỗi về mã của đối tác đứng TRƯỚC (khách trước NCC, trong mỗi loại theo `name` tăng
   dần; tên trên hồ sơ trước bí danh từ hoá đơn). Hoàn nguyên vẫn ra đúng tên hiển thị của mã đó.
 - Chỉ mã ĐÃ GỬI mới được hoàn nguyên / bỏ (D4): mọi mã do mask / mask_text phát ra được ghi lại; begin() xoá bản ghi
@@ -35,6 +40,7 @@ Chi tiết:
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import frappe
 
@@ -100,13 +106,14 @@ class Mask:
 		self._le = re.compile(r"(?<![\w#])(?:" + "|".join(map(re.escape, le)) + r")(?![\w#])") if le else None
 		self._chi_muc = None     # mask_text: {từ đầu: [tên, dài trước]}, dựng khi cần
 		self._chi_muc_het = None  # như trên, chế độ ngặt (mọi tên, kể cả một từ ngắn)
+		self._chi_muc_long = None  # bo_hoa: ({từ đầu gập hoa: [(tên gập, mã, tên gốc | None)]}, {… bỏ dấu …})
 
 	def _alias(self, s, ma: str) -> None:
 		"""Thêm chuỗi s làm bí danh của mã (đã có chuỗi đó thì giữ mã cũ)."""
 		s = s.strip() if isinstance(s, str) else ""
 		if s and ma in self._ten and s not in self._ma:
 			self._ma[s] = ma
-			self._chi_muc = self._chi_muc_het = None
+			self._chi_muc = self._chi_muc_het = self._chi_muc_long = None
 
 	def _phat(self, ma: str) -> str:
 		self._gui.add(ma)
@@ -122,7 +129,7 @@ class Mask:
 		self._so[tien_to] = n
 		self._ten[ma] = s
 		self._ma[s] = ma
-		self._chi_muc = self._chi_muc_het = None
+		self._chi_muc = self._chi_muc_het = self._chi_muc_long = None
 		return ma
 
 	def _chi_muc_ten(self, tat_ca: bool = False) -> dict:
@@ -191,15 +198,77 @@ class Mask:
 				return ma
 		return None
 
-	def mask_text(self, text, tat_ca: bool = False) -> str:
+	def _chi_muc_lo(self) -> tuple:
+		"""Chỉ mục khớp lỏng (bo_hoa): hai bảng {từ đầu đã gập: [(tên đã gập, mã, tên gốc NFC hoặc None)], dài trước}.
+		Bảng 1 (không phân biệt hoa / thường): tên ≥ 2 từ / ≥ TEN_TOI_THIEU ký tự (tên gốc None = nhận mọi kiểu hoa); tên
+		một từ ngắn chỉ nhận đúng tên hoặc dạng VIẾT HOA HẾT (tên gốc ghi lại để so). Bảng 2 (bỏ dấu): chỉ tên ≥ 2 từ."""
+		if self._chi_muc_long is None:
+			hoa, dau = {}, {}
+			for s, ma in self._ma.items():
+				s = unicodedata.normalize("NFC", s)
+				nhieu = len(_TU.findall(s)) >= 2
+				for bang, bo_dau, nhan in ((hoa, False, True), (dau, True, nhieu)):
+					if not nhan:
+						continue
+					g = _gap(s, bo_dau)
+					m = _TU.match(g)
+					if not m:
+						continue
+					goc = None if (nhieu or len(s) >= TEN_TOI_THIEU or bo_dau) else s
+					ds = bang.setdefault(m.group(0), [])
+					if not any(x[0] == g for x in ds):     # trùng chuỗi gập: đối tác đứng trước giữ
+						ds.append((g, ma, goc))
+			for bang in (hoa, dau):
+				for ds in bang.values():
+					ds.sort(key=lambda x: len(x[0]), reverse=True)
+			self._chi_muc_long = (hoa, dau)
+		return self._chi_muc_long
+
+	def _khop_lo(self, text: str, cm: dict, bo_dau: bool) -> str:
+		"""Một lượt khớp lỏng: so trên bản gập (cùng độ dài với text), cắt ghép trên text gốc."""
+		if not cm or not text:
+			return text
+		so, n = _gap(text, bo_dau), len(text)
+		out, i = [], 0
+		for m in _TU.finditer(so):
+			a = m.start()
+			if a < i:
+				continue
+			for g, ma, goc in cm.get(m.group(0), ()):
+				b = a + len(g)
+				if not so.startswith(g, a) or (a > 0 and _ranh(text[a - 1])) or (b < n and _ranh(text[b])):
+					continue
+				if goc is not None and text[a:b] not in (goc, goc.upper()):
+					continue
+				out.append(text[i:a])
+				out.append(self._phat(ma))
+				i = b
+				break
+		if i == 0:
+			return text
+		out.append(text[i:])
+		return "".join(out)
+
+	def mask_text(self, text, tat_ca: bool = False, bo_hoa: bool = False) -> str:
 		"""Chữ TỰ DO: thay mọi tên đã biết đứng riêng thành từ → mã giả (tên dài trước). Chỉ tên ≥ 2 từ hoặc ≥
 		TEN_TOI_THIEU ký tự — trừ khi tat_ca=True (chế độ ngặt: MỌI tên đã biết, kể cả một từ ngắn — cho chữ mà máy chủ
 		đã chèn tên thật từ đúng giá trị trường, vd tiêu đề nhận định đã lưu). Là che HẾT SỨC: tên gọi tắt, tên viết
 		khác hồ sơ không nhận ra được. Nhanh: chỉ xét tên có từ đầu trùng một từ của câu (không dò cả bảng bằng một
-		biểu thức)."""
+		biểu thức).
+
+		bo_hoa=True (chữ người dùng gõ): NFC trước, rồi thêm hai lượt khớp lỏng (xem _chi_muc_lo) sau lượt khớp đúng."""
 		text = "" if text is None else str(text)
+		if bo_hoa:
+			text = unicodedata.normalize("NFC", text)
 		if not self._ma or not text:
 			return text
+		text = self._khop_dung(text, tat_ca)
+		if bo_hoa:
+			hoa, dau = self._chi_muc_lo()
+			text = self._khop_lo(self._khop_lo(text, hoa, False), dau, True)
+		return text
+
+	def _khop_dung(self, text: str, tat_ca: bool) -> str:
 		cm = self._chi_muc_ten(tat_ca)
 		if not cm:
 			return text
@@ -262,6 +331,33 @@ class Mask:
 
 def _la_chu(ch: str) -> bool:
 	return ch.isalnum() or ch == "_"
+
+
+def _ranh(ch: str) -> bool:
+	"""Ký tự liền kề làm tên KHÔNG đứng riêng (khớp lỏng): chữ / số / "_" và "#" (không khớp lại phần của mã giả)."""
+	return ch.isalnum() or ch in "_#"
+
+
+_GAP: dict = {}
+
+
+def _gap(text: str, bo_dau: bool) -> str:
+	"""Dạng so khớp lỏng GIỮ ĐÚNG ĐỘ DÀI (ký tự i ứng với ký tự i của text): casefold, và bỏ dấu (NFD bỏ dấu kết hợp,
+	đ → d) khi bo_dau. Ký tự gập ra khác đúng một ký tự thì giữ nguyên."""
+	out = []
+	for ch in text:
+		k = (ch, bo_dau)
+		g = _GAP.get(k)
+		if g is None:
+			g = ch.casefold()
+			if bo_dau:
+				g = "".join(c for c in unicodedata.normalize("NFD", g) if not unicodedata.combining(c)).replace("đ", "d")
+			if len(g) != 1:
+				g = ch
+			if len(_GAP) < 20000:
+				_GAP[k] = g
+		out.append(g)
+	return "".join(out)
 
 
 def _doc(sql: str) -> list:

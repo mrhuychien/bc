@@ -438,6 +438,22 @@ class _Cache:
 	def delete_value(self, key):
 		self.store.pop(key, None)
 
+	# Lệnh Redis thô (RedisWrapper v16 kế thừa redis.Redis): make_key như v16 chỉ thêm tiền tố site — bộ thử để nguyên khoá
+	def make_key(self, key, user=None, shared=False):
+		return key
+
+	def set(self, name, value, ex=None, px=None, nx=False, xx=False, **k):
+		if (nx and name in self.store) or (xx and name not in self.store):
+			return None
+		self.store[name] = value if isinstance(value, str) else json.dumps(value, default=str)
+		return True
+
+	def get(self, name):
+		return self.store.get(name)
+
+	def delete(self, *names):
+		return sum(1 for n in names if self.store.pop(n, None) is not None)
+
 	def hget(self, *a, **k):
 		return None
 

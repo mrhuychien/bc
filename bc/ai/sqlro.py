@@ -31,7 +31,8 @@ import frappe
 from bc.ai import sqlguard
 
 LIMIT = 200          # dòng
-CELL = 200           # ký tự mỗi ô chuỗi
+CELL = 200           # ký tự mỗi ô chuỗi (gửi mô hình)
+RAW_CELL = 4000      # select(cell=RAW_CELL): ô còn gần nguyên cho nơi gọi che tên TRƯỚC rồi mới cắt về CELL (qa.gon_sql)
 TOTAL = 40_000       # ký tự JSON của cả kết quả
 SECONDS = 10         # max_statement_time của mỗi câu
 QUYEN_DOC = frozenset({"USAGE", "SELECT", "SHOW VIEW"})
@@ -114,8 +115,8 @@ def grants_ok(lines, db_name: str) -> bool:
 	return True
 
 
-def _o(v):
-	"""Một ô kết quả → giá trị JSON được (bool cắt: chuỗi dài)."""
+def _o(v, cell=CELL):
+	"""Một ô kết quả → giá trị JSON được (bool cắt: chuỗi dài hơn `cell`)."""
 	if v is None or isinstance(v, (bool, int)):
 		return v, False
 	if isinstance(v, float):
@@ -129,8 +130,8 @@ def _o(v):
 	if isinstance(v, (bytes, bytearray, memoryview)):
 		v = bytes(v).decode("utf-8", "replace")
 	v = str(v)
-	if len(v) > CELL:
-		return v[:CELL - 1] + "…", True
+	if len(v) > cell:
+		return v[:cell - 1] + "…", True
 	return v, False
 
 
@@ -219,8 +220,11 @@ class ReadOnly:
 			raise NotReadOnly("không kiểm được quyền của tài khoản chỉ đọc") from None
 		return self
 
-	def select(self, sql: str) -> dict:
-		"""→ {"columns": [...], "rows": [[...]], "cut": bool}; câu bị chặn / lỗi → SqlRefused."""
+	def select(self, sql: str, cell: int = CELL) -> dict:
+		"""→ {"columns": [...], "rows": [[...]], "cut": bool}; câu bị chặn / lỗi → SqlRefused. cell: ô chuỗi cắt ở bao
+		nhiêu ký tự (mặc định CELL; qa truyền RAW_CELL để che tên trước khi cắt) — trần tổng TOTAL luôn tính như ô đã cắt
+		về CELL (đúng cỡ sau khi nơi gọi cắt)."""
+		cell = max(CELL, min(int(cell), RAW_CELL))
 		if self._conn is None:
 			raise SqlRefused("chưa mở kết nối chỉ đọc")
 		ok, ly_do, sach = sqlguard.check(sql, self.columns)
@@ -243,10 +247,10 @@ class ReadOnly:
 		for r in dong[:LIMIT]:
 			hang = []
 			for v in r:
-				o, cat = _o(v)
+				o, cat = _o(v, cell)
 				cut = cut or cat
 				hang.append(o)
-			dai = len(json.dumps(hang, ensure_ascii=False)) + 1
+			dai = len(json.dumps([x[:CELL] if isinstance(x, str) else x for x in hang], ensure_ascii=False)) + 1
 			if tong + dai > TOTAL:
 				cut = True
 				break

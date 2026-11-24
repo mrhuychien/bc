@@ -246,6 +246,9 @@ VALID = [
 	"GROUP BY customer) SELECT * FROM x) t",
 	"SELECT name FROM `tabSales Invoice` WHERE posting_date > DATE_SUB('2026-11-24', INTERVAL 30 DAY)",
 	"SELECT LAG(grand_total) OVER (ORDER BY posting_date) AS truoc, grand_total FROM `tabSales Invoice`",
+	# soát chéo P3: bí danh Employee bắt mọi từ đứng sau — cột của bảng khác vẫn dùng được
+	"SELECT d.name, d.docstatus FROM `tabDepartment` d JOIN tabEmployee e ON e.department = d.name WHERE e.status = 'Active'",
+	"SELECT e.name FROM tabEmployee e WHERE e.status = 'Active' ORDER BY e.name LIMIT 5 OFFSET 0",
 ]
 
 ATTACK = [
@@ -372,6 +375,33 @@ ATTACK = [
 	("ORDER BY mobile_no", "SELECT name FROM `tabUser` ORDER BY mobile_no"), ("reset_password_key", "SELECT reset_password_key FROM tabUser"),
 	("u.last_ip", "SELECT name FROM tabUser u WHERE u.last_ip = '1.2.3.4'"),
 	("tabUser trong truy vấn con", "SELECT si.name FROM `tabSales Invoice` si WHERE si.owner IN (SELECT name FROM tabUser WHERE phone = '1')"),
+	# ── soát chéo P3: bí danh Employee / User là từ khoá không cấm của MariaDB (END, FULL…) + CTE cùng tên
+	("CTE `end` + bí danh end", "WITH `end` AS (SELECT 1 AS x) SELECT end.bank_ac_no FROM tabEmployee end"),
+	("CTE `end` + AS end", "WITH `end` AS (SELECT 1 AS x) SELECT `end`.bank_ac_no FROM tabEmployee AS end"),
+	("CTE full + bí danh full", "WITH full AS (SELECT 1 AS x) SELECT full.bank_ac_no FROM tabEmployee full"),
+	("CTE offset + bí danh offset", "WITH offset AS (SELECT 1 AS x) SELECT offset.bank_ac_no FROM tabEmployee offset"),
+	("CTE window + bí danh window", "WITH window AS (SELECT 1 AS x) SELECT window.bank_ac_no FROM tabEmployee window"),
+	("CTE + (tabEmployee) e", "WITH e AS (SELECT 1 AS x) SELECT e.bank_ac_no FROM (tabEmployee) e"),
+	("CTE + bí danh \"e\"", "WITH e AS (SELECT 1 AS x) SELECT e.bank_ac_no FROM tabEmployee \"e\""),
+	("CTE outer + tabUser outer", "WITH outer AS (SELECT 1 AS x) SELECT outer.api_key FROM tabUser AS outer"),
+	("bảng con + bí danh end trùng", "SELECT end.api_key FROM (SELECT 1 AS k) end, tabUser AS end"),
+	("FOR SYSTEM_TIME với Employee", "SELECT e.bank_ac_no FROM tabEmployee FOR SYSTEM_TIME ALL e"),
+	# ── soát chéo P3: bảng chép lại dữ liệu bảng khác (diff / ảnh chụp / log / khoá)
+	("tabVersion (diff Employee)", "SELECT ref_doctype, data FROM tabVersion WHERE ref_doctype = 'Employee'"),
+	("`tabDeleted Document`", "SELECT data FROM `tabDeleted Document` WHERE deleted_doctype = 'Salary Slip'"),
+	("`tabWebhook Header`", "SELECT `key`, value FROM `tabWebhook Header`"), ("`tabWebhook`", "SELECT * FROM `tabWebhook`"),
+	("`tabWebhook Data`", "SELECT * FROM `tabWebhook Data`"),
+	("`tabBank Account`", "SELECT party, bank_account_no FROM `tabBank Account` WHERE party_type = 'Employee'"),
+	("tabComment", "SELECT content FROM tabComment"), ("tabCommunication", "SELECT content FROM tabCommunication"),
+	("`tabCommunication Link`", "SELECT * FROM `tabCommunication Link`"), ("`tabActivity Log`", "SELECT * FROM `tabActivity Log`"),
+	("`tabAccess Log`", "SELECT * FROM `tabAccess Log`"), ("`tabData Import`", "SELECT * FROM `tabData Import`"),
+	("`tabData Import Log`", "SELECT * FROM `tabData Import Log`"), ("`tabPrepared Report`", "SELECT * FROM `tabPrepared Report`"),
+	("`tabSubmission Queue`", "SELECT * FROM `tabSubmission Queue`"), ("`tabScheduled Job Log`", "SELECT * FROM `tabScheduled Job Log`"),
+	("`tabNotification Log`", "SELECT * FROM `tabNotification Log`"),
+	# ── soát chéo P3: thoát lớp bọc bằng ')' thừa; số dính từ khoá (MariaDB tách 1e0 + PROCEDURE)
+	("')' thừa thoát lớp bọc", "SELECT 1) AS a JOIN (SELECT name FROM tabCustomer"), ("'(' thừa", "SELECT (1"),
+	("1e0procedure", "SELECT name FROM tabCustomer WHERE 1=1e0procedure analyse()"),
+	("1.5union", "SELECT 1 FROM tabCustomer WHERE 1=1.5union SELECT 2"),
 ]
 
 print(f"3. Bộ câu hợp lệ ({len(VALID)})")
@@ -423,7 +453,8 @@ c("wrap: tham số giờ / dòng", sqlguard.wrap("SELECT 1;", limit=5, seconds=3
 for dt, ok in (("Sales Invoice", True), ("Employee", True), ("User", True), ("Customer", True), ("Sessions", False),
 		("Salary Slip", False), ("Payroll Entry", False), ("SalaryDay", False), ("SX Phieu Luong Ngay", False),
 		("Employee Education", False), ("NS Giay To", False), ("OAuth Client", False), ("Error Log", False),
-		("BC Share Link", False), ("", False), (None, False)):
+		("BC Share Link", False), ("Version", False), ("Deleted Document", False), ("Webhook Header", False),
+		("Bank Account", False), ("Communication", False), ("", False), (None, False)):
 	c(f"doctype_allowed({dt!r}) = {ok}", sqlguard.doctype_allowed(dt) is ok)
 U = "GRANT USAGE ON *.* TO `bc_ai_ro`@`localhost` IDENTIFIED BY PASSWORD '*ABC'"
 for lines, ok, mo_ta in (

@@ -21,14 +21,15 @@
 ```
 người dùng gõ câu hỏi ở #/hoi-dap
  → bc.api.ai.ask(question, history)        _guard("tro-ly"); kiểm bật / khoá / giới hạn / trần chi
- → enqueue bc.ai.qa.run (queue "default", timeout 300)      trả {"id", "status": "cho"}
+ → enqueue bc.ai.qa.run(qid, user) (queue "default", timeout 300)   trả {"id", "status": "cho"}
+     (câu hỏi + lịch sử nằm trong cache, job đọc rồi xoá — không nằm trong tham số job: RQ giữ tham số sau khi xong)
      job chạy DƯỚI CHÍNH NGƯỜI HỎI (frappe.set_user)
      1 dựng đề bài: luật trả lời + bối cảnh công ty + ngày; câu hỏi và lịch sử đã che tên
      2 vòng lặp ≤ 7 lượt gọi Claude, ≤ 6 bước tra cứu:
           mô hình xin tra (tool_use) → máy chủ kiểm tham số → gọi bc.api.* / SELECT → cắt, che tên → trả kết quả
      3 đối chiếu số trong câu trả lời với mọi kết quả tra cứu của lượt này
      4 đổi mã giả về tên; ghi cache 30 phút; ghi BC AI Run (hoi-dap)
- → màn hình hỏi lại bc.api.ai.get_answer(id) mỗi 2 giây cho tới khi xong (tối đa 150 giây)
+ → màn hình hỏi lại bc.api.ai.get_answer(id) mỗi 2 giây cho tới khi xong (tối đa 180 giây = hạn máy chủ + 30 giây)
 ```
 
 Mọi lỗi (hết credit, vượt trần, quá giờ, mô hình từ chối) thành một trạng thái có lời báo ngắn cho người hỏi và
@@ -52,8 +53,8 @@ Danh mục cố định, lấy từ `bc.ai.collect.CALLS` (bỏ khối kỳ trư
 | thang · monthly | `kd.get_monthly` | — |
 | tet · npp_growth / items | `tet.get_npp_growth` / `get_items` | — |
 | tinh-thanh · provinces | `kd.get_provinces` | — |
-| san-pham · top_products | `kd.get_top_products` | `group` (chuỗi ≤ 60 ký tự) |
-| sx-tet · items | `sx.get_items` | `from_date`, `to_date` (`YYYY-MM-DD`) |
+| san-pham · top_products | `kd.get_top_products` | `group`: `all` \| `tet` \| `traditional` |
+| sx-tet · items | `sx.get_items` | `from_date` + `to_date` (`YYYY-MM-DD`, đi cùng nhau, cách nhau ≤ 731 ngày) |
 | sx-tet · daily | `sx.get_daily_summary` | `year`, `month` |
 | ton-kho · overview / trend | `kho_ton.get_overview` / `get_trend` | — |
 | han-dung · overview | `kho_han.get_overview` | — |
@@ -67,7 +68,8 @@ Danh mục cố định, lấy từ `bc.ai.collect.CALLS` (bỏ khối kỳ trư
 | attp · report | `attp.get_report` | `thang` |
 
 - Gọi thẳng hàm Python, **không bao giờ** truyền `refresh` (đọc cache như màn hình). Tham số lạ, sai kiểu, ngoài
-  khoảng → trả lỗi cho mô hình, không gọi.
+  khoảng → trả lỗi cho mô hình, không gọi. Method vẫn từ chối tham số (`frappe.throw`) → lỗi "tham số không hợp lệ" cho
+  mô hình, không Error Log.
 - Vì job chạy dưới phiên người hỏi, `_guard` của từng method tự chặn mảng đang ẩn. Danh sách mảng trong mô tả công
   cụ gửi cho mô hình cũng chỉ gồm mảng người đó đang thấy.
 - Kết quả: cắt danh sách dài (30 phần tử đầu, ghi số bị cắt) và ≤ 40.000 ký tự JSON; che tên khách / NCC; rồi mới
@@ -93,14 +95,20 @@ sách cấm dưới đây → từ chối; `Employee` / `User` chỉ trả các 
 4. Bảng cấm (không phân biệt hoa thường, có hay không dấu `` ` ``): `__Auth`, `__global_search`, `tabSessions`,
    `tabOAuth%`, `tabToken Cache`, `tabUser Social Login`, `tabEmail Account`, `tabSingles`, `tabBC Share Link`,
    `tabError Log`, mọi bảng lương (`tabSalary%`, `tabPayroll%`, `tabAdditional Salary`, bảng lương của app `ns` /
-   `ketoan` — liệt kê đích danh trong code), các bảng con của `tabEmployee`.
+   `ketoan` — liệt kê đích danh trong code), các bảng con của `tabEmployee`, và **mọi bảng chép lại dữ liệu của bảng
+   khác** (ảnh chụp / diff / nội dung tự do / khoá): `tabVersion`, `tabDeleted Document`, `tabComment`,
+   `tabCommunication%`, `tabActivity Log`, `tabAccess Log`, `tabData Import%`, `tabPrepared Report`, `tabSubmission
+   Queue`, `tabScheduled Job Log`, `tabNotification Log`, `tabWebhook%`, `tabBank Account`.
 5. `tabEmployee` và `tabUser`: chỉ được dùng cột trong danh sách cho phép (Employee: mã, tên, phòng ban, chức
    danh, chi nhánh, trạng thái, ngày vào / nghỉ, công ty, loại hợp đồng; User: `name`, `enabled`, `user_type`,
    `creation`, `last_login`, `last_active`). Câu có một trong hai bảng này mà dùng `*` hoặc nhắc tới cột khác của
-   bảng đó → từ chối.
+   bảng đó → từ chối. Từ đứng ngay sau hai bảng này (bỏ `AS`) luôn coi là bí danh của chúng, kể cả từ khoá MariaDB
+   không cấm (`END`, `FULL`…) — CTE / bảng con trùng tên bí danh không mở được cột cấm. Ngoặc phải cân; số dính liền
+   chữ (`1e0union`) bị chặn.
 6. Chạy: `SET STATEMENT max_statement_time=10 FOR SELECT * FROM (<câu đã soát>) AS _t LIMIT 200`, trên kết nối
-   chỉ đọc riêng (đóng khi xong câu hỏi). Kết quả ≤ 200 dòng, ô chuỗi cắt 200 ký tự, tổng ≤ 40.000 ký tự.
-7. Trước khi gửi mô hình: che tên khách / NCC trong mọi ô chuỗi; cột chứa người (`owner`, `modified_by`, cột có
+   chỉ đọc riêng (đóng khi xong câu hỏi). Kết quả ≤ 200 dòng, ô chuỗi cắt 200 ký tự (SAU khi che tên — luật 7), tổng
+   ≤ 40.000 ký tự.
+7. Trước khi gửi mô hình: che tên khách / NCC trong mọi ô chuỗi (không phân biệt hoa thường, rồi mới cắt ô); cột chứa người (`owner`, `modified_by`, cột có
    `user`, `employee_name`, `full_name` trong tên) được thay bằng mã `NV#01…` và đổi lại khi hiển thị cho quản trị.
 
 Soát nhầm một câu hợp lệ thì mô hình nhận lời từ chối và viết lại câu khác; soát sót mới là lỗi — bộ soát nghiêng
@@ -122,13 +130,19 @@ về phía chặn. Lớp chặn thật là tài khoản chỉ đọc; `sqlguard`
 
 Sau khi có câu trả lời (còn mã giả):
 
-1. Tách mọi con số trong lời: số có dấu chấm / phẩy kiểu Việt, kèm đơn vị nếu có (tỷ, triệu, nghìn, %, đ).
-   Không tính là con số cần kiểm: năm `20xx`, ngày đủ năm, mã (`KH#0007`, mã chứng từ), số thứ tự đầu dòng.
+1. Tách mọi con số trong lời: số có dấu chấm / phẩy kiểu Việt, kèm đơn vị nếu có (tỷ, triệu, nghìn, %, đ; viết tắt
+   / dính liền "tr", "k", "47tr", "2tỷ5" = 2,5 tỷ). Khoảng "1–30 triệu", "từ 9 đến 30 triệu": đầu dưới dùng chung đơn
+   vị đầu trên. Không tính là con số cần kiểm: năm `20xx`, tháng / năm, giờ, mã (`KH#0007`, mã chứng từ), số thứ tự
+   đầu dòng. Số dính chữ không đọc được ("10A1") luôn chưa kiểm. **Ngày** ("5/11", "5/11/2026") là con số cần kiểm:
+   đã kiểm khi ngày đó (cùng năm nếu có viết năm) có trong kết quả tra cứu (chuỗi ISO) hoặc là ngày của đề bài hệ thống
+   (hôm nay, mốc năm tài chính).
 2. Mỗi con số đổi thành một khoảng giá trị theo độ chính xác nó được viết: "1,6 tỷ" → [1,55 tỷ; 1,65 tỷ);
    "251 triệu" → [250,5 triệu; 251,5 triệu); "35,2%" → [35,15; 35,25) (và dạng tỷ số 0,3515–0,3525);
    "1.250.000 đ" → đúng 1.250.000; số trần "62" → [61,5; 62,5).
 3. Con số **đã kiểm** khi có ít nhất một giá trị số trong kết quả tra cứu của lượt này (bản mô hình đã thấy) rơi
-   vào khoảng đó. Còn lại là **chưa kiểm**.
+   vào khoảng đó. Số "%" chỉ so với giá trị tỷ lệ (khoá có `pct` / `ty_le` / `rate` / `growth`…, hoặc dòng có
+   `don_vi` = "%") ở thang phần trăm, và mọi giá trị ở thang tỷ số 0–1 — không với số đếm / số ngày. Còn lại là
+   **chưa kiểm**.
 4. Lời trả về màn hình là dãy đoạn `{"t": chữ, "u": true | false}`; đoạn `u = true` là con số chưa kiểm. Mã giả
    đổi về tên trên từng đoạn sau khi đã chia.
 
@@ -153,10 +167,13 @@ tra — kiểm lại ở màn gốc trước khi dùng." Bước này không s�
 ## 6. Giới hạn và chi phí
 
 - `ai_qa_per_day` (mặc định 20) câu / ngày / người, đếm theo dòng `BC AI Run` loại `hoi-dap` của người đó trong
-  ngày; 200 câu / ngày toàn site (hằng số). Mỗi người một câu tại một thời điểm.
+  ngày; 200 câu / ngày toàn site (hằng số). Mỗi người một câu tại một thời điểm. Khoá "đang hỏi" lấy nguyên tử
+  (Redis `SET NX`) trước khi đếm; đếm + ghi dòng Run nằm trong khoá `GET_LOCK` của MariaDB — yêu cầu song song không
+  lọt qua giới hạn.
 - Câu hỏi ≤ 500 ký tự. ≤ 6 bước tra cứu và ≤ 7 lượt gọi mô hình / câu; hết lượt tra thì mô hình phải trả lời bằng
   số đã có. Mỗi lượt gọi ≤ 6.000 token đầu ra (gồm cả phần suy nghĩ của mô hình — model 5.5 luôn suy nghĩ và phần đó
-  tính vào giới hạn; lời trả lời được yêu cầu ngắn). Toàn bộ ≤ 150 giây.
+  tính vào giới hạn; lời trả lời được yêu cầu ngắn). Toàn bộ ≤ 150 giây **tính từ lúc hỏi** (gồm chờ hàng đợi): một
+  lượt gọi chỉ bắt đầu khi trường hợp tệ nhất của nó (kể cả thử lại) còn vừa; công cụ xin sau hạn không chạy.
 - Cùng trần chi theo kỳ của Claude (`ai_cap_claude_usd`): đã chạm trần → từ chối. Lượt gọi hỏi đáp **không** tính
   vào giới hạn 30 lượt gọi / ngày của lượt chạy sáng, và có giới hạn riêng 300 lượt gọi / ngày.
 - Dùng cache đề bài của Claude cho phần lặp lại giữa các lượt gọi trong một câu; chi phí ghi theo token thực tế.

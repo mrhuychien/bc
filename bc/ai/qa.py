@@ -13,8 +13,10 @@ Luật đã chốt ở đây:
   ngắn cố định (KHÔNG câu hỏi, KHÔNG câu trả lời, KHÔNG kết quả công cụ). Dòng tạo lúc hỏi (đếm giới hạn ngay), chốt
   khi job xong; dòng chưa chốt giữ chỗ 7 lượt gọi (bc.ai.budget.qa_calls_today).
 - Giới hạn: ai_qa_per_day (trống / 0 = 20) câu / người / ngày = số dòng Run hoi-dap của người đó (owner) trong ngày;
-  200 câu / ngày toàn site; một câu tại một thời điểm / người (khoá cache có hạn); câu ≤ 500 ký tự; lịch sử ≤ 3 lượt,
-  ≤ 4.000 ký tự; ≤ 7 lượt gọi, ≤ 6 bước tra cứu (mỗi khối tool_use là một bước), ≤ 2.000 token / lượt, ≤ 150 giây;
+  200 câu / ngày toàn site; một câu tại một thời điểm / người (khoá Redis SET NX có hạn, lấy TRƯỚC khi đếm; đếm + ghi
+  dòng Run trong GET_LOCK của MariaDB — yêu cầu song song không lọt); câu ≤ 500 ký tự; lịch sử ≤ 3 lượt, ≤ 4.000 ký tự;
+  ≤ 7 lượt gọi, ≤ 6 bước tra cứu (mỗi khối tool_use là một bước), ≤ MAX_TOKENS / lượt, ≤ 150 giây TÍNH TỪ LÚC HỎI (lượt
+  gọi chỉ bắt đầu khi trường hợp tệ nhất của nó — cả thử lại — còn vừa);
   cùng trần chi Claude theo kỳ; 300 lượt gọi / ngày riêng cho hỏi đáp (không tính vào 30 lượt của lượt chạy sáng).
 - Công cụ xem_mang: danh mục cố định lấy từ bc.ai.collect.CALLS (bỏ khối kỳ trước chỉ quy tắc đọc), tham số kiểm theo
   bảng THAM_SO — lạ / sai kiểu / ngoài khoảng → lỗi cho mô hình, không gọi; KHÔNG BAO GIỜ truyền refresh. Gọi thẳng hàm
@@ -24,7 +26,9 @@ Luật đã chốt ở đây:
 - get_schema / run_select chỉ có khi người hỏi là System Manager, sqlro.available() và kết nối chỉ đọc mở được (SHOW
   GRANTS sạch) — mở MỘT lần đầu câu hỏi, đóng khi xong. Ô chuỗi của kết quả SQL: che tên khách / NCC (mask_text ngặt)
   và tên người; cột người (owner, modified_by, tên cột có user / employee_name / full_name) → NV#01…, đổi lại khi hiển thị.
-- Câu hỏi, lịch sử, bối cảnh công ty: mask_text(tat_ca=True) (mọi tên khách / NCC đã biết, kể cả tên một từ ngắn) và che
+- Job chỉ nhận qid + user; câu hỏi + lịch sử nằm trong cache (bcai:qa:in:<user>:<qid>), job đọc xong xoá ngay.
+- Câu hỏi, lịch sử, bối cảnh công ty: mask_text(tat_ca=True, bo_hoa=True) (mọi tên khách / NCC đã biết, kể cả tên một
+  từ ngắn; NFC, không phân biệt hoa thường, tên ≥ 2 từ cả khi gõ không dấu) và che
   tên người đã biết (tài khoản, nhân viên). Chỉ mã đã thật sự gửi (mask.begin đầu câu hỏi) được đổi lại thành tên.
 - Đối chiếu số (§4) trên lời CÒN mã giả: tách đoạn, rồi mới đổi mã về tên trên TỪNG đoạn.
 - Mọi lỗi → cache status "loi" + lời báo ngắn tiếng Việt + dòng Run; run() không bao giờ ném. Error Log chỉ tên loại lỗi
@@ -36,11 +40,13 @@ Luật đã chốt ở đây:
 from __future__ import annotations
 
 import bisect
+import contextlib
 import datetime
 import importlib
 import json
 import re
 import time
+import unicodedata
 from decimal import Decimal, InvalidOperation
 
 import frappe
@@ -58,8 +64,13 @@ MAX_CALLS = 7                # lượt gọi mô hình / câu
 MAX_STEPS = 6                # bước tra cứu (khối tool_use) / câu
 MAX_TOKENS = 6000            # token / lượt gọi — gồm cả phần SUY NGHĨ (model 5.5 luôn suy nghĩ, tính vào max_tokens);
                              # lời trả lời vẫn được đề bài yêu cầu ngắn. 2.000 làm câu hỏi rộng bị cắt giữa chừng.
-TOTAL_SECONDS = 150          # cả câu hỏi (tính từ lúc job bắt đầu)
-CALL_TIMEOUT = 60            # giây / lượt gọi
+TOTAL_SECONDS = 150          # cả câu hỏi, tính từ lúc HỎI (ask) — gồm cả thời gian chờ trong hàng đợi
+CALL_TIMEOUT = 60            # giây / lượt gọi (chờ đọc của một lần thử)
+MIN_CALL_TIMEOUT = 10        # còn ít hơn mức này cho một lần thử thì dừng "quá giờ", không gọi
+# Một lượt llm.chat tệ nhất: 3 lần thử × (chờ nối 10 s + chờ đọc T) + chờ 5 s + 20 s giữa các lần (bc.ai.llm.anthropic
+# CONNECT_TIMEOUT / RETRY_WAITS — bộ thử soát hai số này khớp). Lượt gọi chỉ bắt đầu khi phần tệ nhất đó còn vừa.
+LAN_THU, CHO_NOI, CHO_THU_LAI = 3, 10, 25
+DU_GIO = 5                   # giây chừa lại cuối câu (ghi cache, dòng Run)
 JOB_TIMEOUT = 300            # giây (hàng đợi default)
 SITE_PER_DAY = 200           # câu / ngày toàn site
 DEFAULT_PER_DAY = 20
@@ -69,6 +80,8 @@ MAX_RESULT_CHARS = 40_000    # JSON một kết quả công cụ
 MAX_CONTEXT = 4000           # ai_context
 ANS_KEY = "bcai:qa:ans"
 LOCK_KEY = "bcai:qa:busy"
+IN_KEY = "bcai:qa:in"          # câu hỏi + lịch sử chờ job đọc (job đọc xong xoá ngay) — KHÔNG nằm trong tham số job
+START_LOCK_WAIT = 5            # giây chờ khoá đếm giới hạn toàn site (GET_LOCK của MariaDB)
 TOOL_CHOICE_NONE = {"type": "none"}
 
 # ─── Lời báo ────────────────────────────────────────────────────────────────
@@ -91,6 +104,7 @@ M_CAT = "Câu trả lời bị cắt giữa chừng (quá dài) — thử hỏi 
 M_LOI = "Lỗi không lường khi trả lời — thử lại sau."
 M_KHONG_THAY = "Không tìm thấy câu trả lời (đã quá 30 phút hoặc không phải câu của bạn) — hỏi lại nhé."
 M_CHET = "Câu hỏi không chạy xong — thử hỏi lại."
+M_DONG = "Trợ lý đang nhận nhiều câu hỏi cùng lúc — thử lại sau ít giây."
 
 # ─── Danh mục công cụ xem_mang (đặc tả §2.1) ────────────────────────────────
 # (mảng, tên) → nhãn ngắn gửi mô hình. Khối không có ở đây (van-chuyen.overview_truoc: kỳ trước, chỉ quy tắc đọc) không
@@ -120,12 +134,14 @@ NHAN = {
 	("attp", "overview"): "an toàn thực phẩm: tổng quan",
 	("attp", "report"): "an toàn thực phẩm: báo cáo tháng",
 }
-# (mảng, tên) → {tham số: kiểu}. kiểu: ("int", min, max) | ("str", dài tối đa) | ("ngay",) YYYY-MM-DD | ("thang",) YYYY-MM.
+# (mảng, tên) → {tham số: kiểu}. kiểu: ("int", min, max) | ("enum", (giá trị…)) | ("ngay",) YYYY-MM-DD | ("thang",)
+# YYYY-MM. Kiểu khớp đúng điều kiện của method (kd.get_top_products chỉ nhận all | tet | traditional; sx._range: đủ
+# hai ngày hoặc không ngày nào ở đây, ≤ 731 ngày) — tham số method từ chối phải bị chặn TRƯỚC khi gọi.
 # Không có trong bảng = không nhận tham số nào. "refresh" không bao giờ được nhận.
 THAM_SO = {
 	("tong-quan", "top_customers"): {"limit": ("int", 1, 20)},
 	("ngay", "daily"): {"year": ("int", 2000, 2100), "month": ("int", 1, 12)},
-	("san-pham", "top_products"): {"group": ("str", 60)},
+	("san-pham", "top_products"): {"group": ("enum", ("all", "tet", "traditional"))},
 	("sx-tet", "items"): {"from_date": ("ngay",), "to_date": ("ngay",)},
 	("sx-tet", "daily"): {"year": ("int", 2000, 2100), "month": ("int", 1, 12)},
 	("kiem-ke", "overview"): {"thang": ("thang",)},
@@ -155,12 +171,15 @@ def _mo_ta_tham_so(spec: dict) -> str:
 	for k, t in spec.items():
 		if t[0] == "int":
 			out.append(f"{k}: số nguyên {t[1]}–{t[2]}")
-		elif t[0] == "str":
-			out.append(f"{k}: chuỗi ≤ {t[1]} ký tự")
+		elif t[0] == "enum":
+			out.append(f"{k}: một trong {' | '.join(t[1])}" + (" (tet = hàng Tết theo mùa; traditional = hàng "
+				"truyền thống; all = mọi nhóm)" if k == "group" else ""))
 		elif t[0] == "ngay":
 			out.append(f"{k}: ngày YYYY-MM-DD")
 		else:
 			out.append(f"{k}: tháng YYYY-MM")
+	if "from_date" in spec and "to_date" in spec:
+		out.append("from_date + to_date phải đi cùng nhau, cách nhau ≤ 731 ngày")
 	return "tham_so tuỳ chọn {" + "; ".join(out) + "}"
 
 
@@ -222,9 +241,9 @@ def check_params(key: tuple, ts) -> tuple:
 				return None, f"{k} phải là số nguyên"
 			if not t[1] <= v <= t[2]:
 				return None, f"{k} phải trong khoảng {t[1]}–{t[2]}"
-		elif t[0] == "str":
-			if not isinstance(v, str) or not v.strip() or len(v) > t[1]:
-				return None, f"{k} phải là chuỗi 1–{t[1]} ký tự"
+		elif t[0] == "enum":
+			if not isinstance(v, str) or v.strip() not in t[1]:
+				return None, f"{k} phải là một trong {' | '.join(t[1])}"
 			v = v.strip()
 		elif t[0] == "ngay":
 			if not isinstance(v, str) or not _NGAY.match(v):
@@ -238,8 +257,15 @@ def check_params(key: tuple, ts) -> tuple:
 			if not m or not 1 <= int(m.group(2)) <= 12:
 				return None, f"{k} phải là tháng YYYY-MM"
 		out[k] = v
-	if "from_date" in out and "to_date" in out and out["from_date"] > out["to_date"]:
-		return None, "from_date phải trước to_date"
+	if "from_date" in spec and "to_date" in spec:
+		if ("from_date" in out) != ("to_date" in out):
+			return None, "from_date và to_date phải đi cùng nhau (hoặc bỏ cả hai = mùa mặc định)"
+		if "from_date" in out:
+			f, t = datetime.date.fromisoformat(out["from_date"]), datetime.date.fromisoformat(out["to_date"])
+			if f > t:
+				return None, "from_date phải trước to_date"
+			if (t - f).days > 731:
+				return None, "khoảng from_date → to_date tối đa 731 ngày"
 	return out, ""
 
 
@@ -331,10 +357,11 @@ def _nguoi() -> Nguoi:
 
 
 def _che(text, mask, nguoi) -> str:
-	"""Chữ tự do gửi mô hình: tên khách / NCC (ngặt — mọi tên đã biết) rồi tên người."""
-	text = cstr(text)
+	"""Chữ tự do gửi mô hình: tên khách / NCC (ngặt — mọi tên đã biết; NFC, không phân biệt hoa / thường, tên ≥ 2 từ cả
+	khi gõ không dấu — redact.Mask.mask_text bo_hoa) rồi tên người (không phân biệt hoa / thường)."""
+	text = unicodedata.normalize("NFC", cstr(text))
 	if mask is not None:
-		text = mask.mask_text(text, tat_ca=True)
+		text = mask.mask_text(text, tat_ca=True, bo_hoa=True)
 	if nguoi is not None:
 		text = nguoi.mask_text(text)
 	return text
@@ -404,9 +431,47 @@ def _khoa_tl(user, qid) -> str:
 	return f"{ANS_KEY}:{user}:{qid}"
 
 
-def _ban(user) -> bool:
-	v = frappe.cache().get_value(_khoa_ban(user))
-	return isinstance(v, dict) and flt(v.get("exp")) > time.time()
+def _khoa_vao(user, qid) -> str:
+	return f"{IN_KEY}:{user}:{qid}"
+
+
+def _giu_ban(user) -> bool:
+	"""Giữ khoá "đang hỏi" của user NGUYÊN TỬ (Redis SET NX EX) → True; người đó đang có câu khác → False. Khoá còn mang
+	hạn trong giá trị: khoá quá hạn mà chưa mất (Redis luôn tự xoá theo EX — đây chỉ phòng xa) thì xoá rồi thử lại MỘT
+	lần (vẫn bằng SET NX, nên hai yêu cầu cùng lúc chỉ một qua)."""
+	c = frappe.cache()
+	k = c.make_key(_khoa_ban(user))
+	for _lan in range(2):
+		if c.set(k, json.dumps({"exp": time.time() + LOCK_TTL}), ex=LOCK_TTL, nx=True):
+			return True
+		v = c.get(k)
+		try:
+			het = flt(json.loads(v.decode() if isinstance(v, bytes) else v).get("exp"))
+		except Exception:
+			het = 0.0
+		if v is not None and het > time.time():
+			return False
+		c.delete(k)
+	return False
+
+
+@contextlib.contextmanager
+def _khoa_dem():
+	"""Khoá MariaDB (GET_LOCK, theo tên CSDL của site) quanh "đếm giới hạn → ghi dòng Run → commit" — hai câu hỏi
+	cùng lúc của hai người không cùng lọt qua giới hạn 200 câu / site và 300 lượt gọi / ngày. Sau khi giữ khoá thì commit
+	để mở giao dịch mới: đếm phải thấy dòng Run người khác vừa ghi (REPEATABLE READ giữ ảnh chụp cũ của giao dịch)."""
+	ten = "LEFT(CONCAT('bcai_qa_', DATABASE()), 64)"   # khoá theo CSDL của site (nhiều site chung một MariaDB)
+	r = frappe.db.sql(f"SELECT GET_LOCK({ten}, %s)", (START_LOCK_WAIT,))
+	if not r or cint(r[0][0]) != 1:
+		frappe.throw(M_DONG)
+	try:
+		frappe.db.commit()
+		yield
+	finally:
+		try:
+			frappe.db.sql(f"SELECT RELEASE_LOCK({ten})")
+		except Exception:
+			pass
 
 
 def _nha(user) -> None:
@@ -465,37 +530,55 @@ def start(question: str, history=None) -> dict:
 		frappe.throw(M_TAT)
 	if not llm.has_key(PROVIDER):
 		frappe.throw(M_KHOA)
-	if _ban(user):
+	# Khoá "đang hỏi" lấy NGUYÊN TỬ trước khi đếm (hai yêu cầu song song của cùng người: chỉ một qua); mọi từ chối sau đó
+	# nhả khoá. Đếm giới hạn + ghi dòng Run nằm trong khoá đếm toàn site.
+	if not _giu_ban(user):
 		frappe.throw(M_BAN)
-	n = per_day()
-	if _dem(user) >= n:
-		frappe.throw(M_HET_LUOT.format(n=n))
-	if _dem() >= SITE_PER_DAY:
-		frappe.throw(M_HET_SITE)
-	ok, why = budget.can_call_qa(PROVIDER, _hom_nay(), need=MAX_CALLS)
-	if not ok:
-		frappe.throw(M_QUA_GOI if why == "qua-so-luot" else M_TRAN)
-	frappe.cache().set_value(_khoa_ban(user), {"exp": time.time() + LOCK_TTL}, expires_in_sec=LOCK_TTL)
 	qid = None
 	try:
-		qid = store.start_run(RUN_TYPE, STEP, provider=PROVIDER, model=model(), now=now_datetime())
-		_ghi(user, qid, {"status": "cho", "t": time.time()})
-		frappe.db.commit()   # dòng Run phải có trước khi job chạy
-		frappe.enqueue("bc.ai.qa.run", queue="default", timeout=JOB_TIMEOUT, qid=qid, user=user, question=q,
-			history=hist)
+		with _khoa_dem():
+			n = per_day()
+			if _dem(user) >= n:
+				frappe.throw(M_HET_LUOT.format(n=n))
+			if _dem() >= SITE_PER_DAY:
+				frappe.throw(M_HET_SITE)
+			ok, why = budget.can_call_qa(PROVIDER, _hom_nay(), need=MAX_CALLS)
+			if not ok:
+				frappe.throw(M_QUA_GOI if why == "qua-so-luot" else M_TRAN)
+			t = time.time()
+			qid = store.start_run(RUN_TYPE, STEP, provider=PROVIDER, model=model(), now=now_datetime())
+			_ghi(user, qid, {"status": "cho", "t": t})
+			# câu hỏi + lịch sử nằm trong cache (job đọc rồi xoá ngay), KHÔNG trong tham số job: RQ giữ tham số 10 phút
+			# sau khi xong / 7 ngày khi hỏng và màn RQ Job của Desk hiện chúng
+			frappe.cache().set_value(_khoa_vao(user, qid), {"q": q, "h": hist, "t": t}, expires_in_sec=LOCK_TTL)
+			frappe.db.commit()   # dòng Run phải có trước khi job chạy
+		frappe.enqueue("bc.ai.qa.run", queue="default", timeout=JOB_TIMEOUT, qid=qid, user=user)
+	except frappe.ValidationError:
+		if qid is None:          # từ chối (giới hạn / khoá đếm) — chưa ghi gì
+			_nha(user)
+			raise
+		_xep_hong(user, qid, None)
 	except Exception as e:
-		from bc.ai.pipeline import _ghi_loi
-		_ghi_loi("bc.ai hỏi đáp: xếp hàng", e)
-		_nha(user)
-		if qid:
-			try:
-				store.finish_run(qid, status="loi", now=now_datetime(), error="không xếp được hàng đợi")
-				_ghi(user, qid, {"status": "loi", "message": M_XEP})
-				frappe.db.commit()
-			except Exception:
-				pass
-		frappe.throw(M_XEP)
+		_xep_hong(user, qid, e)
 	return {"id": qid, "status": "cho"}
+
+
+def _xep_hong(user, qid, e) -> None:
+	"""Không xếp được câu hỏi vào hàng đợi: Error Log (chỉ tên loại), nhả khoá, chốt dòng Run, xoá câu hỏi khỏi cache."""
+	from bc.ai import store
+	from bc.ai.pipeline import _ghi_loi
+	if e is not None:
+		_ghi_loi("bc.ai hỏi đáp: xếp hàng", e)
+	_nha(user)
+	if qid:
+		try:
+			frappe.cache().delete_value(_khoa_vao(user, qid))
+			store.finish_run(qid, status="loi", now=now_datetime(), error="không xếp được hàng đợi")
+			_ghi(user, qid, {"status": "loi", "message": M_XEP})
+			frappe.db.commit()
+		except Exception:
+			pass
+	frappe.throw(M_XEP)
 
 
 def answer(qid) -> dict:
@@ -553,20 +636,34 @@ def _cot_nguoi(ten) -> bool:
 	return t in ("owner", "modified_by") or "user" in t or "employee_name" in t or "full_name" in t
 
 
+def _cat_o(v: str):
+	"""Ô chuỗi ĐÃ CHE → ≤ sqlro.CELL ký tự (+ "…"); không cắt đôi một mã giả ("KH#00…" bỏ cả mã dở). → (chuỗi, đã cắt)."""
+	from bc.ai import sqlro
+	if len(v) <= sqlro.CELL:
+		return v, False
+	dau = v[:sqlro.CELL - 1]
+	if re.match(r"[\w#]", v[sqlro.CELL - 1]):
+		dau = re.sub(r"(?<![\w#])[A-Za-z]+#\d*$", "", dau)
+	return dau + "…", True
+
+
 def gon_sql(res: dict, mask, nguoi) -> tuple:
-	"""Kết quả sqlro.select → (đối tượng gửi, JSON): cột người → NV#…; ô chuỗi khác: che tên người rồi tên khách / NCC
-	(ngặt); ≤ MAX_RESULT_CHARS ký tự (bỏ dòng cuối, cut = True)."""
+	"""Kết quả sqlro.select (ô chuỗi còn NGUYÊN, chưa cắt) → (đối tượng gửi, JSON): cột người → NV#…; ô chuỗi khác: che
+	tên người rồi tên khách / NCC (ngặt, không phân biệt hoa / thường) RỒI mới cắt ≤ sqlro.CELL ký tự (cắt trước thì tên
+	nằm ở chỗ cắt lọt một nửa); ≤ MAX_RESULT_CHARS ký tự (bỏ dòng cuối, cut = True)."""
 	cols = [cstr(c) for c in (res.get("columns") or [])]
 	nguoi_cot = [_cot_nguoi(c) for c in cols]
-	rows = []
+	rows, cut = [], bool(res.get("cut"))
 	for r in res.get("rows") or []:
 		hang = []
 		for i, v in enumerate(r):
 			if isinstance(v, str):
 				v = nguoi.code(v) if i < len(nguoi_cot) and nguoi_cot[i] else _che(v, mask, nguoi)
+				v, da_cat = _cat_o(v)
+				cut = cut or da_cat
 			hang.append(v)
 		rows.append(hang)
-	obj = {"columns": cols, "rows": rows, "cut": bool(res.get("cut"))}
+	obj = {"columns": cols, "rows": rows, "cut": cut}
 	text = json.dumps(obj, ensure_ascii=False, default=str)
 	while len(text) > MAX_RESULT_CHARS and obj["rows"]:
 		obj["rows"].pop()
@@ -576,20 +673,37 @@ def gon_sql(res: dict, mask, nguoi) -> tuple:
 
 
 # ─── Đối chiếu số (đặc tả §4) ───────────────────────────────────────────────
-# "Từ" chứa chữ số: chữ / số / "#" nối nhau bởi - . / : (và "," chỉ khi theo sau là chữ số — "1,6" là một số, "5, 6"
-# là hai).
-_TU = re.compile(r"[\w#]+(?:(?:[\-./:]|,(?=\d))[\w#]+)*")
-_DON_VI = re.compile(r"\s?(tỷ|tỉ|triệu|nghìn|ngàn|phần trăm|%|đồng|vnđ|vnd|đ)(?!\w)", re.I)
-_HE_SO = {"tỷ": 10 ** 9, "tỉ": 10 ** 9, "triệu": 10 ** 6, "nghìn": 10 ** 3, "ngàn": 10 ** 3}
+# "Từ" chứa chữ số: chữ / số / "#" nối nhau bởi - . / : – — ~ (và "," chỉ khi theo sau là chữ số — "1,6" là một số,
+# "5, 6" là hai). "1–30" (gạch ngang dài, dấu khoảng thường gặp) là MỘT từ ghép: các phần dùng chung đơn vị.
+_TU = re.compile(r"[\w#]+(?:(?:[\-./:–—~]|,(?=\d))[\w#]+)*")
+_DV = r"tỷ|tỉ|triệu|tr|nghìn|ngàn|k|phần trăm|%|đồng|vnđ|vnd|đ"
+_DON_VI = re.compile(r"\s?(" + _DV + r")(?!\w)", re.I)
+_HE_SO = {"tỷ": 10 ** 9, "tỉ": 10 ** 9, "ty": 10 ** 9, "ti": 10 ** 9, "triệu": 10 ** 6, "tr": 10 ** 6, "nghìn": 10 ** 3,
+	"ngàn": 10 ** 3, "ng": 10 ** 3, "k": 10 ** 3}
+# Số dính liền đơn vị: "500.000đ", "1,6tỷ", "47tr", "999k"; "2tỷ5" / "2tr5" / "2k5" = 2,5 đơn vị đó.
+_DINH = re.compile(r"(\d[\d.,]*)(tỷ|tỉ|ty|ti|triệu|tr|nghìn|ngàn|ng|k|đồng|vnđ|vnd|đ)", re.I)
+_DINH_LE = re.compile(r"(\d+)(tỷ|tỉ|ty|ti|triệu|tr|k)(\d{1,3})", re.I)
+_DUOI_LA = re.compile(r"(\d[\d.,]*?)([^\W\d_]+)")       # số + đuôi chữ khác ("500kg", "12h"): kiểm như số trần
+# Số không đơn vị mà ngay sau là "– / — / - / ~ / đến / tới" + số CÓ đơn vị ("từ 9 đến 30 triệu"): mượn đơn vị đó.
+_MUON_DV = re.compile(r"\s*(?:–|—|-|~|đến|tới|den|toi)\s*\d[\d.,]*\s?(" + _DV + r")(?!\w)", re.I)
 _SO_VN = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")       # 1.250.000 / 1.250,5
 _SO_EN = re.compile(r"^\d{1,3}(?:,\d{3}){2,}(?:\.\d+)?$")     # 1,250,000
 _SO_PHAY = re.compile(r"^\d+,\d+$")                           # 35,2
 _SO_CHAM = re.compile(r"^\d+\.\d+$")                          # 35.2 (không phải nhóm nghìn)
 _SO_NGUYEN = re.compile(r"^\d+$")
-_NGAY_DU = re.compile(r"^(?:\d{1,2}[/.\-]\d{1,2}[/.\-](?:19|20)\d\d|(?:19|20)\d\d-\d{1,2}-\d{1,2}|\d{1,2}/(?:19|20)\d\d)$")
+_NGAY_DMY = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-]((?:19|20)\d\d)$")
+_NGAY_YMD = re.compile(r"^((?:19|20)\d\d)-(\d{1,2})-(\d{1,2})$")
+_NGAY_DM = re.compile(r"^(\d{1,2})/(\d{1,2})$")
+_THANG_NAM = re.compile(r"^\d{1,2}/(?:19|20)\d\d$")
 _NAM = re.compile(r"^20\d\d$")
 _CAP_NAM = re.compile(r"^20\d\d[/\-](?:20)?\d\d$")            # 2026/27, 2025-2026
-_GIO = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
+_GIO = re.compile(r"^(?:\d{1,2}:\d{2}(?::\d{2})?|\d{1,2}h\d{0,2})$", re.I)   # 8:30, 8h30
+_ISO = re.compile(r"(?<!\d)((?:19|20)\d\d)-(\d{2})-(\d{2})(?!\d)")
+_DMY_CHU = re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})/((?:19|20)\d\d)(?![\d/])")
+# Lá số mang tỷ lệ ở thang phần trăm: khoá (hoặc khoá cha) có các chữ này, hoặc dict anh em có don_vi = "%". Số "%" trong
+# lời chỉ so với các lá này (và thang tỷ số 0–1 của mọi lá) — không với số đếm / số ngày / số tháng.
+_KHOA_TY_LE = re.compile(r"pct|percent|phan_tram|ty_le|ty_trong|(?<!no_)rate|growth|tang_truong|tai_tb", re.I)
+_KHONG_KIEM = (Decimal(0), Decimal(0))     # khoảng rỗng: con số luôn "chưa kiểm" (nghiêng về phía không xác nhận)
 
 
 def _doc_so(s: str):
@@ -621,27 +735,47 @@ def _gia_tri(nguyen: str, le: str):
 
 def _gia_tri_ket_qua(results) -> list:
 	"""Mọi giá trị số (trị tuyệt đối, đã sắp) trong các kết quả tra cứu: số JSON (không bool) và chuỗi chỉ gồm số."""
-	out = []
+	return _tap(results)[0]
 
-	def di(v):
+
+def _tap(results) -> tuple:
+	"""Kết quả tra cứu → (mọi lá số, lá số tỷ lệ (_KHOA_TY_LE / don_vi "%"), {(ngày, tháng, năm)}) — hai danh sách đã
+	sắp, trị tuyệt đối. Ngày lấy từ chuỗi ISO (YYYY-MM-DD, cả tiền tố datetime) và d/m/yyyy nằm trong chuỗi."""
+	tat_ca, ty_le, ngay = [], [], set()
+
+	def so(v, tl):
+		f = abs(float(v))
+		if f == f and f != float("inf"):
+			tat_ca.append(f)
+			if tl:
+				ty_le.append(f)
+
+	def di(v, tl):
 		if isinstance(v, dict):
-			for x in v.values():
-				di(x)
+			tl_dict = tl or cstr(v.get("don_vi")).strip() == "%"
+			for k, x in v.items():
+				di(x, tl_dict or bool(_KHOA_TY_LE.search(cstr(k))))
 		elif isinstance(v, (list, tuple)):
 			for x in v:
-				di(x)
+				di(x, tl)
 		elif isinstance(v, bool):
 			return
 		elif isinstance(v, (int, float, Decimal)):
-			f = abs(float(v))
-			if f == f and f != float("inf"):
-				out.append(f)
-		elif isinstance(v, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", v.strip()):
-			out.append(abs(float(v)))
+			so(v, tl)
+		elif isinstance(v, str):
+			s = v.strip()
+			if re.fullmatch(r"-?\d+(?:\.\d+)?", s):
+				so(s, tl)
+				return
+			for m in _ISO.finditer(s):
+				ngay.add((int(m.group(3)), int(m.group(2)), int(m.group(1))))
+			for m in _DMY_CHU.finditer(s):
+				ngay.add((int(m.group(1)), int(m.group(2)), int(m.group(3))))
 
-	di(results)
-	out.sort()
-	return out
+	di(results, False)
+	tat_ca.sort()
+	ty_le.sort()
+	return tat_ca, ty_le, ngay
 
 
 def _co_trong(vals: list, lo: Decimal, hi: Decimal) -> bool:
@@ -651,47 +785,95 @@ def _co_trong(vals: list, lo: Decimal, hi: Decimal) -> bool:
 	return i < len(vals) and vals[i] < b
 
 
-def _kiem(x: Decimal, h: Decimal, don_vi, vals: list) -> bool:
-	"""Con số x (nửa đơn vị h, theo cách viết) kèm đơn vị → có giá trị tra cứu nào rơi vào khoảng của nó."""
+def _kiem(x, h, don_vi, tap: tuple) -> bool:
+	"""Một phần của con số (theo cách viết) → có giá trị tra cứu nào rơi vào khoảng của nó. Phần ngày ("ngay", d, m, y)
+	→ có ngày đó trong kết quả (năm None: cùng ngày / tháng, năm bất kỳ)."""
+	vals, ty_le, ngay = tap
+	if x == "ngay":
+		d, m, y = h
+		return any(nd == d and nm == m and (y is None or ny == y) for nd, nm, ny in ngay)
+	if h == 0:
+		return False
 	dv = (don_vi or "").lower()
 	if dv in ("%", "phần trăm"):
-		return _co_trong(vals, x - h, x + h) or _co_trong(vals, (x - h) / 100, (x + h) / 100)
+		return _co_trong(ty_le, x - h, x + h) or _co_trong(vals, (x - h) / 100, (x + h) / 100)
 	k = Decimal(_HE_SO.get(dv, 1))
 	return _co_trong(vals, (x - h) * k, (x + h) * k)
 
 
+def _ngay(p: str):
+	"""Một phần của từ → ("ngay", (d, m, y | None)) nếu là ngày; "bo" nếu là tháng / năm (không tính); None nếu không."""
+	for rx, thu_tu in ((_NGAY_DMY, (1, 2, 3)), (_NGAY_YMD, (3, 2, 1))):
+		m = rx.match(p)
+		if m:
+			d, mo, y = (int(m.group(i)) for i in thu_tu)
+			return ("ngay", (d, mo, y)) if 1 <= d <= 31 and 1 <= mo <= 12 else ("ngay", (0, 0, 0))
+	if _THANG_NAM.match(p):
+		return "bo"
+	m = _NGAY_DM.match(p)
+	if m and 1 <= int(m.group(1)) <= 31 and 1 <= int(m.group(2)) <= 12:
+		return ("ngay", (int(m.group(1)), int(m.group(2)), None))
+	return None
+
+
+def _phan(p: str, don_vi) -> list:
+	"""Một phần (đã tách theo dấu khoảng – — ~) → các mục cần kiểm [(x, h) | ("ngay", (d, m, y))]; [] = không tính."""
+	ng = _ngay(p)
+	if ng == "bo":
+		return []
+	if ng is not None:
+		return [ng]
+	if _NAM.match(p) and not don_vi:
+		return []
+	so = _doc_so(p)
+	if so is not None:
+		return [so]
+	# dạng ghép không đọc được thành một số (khoảng "10-15", tỷ số "3/50", "1.2.3"): kiểm TỪNG phần
+	ds = [_doc_so(x) for x in re.split(r"[\-./:,]", p) if x]
+	return ds if ds and all(d is not None for d in ds) else [_KHONG_KIEM]
+
+
 def _so_trong(text: str) -> list:
-	"""Các con số CẦN KIỂM trong lời → [(đầu, cuối, [(giá trị, nửa đơn vị)], đơn vị)]. Bỏ: mã (từ có chữ cái / "#"),
-	năm 20xx, ngày đủ năm, tháng/năm, giờ, số thứ tự đầu dòng ("1. ", "2) ")."""
+	"""Các con số CẦN KIỂM trong lời → [(đầu, cuối, [mục], đơn vị)]; mục là (giá trị, nửa đơn vị) hoặc ("ngay", (d, m,
+	y)). Bỏ: mã (từ mở đầu bằng chữ / có "#"), năm 20xx, tháng / năm, cặp năm, giờ, số thứ tự đầu dòng ("1. ", "2) ").
+	Từ mở đầu bằng chữ số mà dính chữ: đơn vị viết liền (tỷ, tr, k…) → kiểm theo đơn vị; "2tỷ5" → 2,5 tỷ; đuôi chữ khác
+	("500kg") → kiểm như số trần; còn lại (chữ xen giữa số: "10A1") → luôn chưa kiểm."""
 	out = []
 	for m in _TU.finditer(text):
 		tu, a, b = m.group(0), m.start(), m.end()
 		dv = _DON_VI.match(text, b)
 		don_vi = dv.group(1) if dv else None
-		if "#" in tu:
-			continue
+		cuoi = dv.end() if dv else b
+		if "#" in tu or not tu[0].isdigit() and any(ch.isalpha() for ch in tu):
+			continue      # mã: "KH#0007", "T10", "KK-2026-002", "Q3/2026"
 		if any(ch.isalpha() for ch in tu):
-			# số dính đơn vị viết liền ("500.000đ", "1,6tỷ") vẫn là số; còn lại là mã ("T10", "KK-2026-002", "Q3/2026")
-			m2 = re.fullmatch(r"([\d.,]+)(tỷ|tỉ|triệu|nghìn|ngàn|đồng|vnđ|vnd|đ)", tu, re.I)
-			if not m2:
+			if _GIO.match(tu):
 				continue
-			tu, don_vi = m2.group(1).rstrip(".,"), m2.group(2)
-		if _GIO.match(tu) or _NGAY_DU.match(tu) or _CAP_NAM.match(tu):
+			m3 = _DINH_LE.fullmatch(tu)
+			if m3:
+				out.append((a, b, [_gia_tri(m3.group(1), m3.group(3))], m3.group(2)))
+				continue
+			m2 = _DINH.fullmatch(tu)
+			m4 = None if m2 else _DUOI_LA.fullmatch(tu)
+			if m2:
+				tu, don_vi, cuoi = m2.group(1).rstrip(".,"), m2.group(2), b
+			elif m4 and not _NAM.match(m4.group(1).rstrip(".,")):
+				tu, don_vi, cuoi = m4.group(1).rstrip(".,"), None, b
+			else:
+				out.append((a, b, [_KHONG_KIEM], None))
+				continue
+		if _GIO.match(tu) or _CAP_NAM.match(tu):
 			continue
-		if _NAM.match(tu) and not don_vi:
-			continue
-		if not don_vi and len(tu) <= 2 and tu.isdigit() and not text[text.rfind("\n", 0, a) + 1:a].strip() \
-				and re.match(r"[.)][ \t]", text[b:b + 2]):
-			continue   # số thứ tự đầu dòng ("1. ", "2) ")
-		so = _doc_so(tu)
-		if so is not None:
-			out.append((a, dv.end() if dv else b, [so], don_vi))
-			continue
-		# dạng ghép không đọc được thành một số (khoảng "10-15", tỷ số "3/5", "1.2.3"): kiểm TỪNG phần
-		phan = [p for p in re.split(r"[\-./:,]", tu) if p]
-		ds = [_doc_so(p) for p in phan]
-		if ds and all(d is not None for d in ds):
-			out.append((a, dv.end() if dv else b, ds, don_vi))
+		if not don_vi:
+			if len(tu) <= 2 and tu.isdigit() and not text[text.rfind("\n", 0, a) + 1:a].strip() \
+					and re.match(r"[.)][ \t]", text[b:b + 2]):
+				continue   # số thứ tự đầu dòng ("1. ", "2) ")
+			mv = _MUON_DV.match(text, b)
+			if mv:
+				don_vi = mv.group(1)    # "từ 9 đến 30 triệu": 9 mượn "triệu" (đoạn đánh dấu vẫn chỉ là "9")
+		muc = [x for p in re.split(r"[–—~]", tu) if p for x in _phan(p, don_vi)]
+		if muc:
+			out.append((a, cuoi, muc, don_vi))
 	return out
 
 
@@ -699,10 +881,10 @@ def verify(text: str, results: list) -> list:
 	"""Lời (CÒN mã giả) + mọi kết quả tra cứu mô hình đã thấy → [{"t": chữ, "u": bool}]; u True = con số chưa kiểm
 	được. Không sửa, không xoá chữ nào: ghép các đoạn lại đúng bằng lời ban đầu."""
 	text = cstr(text)
-	vals = _gia_tri_ket_qua(results)
+	tap = _tap(results)
 	segs, i = [], 0
 	for a, b, so, don_vi in _so_trong(text):
-		if all(_kiem(x, h, don_vi, vals) for x, h in so):
+		if all(_kiem(x, h, don_vi, tap) for x, h in so):
 			continue
 		if a > i:
 			segs.append({"t": text[i:a], "u": False})
@@ -745,6 +927,7 @@ class _Cau:
 		self.sources: list = []
 		self.buoc: list = []        # các bước đã chạy (cho màn hình)
 		self.ro = None              # sqlro.ReadOnly đang mở (quản trị)
+		self.t0 = time.monotonic()  # mốc của hạn TOTAL_SECONDS (lùi về lúc hỏi — _chay)
 
 	def ghi_run(self, mdl) -> None:
 		"""Cập nhật token / chi phí / số lượt gọi lên dòng Run sau mỗi lượt gọi (trần chi đếm ngay)."""
@@ -758,18 +941,35 @@ class _Cau:
 		return _cost(self.served or mdl, mdl, int(round(self.cost_in)), self.tout)
 
 
-def run(qid: str, user: str, question: str, history=None) -> None:
-	"""Job hỏi đáp. KHÔNG BAO GIỜ ném: mọi lỗi → cache "loi" + dòng Run đã chốt. Chạy dưới chính người hỏi."""
+def _lay_vao(user, qid):
+	"""Câu hỏi + lịch sử start() để trong cache cho job → {"q", "h", "t"} hoặc None; đọc xong XOÁ ngay."""
+	k = _khoa_vao(user, qid)
+	v = frappe.cache().get_value(k)
+	frappe.cache().delete_value(k)
+	return v if isinstance(v, dict) and isinstance(v.get("q"), str) and v["q"].strip() else None
+
+
+def run(qid: str, user: str, question: str | None = None, history=None) -> None:
+	"""Job hỏi đáp. KHÔNG BAO GIỜ ném: mọi lỗi → cache "loi" + dòng Run đã chốt. Chạy dưới chính người hỏi.
+
+	start() chỉ xếp qid + user; câu hỏi + lịch sử đọc từ cache (_lay_vao — mất / quá hạn → "loi" M_CHET). question /
+	history truyền thẳng chỉ cho nơi gọi trực tiếp (bộ thử)."""
 	from bc.ai.pipeline import _ghi_loi
 	cu = getattr(getattr(frappe, "session", None), "user", None)
 	cau = None
 	mdl = ""
 	try:
 		frappe.set_user(user)
+		t_hoi = None
+		if question is None:
+			vao = _lay_vao(user, qid)
+			if vao is None:
+				raise _Dung("loi", M_CHET, "mất câu hỏi trong hàng đợi")
+			question, history, t_hoi = vao["q"], vao.get("h"), flt(vao.get("t")) or None
 		from bc.api._common import is_admin
 		mdl = model()
 		cau = _Cau(qid, user, is_admin(user))
-		out = _chay(cau, question, history_of(history), mdl)
+		out = _chay(cau, question, history_of(history), mdl, t_hoi)
 		_xong(cau, mdl, out)
 	except _Dung as d:
 		_hong(cau, qid, user, mdl, d.status, d.message, d.error)
@@ -851,11 +1051,32 @@ def _messages(question, hist, mask, nguoi) -> list:
 	return msgs
 
 
-def _chay(cau, question, hist, mdl) -> tuple:
-	"""Vòng tool use → (segments, số đã kiểm, số chưa kiểm). Lỗi có lời → _Dung."""
+def _con_giay(cau) -> float:
+	return TOTAL_SECONDS - (time.monotonic() - cau.t0)
+
+
+def _cho_doc(con: float) -> int:
+	"""Chờ đọc T cho một lượt gọi khi còn `con` giây: lớn nhất sao cho lượt tệ nhất (LAN_THU × (CHO_NOI + T) +
+	CHO_THU_LAI) vẫn xong trước hạn DU_GIO giây; ≤ CALL_TIMEOUT. < MIN_CALL_TIMEOUT → 0 (không gọi nữa)."""
+	t = min(CALL_TIMEOUT, int((con - DU_GIO - CHO_THU_LAI - LAN_THU * CHO_NOI) // LAN_THU))
+	return t if t >= MIN_CALL_TIMEOUT else 0
+
+
+def _moc_ngay(today) -> dict:
+	"""Ngày đề bài hệ thống đưa cho mô hình (hôm nay, năm tài chính, cùng kỳ) — chỉ chuỗi ISO, để đối chiếu NGÀY trong
+	lời (không thêm giá trị số nào vào tập đối chiếu)."""
+	from bc.api._common import fy_range
+	fy = fy_range(today)
+	return {"_moc_ngay": [str(getdate(today))] + [str(fy[k]) for k in ("fy_start", "fy_end", "to_date", "sp_start",
+		"sp_end")]}
+
+
+def _chay(cau, question, hist, mdl, t_hoi=None) -> tuple:
+	"""Vòng tool use → (segments, số đã kiểm, số chưa kiểm). Lỗi có lời → _Dung. Hạn TOTAL_SECONDS tính từ lúc hỏi
+	(t_hoi = time.time() lúc start(); thời gian chờ trong hàng đợi tính theo giây chẵn)."""
 	from bc.ai import budget, llm, redact
 
-	t0 = time.monotonic()
+	cau.t0 = time.monotonic() - (int(max(0.0, time.time() - t_hoi)) if t_hoi else 0)
 	today = _hom_nay()
 	if not enabled():   # quản trị tắt hỏi đáp sau khi câu đã vào hàng đợi → không gọi mô hình
 		raise _Dung("tat", M_TAT, "hỏi đáp đang tắt")
@@ -869,8 +1090,8 @@ def _chay(cau, question, hist, mdl) -> tuple:
 	messages = _messages(question, hist, mask, nguoi)
 	text = None
 	while cau.calls < MAX_CALLS:
-		con = TOTAL_SECONDS - (time.monotonic() - t0)
-		if con < 15:
+		cho = _cho_doc(_con_giay(cau))
+		if not cho:   # lượt gọi tệ nhất (cả thử lại) không còn vừa trong hạn
 			raise _Dung("loi", M_GIO, "quá giờ")
 		ok, why = budget.can_call_qa(PROVIDER, today, need=0)
 		if not ok:
@@ -878,8 +1099,8 @@ def _chay(cau, question, hist, mdl) -> tuple:
 				"quá số lượt gọi hỏi đáp trong ngày" if why == "qua-so-luot" else "đã chi tới trần kỳ này")
 		cuoi = cau.steps >= MAX_STEPS or cau.calls == MAX_CALLS - 1
 		try:
-			res = llm.chat(PROVIDER, mdl, system, messages, tl, max_tokens=MAX_TOKENS,
-				timeout=max(5, min(CALL_TIMEOUT, int((con - 25) / 3))), tool_choice=TOOL_CHOICE_NONE if cuoi else None)
+			res = llm.chat(PROVIDER, mdl, system, messages, tl, max_tokens=MAX_TOKENS, timeout=cho,
+				tool_choice=TOOL_CHOICE_NONE if cuoi else None)
 		except llm.LLMError as e:
 			cau.calls += 1
 			cau.tin += cint(getattr(e, "tokens_in", 0))
@@ -907,7 +1128,7 @@ def _chay(cau, question, hist, mdl) -> tuple:
 		break
 	if not text:
 		raise _Dung("loi", M_KHONG_LOI, "mô hình không trả lời")
-	segs = verify(text, cau.results)
+	segs = verify(text, cau.results + [_moc_ngay(today)])
 	chua = sum(1 for s in segs if s["u"])
 	da_kiem = max(0, _dem_so(text) - chua)
 	out = []
@@ -929,6 +1150,8 @@ def _mot_buoc(cau, b, mang, mask, nguoi) -> dict:
 	tid = cstr(b.get("id"))
 	if cau.steps >= MAX_STEPS:
 		return _loi(tid, f"đã hết {MAX_STEPS} lượt tra cứu — trả lời bằng số đã có")
+	if _con_giay(cau) < DU_GIO:   # hết giờ: không chạy thêm công cụ (vòng lặp dừng "quá giờ" ngay sau)
+		return _loi(tid, "hết thời gian — không tra thêm")
 	cau.steps += 1
 	ten = b.get("name")
 	inp = b.get("input") if isinstance(b.get("input"), dict) else None
@@ -969,6 +1192,10 @@ def _xem_mang(cau, tid, inp, mang, mask) -> dict:
 		frappe.clear_last_message()
 		cau.buoc.append({"tool": "xem_mang", "label": nhan, "ok": False})
 		return _loi(tid, "người hỏi không xem được mảng này — không có số liệu")
+	except frappe.ValidationError:   # method từ chối tham số (frappe.throw): lỗi của lời gọi, không phải màn hỏng
+		frappe.clear_last_message()
+		cau.buoc.append({"tool": "xem_mang", "label": nhan, "ok": False})
+		return _loi(tid, "tham số không hợp lệ cho khối này — xem lại tham_so trong mô tả công cụ")
 	except Exception as e:
 		from bc.ai.pipeline import _ghi_loi
 		frappe.clear_last_message()
@@ -996,13 +1223,20 @@ def _get_schema(cau, tid, inp, mask, nguoi) -> dict:
 	if not sqlguard.doctype_allowed(dt):
 		return _loi(tid, "DocType này không được xem")
 	try:
-		fields = list(frappe.get_meta(dt).fields or [])
+		meta = frappe.get_meta(dt)
+		fields = list(meta.fields or [])
 	except Exception:
 		frappe.clear_last_message()
-		fields = []
+		meta, fields = None, []
 	if not fields:
 		return _loi(tid, "không có DocType này")
-	cho = sqlguard.ALLOWED_COLUMNS.get(f"tab{dt}")
+	if meta is not None and getattr(meta, "name", None) and not sqlguard.doctype_allowed(cstr(meta.name)):
+		return _loi(tid, "DocType này không được xem")
+	# Employee / User: danh sách cột cho phép, so KHÔNG phân biệt hoa thường / dấu (get_meta("employee") vẫn nạp được
+	# Employee qua collation của MariaDB) — tên thật của meta nếu có, rồi tên đã gõ.
+	ten = cstr(getattr(meta, "name", None) or "") or dt
+	cho = next((v for k, v in sqlguard.ALLOWED_COLUMNS.items() if sqlguard._chuan(k) in (sqlguard._chuan(f"tab{ten}"),
+		sqlguard._chuan(f"tab{dt}"))), None)
 	ds = [{"fieldname": f.get("fieldname"), "fieldtype": f.get("fieldtype"), "label": _che(f.get("label") or "", mask, nguoi),
 		"options": _che(f.get("options") or "", mask, nguoi)} for f in fields if f.get("fieldname")
 		and f.get("fieldtype") not in ("Section Break", "Column Break", "Tab Break")
@@ -1022,7 +1256,7 @@ def _run_select(cau, tid, inp, mask, nguoi) -> dict:
 	buoc = {"tool": "run_select", "label": "Truy vấn SQL", "sql": q[:4000], "ok": False}
 	cau.buoc.append(buoc)
 	try:
-		res = cau.ro.select(q)
+		res = cau.ro.select(q, cell=sqlro.RAW_CELL)   # ô còn nguyên (≤ RAW_CELL): che tên trước, cắt sau (gon_sql)
 	except sqlro.SqlRefused as e:
 		return _loi(tid, cstr(getattr(e, "reason", "")) or "câu SQL bị từ chối")
 	obj, text = gon_sql(res, mask, nguoi)

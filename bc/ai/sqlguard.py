@@ -71,10 +71,18 @@ BANG_CAM = frozenset({
 	"tabuser email", "tabintegration request", "tabwebhook request log", "tabemail queue",
 	"tabemail queue recipient", "tabsocial login key", "tabconnected app", "taboauth bearer token",
 	"tabgratuity", "tabretention bonus", "tabincome tax slab", "tabtaxable salary slab",
+	# thêm (soát chéo P3): bảng CHÉP LẠI dữ liệu của bảng khác — ảnh chụp / bản diff / nội dung tự do. Version giữ diff
+	# mọi lần sửa Employee / Salary Slip (số TK, lương), Deleted Document giữ nguyên JSON chứng từ đã xoá (phiếu lương),
+	# Comment / Communication / log giữ chữ tự do và thư, Prepared Report / Submission Queue / Data Import giữ kết quả
+	# hoặc dữ liệu nhập của báo cáo / tác vụ khác; Bank Account giữ số TK nhân viên; Webhook* giữ khoá gọi API.
+	"tabversion", "tabdeleted document", "tabbank account", "tabcomment", "tabactivity log", "tabaccess log",
+	"tabprepared report", "tabsubmission queue", "tabscheduled job log", "tabnotification log", "tabunhandled email",
+	"tabsms log",
 })
 # Tiền tố bảng cấm (chữ thường). "tabemployee " (có dấu cách): mọi bảng con / bảng phụ của Employee (tabEmployee
 # thì được, có danh sách cột riêng).
-TIEN_TO_CAM = ("taboauth", "tabsalary", "tabpayroll", "tabemployee ", "tabsx phieu luong")
+TIEN_TO_CAM = ("taboauth", "tabsalary", "tabpayroll", "tabemployee ", "tabsx phieu luong", "tabwebhook",
+	"tabcommunication", "tabdata import")
 # Chữ lương trong tên bảng tab… (chữ thường): bảng lương / chấm công tự tạo trên site.
 MAU_LUONG = ("salary", "payroll", "luong", "lương", "chamcong", "cham cong", "chấm công")
 
@@ -132,7 +140,9 @@ COT_DA_BIET = {
 	)),
 }
 
-# Từ không thể là bí danh bảng (đứng ngay sau tên bảng).
+# Từ không coi là bí danh của bảng / bảng tạm KHÁC (đứng ngay sau tên bảng) — chỉ dùng để bỏ qua cột "x.cột" của bảng
+# khác (thiếu một bí danh ở đây chỉ làm chặn nhầm). Bí danh của tabEmployee / tabUser KHÔNG lọc qua danh sách này: từ
+# đứng ngay sau hai bảng đó luôn được coi là bí danh (END, FULL… là bí danh hợp lệ của MariaDB — soát chéo P3).
 _KHONG_BI_DANH = frozenset({
 	"where", "join", "inner", "left", "right", "cross", "straight_join", "natural", "full", "outer", "on", "using",
 	"group", "order", "limit", "having", "union", "except", "intersect", "window", "for", "lock", "into",
@@ -258,6 +268,9 @@ def tach(sql: str) -> list:
 				while j < n and sql[j].isascii() and sql[j].isdigit():
 					j += 1
 			if j < n and _ky_tu_ten(sql[j]):  # 0x1F, 0b01, 1abc: một từ (số hex / tên bắt đầu bằng chữ số)
+				if any(ch in ".eE" for ch in sql[i:j]) and sql[i:i + 2].lower() not in ("0x", "0b"):
+					# 1e0union / 1.5from: MariaDB tách thành số + từ khoá — bộ tách từ không đoán, chặn
+					raise _Loi("số dính liền chữ (viết cách số và từ)")
 				while j < n and _ky_tu_ten(sql[j]):
 					j += 1
 				tu = sql[i:j]
@@ -342,6 +355,22 @@ def _la_truy_van_con(tus, dong) -> bool:
 	return False
 
 
+def _bi_danh_bang(tus, i) -> set:
+	"""Bí danh có thể có của tabEmployee / tabUser ở vị trí i — NGHIÊNG VỀ PHÍA CHẶN: tên / chuỗi đứng ngay sau (bỏ ")" của
+	nhóm "(tabEmployee) e" và AS) luôn là bí danh, kể cả từ khoá (END, FULL, OFFSET…). Coi thừa chỉ làm chặn nhầm cột
+	"x.cột" của từ đó; bỏ sót thì lọt mọi cột (soát chéo P3: WITH `end` AS (…) SELECT end.bank_ac_no FROM tabEmployee end)."""
+	n, j = len(tus), i + 1
+	while j < n and tus[j].k == "p" and tus[j].v == ")" and not _la_truy_van_con(tus, j):
+		j += 1
+	if j < n and tus[j].la("for"):   # FOR SYSTEM_TIME … bí danh: không theo dõi được — chặn
+		raise _Loi("không dùng FOR SYSTEM_TIME với tabEmployee / tabUser")
+	if j < n and tus[j].la("as"):
+		j += 1
+	if j < n and (tus[j].ten or tus[j].k == "s"):
+		return {tus[j].low}
+	return set()
+
+
 def _soat_cot(tus, cols: dict) -> None:
 	"""Luật 5 cho tabEmployee / tabUser."""
 	co = {}
@@ -365,6 +394,9 @@ def _soat_cot(tus, cols: dict) -> None:
 	for i, t in enumerate(tus):
 		la_bang = t.ten and (i == 0 or not (tus[i - 1].k == "p" and tus[i - 1].v == "."))
 		sau_ngoac = t.k == "p" and t.v == ")" and _la_truy_van_con(tus, i)
+		if la_bang and t.low in co:
+			bi_danh[co[t.low]] |= _bi_danh_bang(tus, i)
+			continue
 		if not (la_bang or sau_ngoac):
 			continue
 		j = i + 1
@@ -373,9 +405,7 @@ def _soat_cot(tus, cols: dict) -> None:
 		if j < len(tus) and tus[j].ten and not (tus[j].k == "w" and tus[j].low in _KHONG_BI_DANH) \
 				and not (j + 1 < len(tus) and tus[j + 1].k == "p" and tus[j + 1].v in ".("):
 			ten = tus[j].low
-			if t.ten and t.low in co:
-				bi_danh[co[t.low]].add(ten)
-			elif sau_ngoac or (t.ten and t.low.startswith("tab")):
+			if sau_ngoac or (t.ten and t.low.startswith("tab")):
 				khac.add(ten)
 		# CTE: <tên> AS ( …
 		if t.ten and i + 2 < len(tus) and tus[i + 1].la("as") and tus[i + 2].k == "p" and tus[i + 2].v == "(":
@@ -397,7 +427,7 @@ def _soat_cot(tus, cols: dict) -> None:
 					if ten not in cho_phep[T]:
 						raise _Loi(f"{T}: cột {t.v!r} không được dùng (chỉ: {', '.join(sorted(ALLOWED_COLUMNS[T]))})")
 				continue
-			if q in khac:
+			if q in khac:   # bí danh chắc chắn của bảng / bảng tạm khác VÀ không phải bí danh Employee / User (xét ở trên)
 				continue
 		for T in bang:
 			if ten in tat_ca_cot[T] and ten not in cho_phep[T]:
@@ -413,6 +443,15 @@ def _soat(sql, columns):
 	if not sach:
 		raise _Loi("câu SQL rỗng")
 	tus = tach(sach)
+	# Luật 1: ngoặc phải cân (câu được bọc trong "SELECT * FROM (<câu>) AS _t" — ')' thừa thoát ra khỏi lớp bọc).
+	sau = 0
+	for t in tus:
+		if t.k == "p" and t.v in "()":
+			sau += 1 if t.v == "(" else -1
+			if sau < 0:
+				break
+	if sau != 0:
+		raise _Loi("ngoặc ( ) không cân")
 	# Luật 1: ';' chỉ một dấu, ở cuối.
 	cham = [i for i, t in enumerate(tus) if t.k == "p" and t.v == ";"]
 	if cham:
