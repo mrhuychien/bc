@@ -20,20 +20,24 @@ Lint (lời của MÔ HÌNH, sau khi đã bỏ placeholder và mã giả hợp l
 - số có dấu nhóm nghìn / phần lẻ ("1.250.000", "1,5", "1 250 000") và dãy ≥ 3 chữ số ("1250");
 - số đứng trước đơn vị: % ‰ đ ₫ đồng VND USD k tr triệu tỷ (tỉ) nghìn (ngàn) vạn trăm "phần trăm" — kể cả 1–2 chữ
   số, dính liền hay cách ("35%", "35 %", "2tỷ", "50k", "5 trăm triệu", "5 trăm khách"), viết không dấu ("2 ty dong",
-  "35 phan tram", "4 trieu"), tiếng Anh ("35 percent", "pct", "million", "bn", "35M", "2B"), cách bằng ngoặc / gạch /
-  thẻ hay thực thể HTML ("12 (tỷ)", "12-tỷ", "<b>12</b> tỷ", "12&nbsp;tỷ"); chữ số hệ khác trước đơn vị ("三十五%");
-  ký hiệu tiền đứng trước ("$50");
+  "35 phan tram", "4 trieu"), tiếng Anh ("35 percent", "per cent", "bps", "pct", "million", "bn", "35M", "2B"),
+  "phần nghìn / phần mười", tiếng lóng "2 củ", cách bằng ngoặc (mở / đóng) / gạch / nháy / , : = · / "x" / thẻ hay thực
+  thể HTML ("12 (tỷ)", "(12) tỷ", "12 x tỷ", "12: tỷ", "12-tỷ", "<b>12</b> tỷ", "12&nbsp;tỷ"); chữ số hệ khác trước đơn
+  vị ("三十五%"); ký hiệu tiền đứng trước ("$50"); chữ trong NGOẶC NHỌN vẫn được soát ("<khoảng 350 triệu>" — E1);
 - chữ số sau chữ thường / MỘT chữ cái ("đ350000000", "x1250", "A100"), "10^9", "4E3", dãy số rời ("1 2 5 0");
 - số viết bằng CHỮ / ước lượng quanh đơn vị lớn ("hai tỷ", "vài trăm triệu", "ba trăm", "mười phần trăm", "tỷ rưỡi",
   "tỷ hai", "tiền tỷ", "gần tỷ", "hơn trăm khách", "khoản đầu tư tỷ đồng"), "gấp đôi / gấp 3", "một nửa", "nửa số
-  khách", "một phần ba", "hàng chục";
+  khách", "một phần ba", "hàng chục", từ chỉ số trước % ("ba lăm %");
 - phân số / tỷ số: "45/60", "chiếm 2/3", "đạt 3/5", "giảm 1/3", "1/3 số khách", "½";
 - mã giả lạ (KH#… / NCC#… không có trong bảng của lượt chạy — mô hình bịa) và mã giả chép hỏng ("KH #0001", "KH0001");
 - (render_insight, trên lời còn placeholder — xem _so_tran) số GHÉP quanh placeholder số (tien / so / pct, và chu mà
   giá trị trông như số): "1{{a|so}}", "{{a|so}}.000", "1 {{a|tien}}", "{{a|so}}{{b|so}}", "{{a|so}} {{b|tien}}"; mọi
   đơn vị / "lần" / chữ dính sau ("{{a|so}}%", "{{a|so}} đ", "{{a|so}} triệu", "{{a|so}}M"); dấu / phép toán trước
-  ("-{{a|tien}}", "±{{a|so}}") — sau khi bỏ ký tự vô hình.
-- (render_insight với kinds) kiểu số sai kiểu thật của giá trị ("{{số khách|pct}}", "{{tiền|so}}") → "kieu:<p>".
+  ("-{{a|tien}}", "±{{a|so}}"; "-" dính chữ trước pct: "nợ-{{a|pct}}"); từ chỉ số sát bên ("mười {{a|so}}", "{{a|so}}
+  rưỡi" — E3); nửa phân số viết tay ("1/{{a|so}}", "{{a|so}}/10", "3:{{a|so}}", "{{a|so}}-5") — sau khi bỏ ký tự vô
+  hình. Placeholder chu ra chuỗi rỗng → "chu-rong:<p>"; chu chỉ là dấu ("–") được soát như chính dấu đó.
+- (render_insight với kinds) kiểu số sai kiểu thật của giá trị ("{{số khách|pct}}", "{{tiền|so}}") → "kieu:<p>"; khoá
+  không xếp được kiểu thì pct cũng bị loại (E2).
 - (render_insight) tiêu đề dài quá 200 ký tự sau khi thay số → "dai" (lời quy tắc thì cắt, không cắt giữa số).
 Giữ: năm 20xx; ngày d/m, d/m/yyyy, m/yyyy, năm/năm; mã có ≥ 2 chữ HOA đứng liền trước ("SR900") hoặc nối vào mã viết
 hoa ("KK-2026-002", "PNTP-X120"); số ≤ 2 chữ số không kèm đơn vị ("trong 7 ngày", "quý 3", "top 5", "5:30", "12 khách"); "3 tỷ lệ …"
@@ -161,8 +165,9 @@ def fill(text: str, pack: dict, sections=None, kinds=None) -> Filled:
 
 	`sections`: tập khoá cấp 1 được phép (None = mọi mảng) — path ngoài tập → lỗi "ngoai-nhom:<p>".
 	`kinds`: {path đã bỏ chỉ số: kiểu} (registry.kind_map) — có thì kiểu số (tien / so / pct) phải đúng kiểu thật của
-	giá trị: path có trong kinds → đúng kiểu đó; không có → xét theo tên khoá (kieu_theo_ten; không đoán được thì không
-	xét). Sai → "kieu:<p>". None = không xét (lời quy tắc).
+	giá trị (kieu_cua): path có trong kinds → đúng kiểu đó; không có → theo đơn vị của dòng ("don_vi") rồi theo tên khoá
+	(kieu_theo_ten); không xếp được thì tien / so đều nhận, pct bị loại (tỷ lệ chỉ nhận trên khoá trông như tỷ lệ — E2).
+	Sai → "kieu:<p>". None = không xét (lời quy tắc).
 	Path không có → "path:<p>"; kiểu lạ / không khớp giá trị → "kieu:<p>"; còn "{{" hoặc "}}" sau khi thay (placeholder
 	viết hỏng) → "cu-phap" (soát trên LỜI GỐC đã bỏ placeholder hợp lệ, nên giá trị có ngoặc nhọn không bị bắt nhầm;
 	ngoặc nhọn đơn "{path|tien}" cũng là placeholder hỏng)."""
@@ -186,9 +191,8 @@ def fill(text: str, pack: dict, sections=None, kinds=None) -> Filled:
 			_them(out.errors, f"kieu:{path}")
 			return m.group(0)
 		if kinds is not None and kind in SO_KIEU:
-			p = registry.strip_index(path)
-			can = kinds.get(p) or kieu_theo_ten(p)
-			if can is not None and can != kind:
+			can = kieu_cua(pack, path, kinds)
+			if can != kind and (can is not None or kind == "pct"):     # không xếp được: chỉ cấm pct (E2)
 				_them(out.errors, f"kieu:{path}")
 				return m.group(0)
 		_them(out.paths, path)
@@ -202,29 +206,45 @@ def fill(text: str, pack: dict, sections=None, kinds=None) -> Filled:
 	return out
 
 
-# ─── Kiểu số theo tên khoá (D8) ──────────────────────────────────────────────
-# Dựng từ MỌI lá số của gói số thật (seed gộp seed_ui2, collect.build + detector + _ai của quy tắc): xếp theo tên lá
-# (lá cha khi lá là tên chung: "growth.sales" là %, "buckets.b1" là tiền; "giao.total" là số đơn — ghi riêng). Lá
-# không xếp được → không xét (danh sách trong test_ai_render). Thứ tự xét: tỷ lệ
-# theo lá cha → đếm / thời hạn / số lượng → tỷ lệ → tiền (đếm trước để "overdue_customers", "stranded_value_rows",
-# "qty_no_rate" không bị coi là tiền / tỷ lệ).
+# ─── Kiểu số theo tên khoá (D8, E2) ──────────────────────────────────────────
+# Dựng từ MỌI lá số của gói số thật (seed gộp seed_ui2 VÀ seed sổ kho seed_ui_kho, collect.build + detector + _ai của
+# quy tắc): xếp theo tên lá (lá cha khi lá là tên chung: "growth.sales" là %, "buckets.b1" là tiền; "cuoc.tong" là
+# tiền; "dem.*", "by_status.*" là số đếm). Lá không xếp được → tien / so đều nhận, pct thì không (danh sách lá cố ý để
+# trống trong test_ai_render). Thứ tự xét: riêng → tỷ lệ theo lá cha → tên lá (đếm / thời hạn / số lượng → tỷ lệ →
+# tiền; đếm trước để "overdue_customers", "stranded_value_rows", "qty_no_rate" không bị coi là tiền / tỷ lệ) → lá cha.
 _PCT_CHA = ("growth", "ty_le", "ty_trong", "tang_truong")             # "summary.meta.growth.sales" là %
-_SO_DUNG = {"count", "n", "so", "over_limit", "qua_n", "dso", "produced", "stock", "plan", "outgoing"}
+_SO_DUNG = {"count", "n", "so", "over_limit", "qua_n", "dso", "produced", "stock", "plan", "outgoing",
+	# vận chuyển, nhân sự: số đơn / chuyến / xe / người (E2)
+	"cho", "da", "dang", "da_giao", "hoan", "khach_hen", "da_xep", "chua_xep", "mot_phan", "sua_tay", "tra_bat_thuong",
+	"tra_chuyen_huy", "qua_tai", "thieu_cap", "trong_ky", "dang_mo", "dang_dung", "don_da_giao", "don_moi_chuyen",
+	"hang_chua_ve", "con_km", "dong", "dang_lam", "tam_nghi", "da_nghi", "active_da_nghi", "vao", "nghi", "chua_muc",
+	"loi_ky", "khoan_thieu_phieu",
+	# số lượng hàng / lô / phiếu, số ngày, kỳ, năm, tháng (không phải tiền)
+	"lech", "chenh", "ngoai_phieu", "nhap_lai", "carton_factor", "chua_dem", "lau", "cu", "im_lang", "uoc_tinh_qua_han",
+	"kho_ban_duoc", "lo_ttl_giay", "pending_reposts", "unknown_term", "due_ahead", "limit", "k", "nam", "year", "month",
+	"fy_month", "tet_year", "canh_bao", "nguy", "lan", "max_lan", "het_credit", "that_bai", "con_trong_gb",
+	"failed_reposts", "pos_unconsolidated"}
 _SO_DAU = {"so", "n", "count", "qty", "items", "rows", "lots", "slips", "entries", "warehouses", "days", "ngay",
 	"boxes", "cartons"}
 _SO_CUOI = {"count", "items", "rows", "lots", "customers", "days", "ngay", "qty", "slips", "entries", "orders",
 	"warehouses", "cartons", "boxes", "tuoi"}
-_SO_RX = re.compile(r"qua_\d+|mo_qua_\w+")
-_PCT_CUOI = {"pct", "rate", "percent"}
+_SO_RX = re.compile(r"qua_\d+|mo_qua_\w+|\w+_tong")                 # "ds_tong", "lo_can_date_tong": số dòng
+_PCT_CUOI = {"pct", "percent"}                                        # "*_rate" (return_rate) cũng là %, "rate" thì không
 _TIEN_DUNG = {"value", "amount", "sales", "net", "returns", "overdue", "receivable", "total", "gia_tri", "tien",
 	"debt", "revenue", "cash", "bank", "balance", "unallocated", "advances", "outstanding", "cogs", "opening",
 	"closing", "gt", "thuc_nhan", "chua_tra", "da_tra", "moi_chuyen", "moi_diem", "mat_duong", "einv_pending",
-	"pending_review", "unknown"}
+	"pending_review", "unknown", "rate", "ledger_bin_diff"}                              # "rate" = đơn giá sổ (đồng), không phải tỷ lệ
 _TIEN_DAU = {"value", "gt", "amount", "dt"}
 _TIEN_CUOI = {"value", "amount", "total", "tien", "sales", "revenue", "debt"}
 _BUCKET = {"current", "over", "unknown", "b1", "b2", "b3"}             # cột tuổi nợ (buckets.*) là tiền
 _CHA_TIEN = {"flows", "points"}                                       # ton-kho.trend: dòng nhập xuất / điểm giá trị
-_RIENG = {"van-chuyen.overview.giao.total": "so"}                     # tổng số đơn giao (không phải tiền)
+# Lá cha (hoặc ông) là bảng đếm: "dem.xanh", "xe.dem.dang_kiem.ok", "by_status.Nháp", "nhan_su.loai.Khoán",
+# "theo_dvt.am" (số lượng theo đơn vị tính), "entries_by_purpose.Repack" …
+_CHA_SO = {"dem", "by_status", "by_type", "loai", "entries_by_purpose", "stages", "nguon_gia", "lo", "theo_dvt",
+	"tp_set_mismatch", "lan_dau", "xep", "nhan_su", "by_dept", "bien_dong", "dang_kiem", "thay_dau", "thang", "giay_to"}
+_CHA_LA = {("cuoc", "tong"): "tien", ("chi_phi_nam", "tong"): "tien"}  # "tong" trơ trọi: tiền hay số tuỳ khối
+_RIENG = {"van-chuyen.overview.giao.total": "so",                     # tổng số đơn giao (không phải tiền)
+	"van-chuyen.overview.chuyen.tai_tb": "pct"}                       # tải trung bình: m³ chở / sức chứa (%)
 
 
 def _loai(k: str):
@@ -232,7 +252,8 @@ def _loai(k: str):
 	t = k.split("_")
 	if k in _SO_DUNG or t[0] in _SO_DAU or t[-1] in _SO_CUOI or _SO_RX.fullmatch(k):
 		return "so"
-	if k.startswith(("ty_le", "ty_trong", "tang_truong", "growth", "percent")) or t[-1] in _PCT_CUOI:
+	if k.startswith(("ty_le", "ty_trong", "tang_truong", "growth", "percent")) or t[-1] in _PCT_CUOI \
+			or (t[-1] == "rate" and len(t) > 1):
 		return "pct"
 	if k in _TIEN_DUNG or t[0] in _TIEN_DAU or t[-1] in _TIEN_CUOI or k.startswith(("gia_tri", "boi_thuong")):
 		return "tien"
@@ -240,19 +261,51 @@ def _loai(k: str):
 
 
 def kieu_theo_ten(path: str):
-	"""Kiểu số ("tien" | "so" | "pct") mà path PHẢI dùng, đoán theo tên khoá; None = không đoán (không xét)."""
+	"""Kiểu số ("tien" | "so" | "pct") mà path PHẢI dùng, đoán theo tên khoá; None = không đoán."""
 	p = registry.strip_index(path)
-	if p in _RIENG:
-		return _RIENG[p]
 	keys = p.split(".")
+	rieng = _RIENG.get(p.replace(".overview_truoc.", ".overview.", 1))
+	if rieng:
+		return rieng
 	la = keys[-1]
-	cha = keys[-2] if len(keys) > 2 else ""
-	if cha.lower().startswith(_PCT_CHA):
+	cha = keys[-2].lower() if len(keys) > 2 else ""
+	ong = keys[-3].lower() if len(keys) > 3 else ""
+	if cha.startswith(_PCT_CHA):
 		return "pct"
-	if cha.lower() == "buckets" and la.lower() in _BUCKET:
+	if cha == "buckets" and la.lower() in _BUCKET:
 		return "tien"
+	if (cha, la.lower()) in _CHA_LA:
+		return _CHA_LA[(cha, la.lower())]
 	k = _loai(la)
-	return "tien" if k is None and cha.lower() in _CHA_TIEN else k
+	if k is None and cha in _CHA_TIEN:
+		k = "tien"
+	if k is None and (cha in _CHA_SO or ong in _CHA_SO):
+		k = "so"
+	if k is None and keys[0] == "he-thong":           # mảng hệ thống chỉ có số đếm / giờ / GB (và dia_day.pct)
+		k = "so"
+	return k
+
+
+def _kieu_dong(pack, path: str):
+	"""Dòng (phần tử danh sách gần nhất chứa path) có "don_vi" dạng chữ → "pct" khi "%", không thì "so" (bảng chỉ số
+	ATTP: cùng khoá "thang.<tháng>" / "ky" / "nam" mà đơn vị theo dòng). Không có → None."""
+	i = path.rfind("]")
+	if i < 0 or i == len(path) - 1 or pack is None:
+		return None
+	dong = registry.resolve(pack, path[:i + 1], None)
+	dv = dong.get("don_vi") if isinstance(dong, dict) else None
+	if not isinstance(dv, str) or not dv.strip():
+		return None
+	return "pct" if dv.strip() == "%" else "so"
+
+
+def kieu_cua(pack, path: str, kinds=None):
+	"""Kiểu số path PHẢI dùng trong lời mô hình: kinds (registry.kind_map) → đơn vị của dòng → tên khoá; None = không
+	xếp được (render nhận tien / so, loại pct)."""
+	k = (kinds or {}).get(registry.strip_index(path))
+	if k in SO_KIEU:
+		return k
+	return _kieu_dong(pack, path) or kieu_theo_ten(path)
 
 
 def strip_placeholders(text: str) -> str:
@@ -270,8 +323,12 @@ _TIEN_TE = r"(?:đồng|vnđ|vnd|usd|đ)"
 # Viết không dấu / tiếng Anh — chỉ xét khi đứng SAU chữ số ("2 ty", "35 phan tram", "4M"; "công ty", "Ba Ti" không).
 _TY_KD = rf"(?:ty|ti)(?!\s+(?:le|trong|suat|gia(?!\s+tri)){_HET})"
 _TRIEU_KD = rf"trieu(?!\s+(?:chung|tap|hoi){_HET})"
-_TIEN_TE_KD = r"(?:đồng|vnđ|vnd|usd|đ|dong)"
-_GIUA = r"[\s(\[\-–—]*"     # giữa số và đơn vị: khoảng trắng, ngoặc mở, gạch ("12 (tỷ)", "12-tỷ")
+# "đồng thời", "đồng bộ" … không phải tiền
+_DONG = r"đồng(?!\s+(?:thời|bộ|ý|loạt|đều|nghĩa|hành|phục|nghiệp|tình|lòng|minh|tâm|thuận)(?!\w))"
+_TIEN_TE_KD = rf"(?:{_DONG}|vnđ|vnd|usd|đ|dong)"
+# Giữa số và đơn vị: khoảng trắng, ngoặc (mở / đóng), gạch, nháy, , : = · và "x" đứng riêng ("12 (tỷ)", "(12) tỷ",
+# "12-tỷ", "12: tỷ", "12 x tỷ").
+_GIUA = r"(?:[\s()\[\]\-–—\"'“”‘’«»,:=·]|x(?![^\W\d_]))*"
 # Đơn vị đứng SAU số (so từ ngay sau số; chữ phải hết từ: "5 khách", "7 trường hợp", "5 đơn" không dính).
 _DON_VI = re.compile(
 	_GIUA + r"(?:[%‰٪₫$€]"
@@ -280,7 +337,9 @@ _DON_VI = re.compile(
 	rf"|(?:(?:trăm|chục|tram|chuc)\s+)?(?:{_TY}|{_TRIEU}|{_TY_KD}|{_TRIEU_KD}|nghìn|ngàn|nghin|ngan|vạn|tr|k"
 	rf"|mio|bn|million|billion)(?:\s*{_TIEN_TE_KD})?{_HET}"
 	rf"|(?:trăm|tram){_HET}"                    # "5 trăm khách" (chục thì như số < 100: giữ)
-	rf"|(?:percent|pct){_HET}"
+	rf"|(?:percent|pct|per\s*cent|bps){_HET}"
+	rf"|(?:phần|phan)\s+(?:nghìn|ngàn|nghin|ngan|mười|muoi){_HET}"     # "5 phần nghìn", "3 phần mười"
+	rf"|củ{_HET}"                                # tiếng lóng: "2 củ" (= 2 triệu)
 	r"|(?-i:[MBK])(?![^\W\d_])"                  # "4M", "2B", "50K" (viết hoa; "5 m" không)
 	rf"|{_TIEN_TE_KD}{_HET})", re.I)
 # Số: "1 250 000" (nhóm nghìn bằng dấu cách) hoặc dãy chữ số có thể kèm . , giữa các chữ số.
@@ -288,7 +347,8 @@ _SO = re.compile(r"\d{1,3}(?: \d{3})+(?!\d)(?:[.,]\d+)*|\d+(?:[.,]\d+)*")
 _NAM = re.compile(r"20\d\d")
 _NGAY_THANG = re.compile(r"(?<![\w/])(?<!\d[.,])(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?(?![\w/])(?![.,]\d)")
 _THANG_NAM = re.compile(r"(?<![\w/])(?<!\d[.,])(\d{1,2})/(20\d\d)(?![\w/])(?![.,]\d)")
-_PHAN_SO = re.compile(r"(?<![\w/])\d+(?:[.,]\d+)*\s*/\s*\d+(?:[.,]\d+)*")
+# Nhóm chữ số có trần (không thì "1.2.1.2…" dài chạy bậc hai — E4).
+_PHAN_SO = re.compile(r"(?<![\w/])\d{1,15}(?:[.,]\d{1,15}){0,6}\s*/\s*\d{1,15}(?:[.,]\d{1,15}){0,6}")
 # "chiếm 2/3", "đạt 3/5", "giảm 1/3", "còn 1/4", "1/3 số khách", "2/3 tổng nợ" là PHÂN SỐ dù trùng dạng ngày; có chữ
 # chỉ ngày đứng trước ("ngày 2/3 số đơn tăng") thì vẫn là ngày.
 _GOI_PHAN_SO = re.compile(r"(?:chiếm|đạt|được|bằng|giảm|tăng|mất|thêm|thiếu|vượt|còn)\s+"
@@ -314,6 +374,7 @@ _BANG_CHU = (
 	re.compile(r"×\s?\d+(?:[.,]\d+)?"),
 	# tối đa 8 từ số trước đơn vị ("hai trăm ba mươi lăm nghìn tỷ" là 6) — không chặn thì lời dài toàn chữ số chạy bậc hai
 	re.compile(rf"(?<!\w)(?:{_CHU_SO}\s+){{1,8}}(?:{_LON}|(?-i:vạn|trăm)|phần\s+trăm)(?!\w)", re.I),
+	re.compile(rf"(?<!\w)(?:{_CHU_SO}\s+){{0,7}}{_CHU_SO}\s*[%‰]", re.I),                  # "ba lăm %"
 	re.compile(rf"(?<!\w){_LON}\s+(?:rưỡi|mốt|hai|ba|tư|bốn|lăm|sáu|bảy|tám|chín)(?!\w)", re.I),   # "tỷ rưỡi", "tỷ hai"
 	re.compile(rf"(?<!\w)(?:tiền|bạc)\s+(?-i:{_TY}|{_TRIEU})(?!\w)", re.I),            # "tiền tỷ", "bạc triệu"
 	re.compile(r"(?<!\w)hàng\s+(?-i:chục|vạn)(?!\w)", re.I),
@@ -327,15 +388,28 @@ _BANG_CHU = (
 )
 
 
-_THE_HTML = re.compile(r"<\s*/?\s*[A-Za-z][^<>]{0,200}>")
+# Thẻ HTML TRƠN (chỉ tên thẻ, không thuộc tính): "<b>", "</b>", "<br/>". Nội dung trong ngoặc nhọn KHÔNG bao giờ bị
+# bỏ (E1): "<khoảng 350 triệu>", "<b 1.250.000 đ>" vẫn được soát.
+_THE_TRON = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9]*\s*/?\s*>")
 
 
-def _chuan(text: str) -> str:
-	"""Giải thực thể HTML ("&nbsp;", "&#37;") + bỏ thẻ HTML ("<b>12</b> tỷ" → "12 tỷ") + NFKC (chữ số / % toàn chiều
-	rộng, dấu cách đặc biệt, dấu tổ hợp → dạng thường) + bỏ ký tự vô hình (Cf) và dấu nhấn markdown * _ ` ~ (để
-	"**2** tỷ", "__35__%" vẫn là "2 tỷ", "35%")."""
-	s = unicodedata.normalize("NFKC", _THE_HTML.sub("", html.unescape(text)))
-	return "".join(ch for ch in s if unicodedata.category(ch) != "Cf" and ch not in "*_`~")
+def _chuan(text: str, bo_the: bool = True) -> str:
+	"""Giải thực thể HTML ("&nbsp;", "&#37;", "&lt;") + NFKC (chữ số / % toàn chiều rộng, dấu cách đặc biệt, dấu tổ
+	hợp → dạng thường) + bỏ ký tự vô hình (Cf) và dấu nhấn markdown * _ ` ~ (để "**2** tỷ", "__35__%" vẫn là "2 tỷ",
+	"35%") + bo_the: bỏ thẻ HTML trơn ("<b>12</b> tỷ" → "12 tỷ"); rồi mọi "<" ">" còn lại thành dấu cách (nội dung
+	trong ngoặc vẫn được soát). Nơi gọi soát CẢ HAI dạng (bo_the True / False) khi lời có ngoặc nhọn: "Nợ 12 <tr>"."""
+	s = unicodedata.normalize("NFKC", html.unescape(text))
+	s = "".join(ch for ch in s if unicodedata.category(ch) != "Cf" and ch not in "*_`~")
+	if bo_the:
+		s = _THE_TRON.sub("", s)
+	return s.replace("<", " ").replace(">", " ")
+
+
+def _cac_dang(text: str) -> list:
+	"""Các dạng chuẩn hoá để soát: một dạng; thêm dạng giữ tên thẻ khi lời có ngoặc nhọn (E1)."""
+	a = _chuan(text)
+	b = _chuan(text, bo_the=False)
+	return [a] if a == b else [a, b]
 
 
 def _la_ngay(s: str, m) -> bool:
@@ -388,7 +462,8 @@ def _la_ma(s: str, a: int) -> bool:
 
 # Dãy số rời cách nhau bằng dấu cách / tab ("1 2 5 0", "3 5 khách") — đọc như một số.
 _SO_ROI = re.compile(r"(?<![\w.,])\d{1,3}(?:[ \t]+\d{1,3})+(?![\w.,])")
-_LUY_THUA = re.compile(r"\d+\s*\^\s*\d+|(?<![^\W\d_])\d+[eE][+-]?\d+(?![^\W\d_])")        # "10^9", "4E3"
+# Chỉ bắt đầu ở ĐẦU một dãy chữ số (không thì dãy dài chạy bậc hai — E4).
+_LUY_THUA = re.compile(r"(?<!\d)\d+\s*\^\s*\d+|(?<![\w])\d+[eE][+-]?\d+(?![^\W\d_])")        # "10^9", "4E3"
 
 
 def _chu_so_khac(ch: str) -> bool:
@@ -407,8 +482,17 @@ def lint(text: str) -> list:
 	số không kèm đơn vị trên ("trong 7 ngày", "30 ngày", "quý 4").
 	Bắt thêm (xem docstring module): số có phần lẻ, số viết bằng chữ trước đơn vị lớn, "gấp đôi", phân số, mã giả lạ."""
 	tho = "" if text is None else str(text)
-	bat: list = [(-1, m.group(0)) for m in _PHAN_SO_KY_TU.finditer(tho)]
-	s = _chuan(_PHAN_SO_KY_TU.sub(" ", tho))
+	out: list = []
+	for mau in [m.group(0) for m in _PHAN_SO_KY_TU.finditer(tho)]:
+		_them(out, mau)
+	for s in _cac_dang(_PHAN_SO_KY_TU.sub(" ", tho)):       # có ngoặc nhọn: soát cả hai dạng (E1)
+		_them(out, *_lint_mot(s))
+	return out
+
+
+def _lint_mot(s: str) -> list:
+	"""lint trên MỘT dạng đã chuẩn hoá (_chuan)."""
+	bat: list = []
 	buf = list(s)
 
 	def xoa(a: int, b: int, mau: str | None = None) -> None:
@@ -443,7 +527,7 @@ def lint(text: str) -> list:
 	for m in _THANG_NAM.finditer(s):
 		xoa(m.start(), m.end(), None if 1 <= int(m.group(1)) <= 12 else m.group(0))
 	s = "".join(buf)
-	for m in _PHAN_SO.finditer(s):
+	for m in (_PHAN_SO.finditer(s) if "/" in s else ()):
 		xoa(m.start(), m.end(), None if _NAM_NAM.fullmatch(m.group(0)) else m.group(0))
 	s = "".join(buf)
 	# 2b. Luỹ thừa ("10^9", "4E3").
@@ -503,12 +587,21 @@ _TRUOC_SO = re.compile(r"(?<![^\s(\[\"'“])\d{1,3}[ \t]+$")
 _TRUOC_DAU = re.compile(r"([-+–−±×^])[ \t]?$")
 _SAU_DINH = re.compile(r"[.,]?\d|[^\W\d_]+|[ \t]+\d+")      # sau: chữ số / chữ cái dính, dãy số cách dấu cách
 _KE = re.compile(r"\s+|[.,]?")                                 # giữa hai placeholder liền nhau
+# Từ chỉ số sát placeholder số ("mười {{so}}", "{{so}} mươi", "{{so}} rưỡi", "{{so}} tá") — E3.
+_TU_SO = r"(?:một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười|mươi|chục|trăm|rưỡi|tá|lẻ|linh)"
+_TRUOC_TU_SO = re.compile(rf"(?<!\w){_TU_SO}\s*$", re.I)
+_SAU_TU_SO = re.compile(rf"\s*{_TU_SO}(?!\w)", re.I)
+# Nửa phân số viết tay: "1/{{so}}", "{{so}}/10", "3:{{so}}".
+# Cũng vậy với gạch DÍNH một chữ số viết tay: "{{so}}-5", "5–{{so}}" ("{{a}}-{{b}}" hai số thật thì giữ).
+_TRUOC_PHAN = re.compile(r"\d\s*[/:]\s*$|\d[-–−]$")
+_SAU_PHAN = re.compile(r"\s*[/:]\s*\d|[-–−]\d")
 
 
 def _so_tran(text: str, mask=None, pack=None) -> list:
 	"""Số trần trong một đoạn lời của mô hình (còn placeholder, còn mã giả). Mã giả ĐÃ GỬI được bỏ trước (chữ số
 	trong mã không phải số liệu; tên thật có thể chứa chữ số nên không bao giờ lint sau khi hoàn nguyên). `pack` (gốc)
-	để biết placeholder chu nào trông như số."""
+	để biết placeholder chu nào trông như số (→ xét như số) hay chỉ là dấu / ký hiệu ("–", "-": thay bằng đúng ký tự
+	đó để soát trước / sau — E3)."""
 	goc = mask.strip(text) if mask is not None else text
 	goc = "" if goc is None else str(goc)
 	ph, kieu = [], []
@@ -517,16 +610,28 @@ def _so_tran(text: str, mask=None, pack=None) -> list:
 		k = m.group(2)
 		if k == "chu" and pack is not None:
 			v = registry.resolve(pack, m.group(1).strip(), None)
-			if isinstance(v, str) and _GIONG_SO.fullmatch(_chuan(v).strip()):
-				k = "so"
+			if isinstance(v, str):
+				vc = " ".join(_chuan(v).split())
+				if vc and not any(ch.isalnum() for ch in vc):
+					return vc                       # "–", "-", "+": chính ký tự đó
+				if _GIONG_SO.fullmatch(vc):
+					k = "pct" if "%" in vc or "‰" in vc else "so"
 		ph.append(m.group(0))
 		kieu.append(k)
 		return chr(_MOC + len(ph) - 1)
 
-	s = _chuan(registry.PLACEHOLDER.sub(moc, goc))
+	tho = registry.PLACEHOLDER.sub(moc, goc)
 	if not ph:
 		return lint(strip_placeholders(goc))
+	out: list = []
+	for s in _cac_dang(tho):                       # có ngoặc nhọn: soát cả hai dạng (E1)
+		_them(out, *_quanh(s, ph, kieu))
+	_them(out, *lint(strip_placeholders(goc)))
+	return out
 
+
+def _quanh(s: str, ph: list, kieu: list) -> list:
+	"""Số / đơn vị / dấu GHÉP quanh từng placeholder số trong s (placeholder đã thành ký tự mốc)."""
 	def tra(a: int, b: int) -> str:
 		"""Mẩu s[a:b] với ký tự mốc trả lại thành placeholder gốc."""
 		return _LA_MOC.sub(lambda m: ph[ord(m.group(0)) - _MOC], s[a:b])
@@ -537,10 +642,12 @@ def _so_tran(text: str, mask=None, pack=None) -> list:
 	out: list = []
 	for m in _LA_MOC.finditer(s):
 		j = m.start()
-		if kieu[ord(s[j]) - _MOC] not in SO_KIEU:
+		k = kieu[ord(s[j]) - _MOC]
+		if k not in SO_KIEU:
 			continue
 		# sau
-		sau = [x for x in (_SAU_DINH.match(s, j + 1), _DON_VI.match(s, j + 1), _SAU_KHAC.match(s, j + 1)) if x]
+		sau = [x for x in (_SAU_DINH.match(s, j + 1), _DON_VI.match(s, j + 1), _SAU_KHAC.match(s, j + 1),
+			_SAU_TU_SO.match(s, j + 1), _SAU_PHAN.match(s, j + 1)) if x]
 		if sau:
 			out.append(tra(j, max(x.end() for x in sau)))
 		ke = _KE.match(s, j + 1)
@@ -548,16 +655,18 @@ def _so_tran(text: str, mask=None, pack=None) -> list:
 			out.append(tra(j, ke.end() + 1))
 		# trước
 		truoc = s[max(0, j - _CUA):j]
-		g = re.search(r"\d[.,]?$", truoc) or _TRUOC_SO.search(truoc)
+		g = re.search(r"\d[.,]?$", truoc) or _TRUOC_SO.search(truoc) or _TRUOC_TU_SO.search(truoc) \
+			or _TRUOC_PHAN.search(truoc)
 		if g:
 			out.append(tra(j - len(truoc) + g.start(), j + 1))
 		d = _TRUOC_DAU.search(truoc)
 		if d:
 			a = j - len(truoc) + d.start()
 			truoc_dau = s[a - 1] if a > 0 else ""
-			if d.group(1) in "−±×^" or not (truoc_dau.isalnum() or truoc_dau == ")" or _LA_MOC.fullmatch(truoc_dau)):
+			if d.group(1) in "−±×^" or not (truoc_dau.isalnum() or truoc_dau == ")" or _LA_MOC.fullmatch(truoc_dau)) \
+					or (k == "pct" and d.group(1) in "-–" and truoc_dau.isalpha()):     # "thu nợ-{{pct}}"
 				out.append(tra(a, j + 1))
-	return out + lint(strip_placeholders(goc))
+	return out
 
 
 # ─── Dựng lời ────────────────────────────────────────────────────────────────
@@ -626,6 +735,8 @@ def render_insight(raw: dict, pack: dict, sections, mask=None, kinds=None) -> di
 	for text in (_chuoi(raw.get("title")), _chuoi(raw.get("body")), *advice):
 		f = fill(text, pack, sections, kinds)
 		_them(errors, *f.errors, *(f"so-tran:{mau}" for mau in _so_tran(text, mask, pack)))
+		_them(errors, *(f"chu-rong:{p}" for p, k in registry.placeholders(text) if k == "chu"
+			and isinstance(registry.resolve(pack, p, None), str) and not registry.resolve(pack, p, "").strip()))
 		_them(paths, *f.paths)
 		_them(secs, *f.sections_used)
 		loi.append(mask.unmask(f.text) if mask is not None else f.text)

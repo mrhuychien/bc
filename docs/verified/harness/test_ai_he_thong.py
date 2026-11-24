@@ -150,7 +150,7 @@ _p = {H: {"error_log": d}}
 _r = chay(_p, only=("ht.error_log",))
 eq("D1: nhóm đầu là (khác) → lời không nêu tên nhóm, không mảnh tiêu đề",
 	[render.fill(x.title + " | " + x.detail, _p).text for x in _r.signals],
-	["Lỗi hệ thống trong ngày qua: 19 lần, trung bình 0 lần | Quản trị cần xem Error Log trước khi lỗi ảnh hưởng "
+	["Lỗi hệ thống trong ngày qua: 19 lượt, trung bình 0 lượt | Quản trị cần xem Error Log trước khi lỗi ảnh hưởng "
 	"người dùng."])
 frappe.db.sql("DELETE FROM `tabError Log`")
 el(t(hours=-1), "KeyError: 'le.van.c@hgc.vn'")
@@ -353,10 +353,10 @@ eq("tín hiệu + mức (ngưỡng mặc định)", {k: s.severity for k, s in s
 s = sig["ht.dang_nhap_sai"]
 eq("dang_nhap_sai: 2 tài khoản quá 10 lần; documents chỉ User có thật > 10 lần (kt)", (s.tinh, s.documents),
 	({"so_tk": 2, "nguong": 10}, [{"doctype": "User", "name": "kt.bimat@hgc.vn"}]))
-eq("dang_nhap_sai: lời đã thay số", render.fill(s.title, p1).text, "2 tài khoản đăng nhập sai quá 10 lần trong ngày qua")
+eq("dang_nhap_sai: lời đã thay số", render.fill(s.title, p1).text, "2 tài khoản đăng nhập sai quá 10 lượt trong ngày qua")
 s = sig["ht.error_log"]
 eq("error_log: lời đã thay số + nhóm nhiều nhất", render.fill(s.title + " | " + s.detail, p1).text,
-	"Lỗi hệ thống trong ngày qua: 13 lần, trung bình 4,9 lần | Nhiều nhất là bc.api.kd với 5 lần, quản trị cần xem "
+	"Lỗi hệ thống trong ngày qua: 13 lượt, trung bình 4,9 lượt | Nhiều nhất là bc.api.kd với 5 lượt, quản trị cần xem "
 	"Error Log trước khi lỗi ảnh hưởng người dùng.")
 eq("job_that_bai: nêu job lỗi nhiều nhất", render.fill(sig["ht.job_that_bai"].detail, p1).text.startswith(
 	"Lỗi nhiều nhất ở bc.tasks.daily với 2 lượt"), True)
@@ -479,6 +479,12 @@ eq("documents chỉ ở ht.dang_nhap_sai, chỉ doctype User", sorted({(s.rule, 
 	for d in s.documents}), [("ht.dang_nhap_sai", "User")])
 eq("mọi lời dựng được trên pack của nó", sorted({f"{s.key}: {ai_testlib.kiem_loi(s, p)}" for s, p in MOI
 	if ai_testlib.kiem_loi(s, p)}), [])
+# E5: lời quy tắc chép nguyên làm lời mô hình (tiêu đề + chi tiết, kinds của chính tín hiệu) phải qua luật của
+# render_insight — không "{{…|so}} lần", không dấu / số viết tay sát placeholder.
+eq("E5: mọi lời quy tắc hệ thống (mọi ca của bộ thử) qua render_insight với kinds", sorted({f"{s.key}: "
+	f"{render.render_insight({'title': s.title, 'body': s.detail or s.title, 'advice': []}, p, {H}, None, kinds=registry.kind_map([s]))['errors']}"
+	for s, p in MOI if not render.render_insight({"title": s.title, "body": s.detail or s.title, "advice": []}, p, {H},
+	None, kinds=registry.kind_map([s]))["ok"]}), [])
 tu = lambda x: len(registry.PLACEHOLDER.sub("X", x).split())  # noqa: E731
 eq("tiêu đề ≤ 12 từ, thân MỘT câu", sorted({s.title for s, _ in MOI if tu(s.title) > 12} | {s.detail for s, _ in MOI
 	if not s.detail.endswith(".") or ". " in s.detail}), [])

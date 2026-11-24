@@ -16,8 +16,9 @@ số và kiểm (bc.ai.render).
 Đề bài một nhóm: KHÔNG gồm mảng đang ẩn với người xem (số lẫn tín hiệu; quy tắc vẫn chạy trên đủ gói), không gồm khối
 registry.NO_SEND; mã giả đặt lại cho từng nhóm (mask.begin — mã không có trong đề bài này thì không thành tên); kèm
 "kieu" (registry.kind_map). Lời AI lưu với sections_used = mảng của placeholder ∪ mọi mảng mô hình đã thấy (ẩn một mảng
-sau lượt chạy → lời đó ẩn với người xem tới lượt sau). Nhận định tự do trên số của chủ đề đang bo-qua → loại; trùng
-tín hiệu quy tắc đang mở → bỏ (store.blocked_paths).
+sau lượt chạy → lời đó ẩn với người xem tới lượt sau). Nhận định tự do có BẤT KỲ path nào (tiêu đề, thân, lời
+khuyên) của chủ đề đang bo-qua → loại; trùng tín hiệu quy tắc đang mở (path đầu) → bỏ (store.blocked_paths). Mã giả
+"đã gửi" chỉ gồm mã có mặt trong đề bài CUỐI (mask.restrict sau prompt.build_user — dòng bị cắt không thành tên).
 
 Dòng tổng (step "tong"): status ok = bước quy tắc xong (kể cả khi AI tắt / lỗi); loi = lượt chạy hỏng (error = TÊN
 loại lỗi). error của dòng tổng ok liệt kê quy tắc không chạy được. Bước AI:
@@ -292,6 +293,8 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		mask.begin()   # chỉ mã giả phát ra cho ĐỀ BÀI NÀY mới được đổi lại thành tên (mã nhóm trước → mã lạ)
 		tin_hieu = [_ctx(sid, r, by_name[r["name"]], today, mask) for sid, r in by_id.items()]
 		user, notes = prompt.build_user(group, mask.mask(pack_group), mask.mask(tin_hieu), kinds=kinds)
+		# "đã gửi" = có mặt trong ĐỀ BÀI CUỐI (build_user cắt danh sách / độ dài): mã của dòng bị cắt → mã lạ, bị loại
+		mask.restrict(user)
 		# Một lượt gọi tệ nhất = 3 lần POST × (10 s nối + timeout) + 25 s chờ → chia thời gian còn lại cho vừa.
 		res = llm.call(PROVIDER, model, system, user, prompt.SCHEMA_NAME, prompt.SCHEMA,
 			timeout=max(30, min(CALL_TIMEOUT, int((con - 60) / 3))))
@@ -365,14 +368,25 @@ def _ctx(sid: str, row: dict, sig, today, mask) -> dict:
 		"trang_thai": row["status"], "ghi_chu_quan_tri": mask.mask_text(row.get("admin_note") or "")}
 
 
+def _moi_path(raw: dict, paths) -> set:
+	"""Mọi path (đã bỏ chỉ số mảng) một lời trích: path render trả + placeholder trong tiêu đề, thân, lời khuyên."""
+	chu = [raw.get("title"), raw.get("body"), *(raw.get("advice") if isinstance(raw.get("advice"), list) else [])]
+	out = {registry.strip_index(p).strip() for p in (paths or [])}
+	for t in chu:
+		if isinstance(t, str):
+			out |= {registry.strip_index(p).strip() for p, _ in registry.placeholders(t)}
+	return out
+
+
 def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now, kinds=None, da_thay=()) -> tuple:
 	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại).
 
 	sections: mọi mảng của nhóm (nhận định tự do cũ của chúng không được nêu lại → đóng). da_thay: mảng mô hình đã
 	thấy trong lượt gọi (gói + tín hiệu gửi đi; không gồm mảng đang ẩn) → lời chỉ được trích số của các mảng này, và
 	sections_used của MỌI lời AI lưu cộng thêm chúng (lời không placeholder vẫn có thể kể số của mảng khác). Trống →
-	mọi mảng của nhóm. kinds: kiểu đúng của số (registry.kind_map) — lời sai kiểu bị loại. Nhận định tự do trên path
-	đang bo-qua (store.blocked_paths) → loại; chỉ lặp một tín hiệu quy tắc đang mở → bỏ qua lặng lẽ."""
+	mọi mảng của nhóm. kinds: kiểu đúng của số (registry.kind_map) — lời sai kiểu bị loại. Nhận định tự do có path
+	nào (tiêu đề / thân / lời khuyên) đang bo-qua (store.blocked_paths) → loại; path đầu chỉ lặp một tín hiệu quy tắc
+	đang mở → bỏ qua lặng lẽ."""
 	from bc.ai import render, store
 
 	acc = rej = 0
@@ -412,7 +426,8 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 			rej += 1
 			continue
 		goc = registry.strip_index(dau)
-		if chan.get(goc) == store.BO_QUA:     # chủ đề quản trị đã bỏ qua → không cho quay lại qua lời tự do
+		# chủ đề quản trị đã bỏ qua → không cho quay lại qua lời tự do: xét MỌI path (tiêu đề, thân, lời khuyên)
+		if any(chan.get(p) == store.BO_QUA for p in _moi_path(raw, r["paths"])):
 			rej += 1
 			continue
 		if goc in chan:                       # trùng tín hiệu quy tắc đang mở → thừa

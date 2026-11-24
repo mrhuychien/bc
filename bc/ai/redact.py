@@ -2,10 +2,12 @@
 """bc.ai.redact — mã giả khách / nhà cung cấp trước khi gửi gói số cho mô hình (đặc tả §5.4, quyết định D2–D4).
 
 Bảng ánh xạ dựng MỖI LƯỢT từ tabCustomer (name, customer_name) và tabSupplier (name, supplier_name) → "KH#0001…",
-"NCC#0001…" (một đối tác một mã, cả mã chứng từ lẫn tên hiển thị cùng về mã đó). Thêm: tên hiển thị CHÉP TRÊN HOÁ ĐƠN
-đã duyệt (Sales Invoice.customer_name, Purchase Invoice.supplier_name — ERPNext không sửa lại khi đổi tên đối tác) là
-bí danh của CÙNG mã; đối tác chỉ có trên hoá đơn (không còn hồ sơ) vẫn được một mã. Bảng không lưu, không gửi. Path
-luôn phân giải trên pack GỐC (bc.ai.render) nên số / tên chèn vào lời là thật.
+"NCC#0001…" (một đối tác một mã, cả mã chứng từ lẫn tên hiển thị cùng về mã đó). Thêm: tên hiển thị CHÉP lúc ghi
+(Sales Invoice.customer_name, Purchase Invoice.supplier_name đã duyệt — ERPNext không sửa lại khi đổi tên đối tác; sổ
+cát SX Nhat Ky Cat.ten_ncc và SX Danh Gia NCC.ten_ncc của app sx — E6) là bí danh của CÙNG mã; đối tác chỉ có ở bảng
+chép tên (không còn hồ sơ) vẫn được một mã; tên chép không có mã đi kèm được mã riêng. Nhãn cố định không phải đối tác
+(NHAN_CO_DINH: "Chưa gán chuỗi") không bị che. Bảng không lưu, không gửi. Path luôn phân giải trên pack GỐC
+(bc.ai.render) nên số / tên chèn vào lời là thật.
 
 Chi tiết:
 - mask (gói số): chuỗi BẰNG ĐÚNG một tên (sau khi bỏ khoảng trắng hai đầu; phân biệt hoa / thường, dấu) → mã. Chuỗi
@@ -22,6 +24,8 @@ Chi tiết:
 - Chỉ mã ĐÃ GỬI mới được hoàn nguyên / bỏ (D4): mọi mã do mask / mask_text phát ra được ghi lại; begin() xoá bản ghi
   (nơi gọi gọi trước khi dựng đề bài mỗi nhóm). Mask chưa từng begin() cũng vậy: mã chỉ tính là đã gửi khi đã phát ra.
   Mã không có trong bản ghi (mô hình bịa / liệt kê) để nguyên cho lint của bc.ai.render bắt.
+- restrict(text) (E7): nơi gọi đưa ĐỀ BÀI CUỐI CÙNG (sau khi bc.ai.prompt.build_user cắt danh sách) — chỉ mã có mặt
+  trong đó còn là "đã gửi"; mã của dòng bị cắt khỏi đề bài thành mã lạ.
 - Mã giả trong lời chỉ được nhận khi đứng riêng thành một từ ("KH#0001," được; "KH#00012", "KH#0001x" không).
 """
 
@@ -31,16 +35,22 @@ import re
 
 import frappe
 
-# (DocType, cột tên hiển thị, tiền tố mã giả, (DocType hoá đơn, cột mã đối tác, cột tên chép)) — thứ tự = ưu tiên.
+# (DocType, cột tên hiển thị, tiền tố mã giả, [(DocType chép tên, cột mã đối tác, cột tên chép, chỉ bản đã duyệt)])
+# — thứ tự = ưu tiên. Tên CHÉP lúc ghi (không sửa lại khi đổi tên đối tác): hoá đơn đã duyệt của ERPNext; sổ cát và
+# đánh giá NCC của app sx (E6 — "Nguồn: <tên NCC>" trong lời ATTP).
 NGUON = (
-	("Customer", "customer_name", "KH", ("Sales Invoice", "customer", "customer_name")),
-	("Supplier", "supplier_name", "NCC", ("Purchase Invoice", "supplier", "supplier_name")),
+	("Customer", "customer_name", "KH", (("Sales Invoice", "customer", "customer_name", True),)),
+	("Supplier", "supplier_name", "NCC", (("Purchase Invoice", "supplier", "supplier_name", True),
+		("SX Nhat Ky Cat", "ncc_cat", "ten_ncc", False), ("SX Danh Gia NCC", "supplier", "ten_ncc", False))),
 )
 
 # Khoá trong payload bc.api.* chứa TÊN / mã khách, NCC (đã soát kd, tet, cn, vc, attp: "customer", "customer_id",
 # "chain" của cong-no; "supplier" của phai-tra). Không có khoá chứa tên hàng, kho, hãng xe, xe, bộ phận, tỉnh.
 PARTY_KEYS = {"customer", "customer_name", "customer_id", "khach", "khach_hang", "chain"}
 SUPPLIER_KEYS = {"supplier", "supplier_name", "supplier_id", "ncc", "nha_cung_cap"}
+# Nhãn CỐ ĐỊNH của bc.api.* nằm dưới khoá đối tác mà không phải đối tác (E6) — không bao giờ che. Đã soát bc/api/*.py:
+# cn.py ghi "Chưa gán chuỗi" vào "chain" cho hoá đơn chưa gán chuỗi MT.
+NHAN_CO_DINH = frozenset({"Chưa gán chuỗi"})
 
 TEN_TOI_THIEU = 6        # mask_text: tên MỘT từ ngắn hơn không thay trong chữ tự do (tên ≥ 2 từ thì luôn thay;
                          # "từ" = dãy chữ / số: "NPP-B", "Co.op", "Hà An" là 2 từ — "Hùng", "ABC" là 1)
@@ -143,6 +153,8 @@ class Mask:
 			return tuple(self._mask(v, key, None) for v in obj)
 		if isinstance(obj, str):
 			s = obj.strip()
+			if s in NHAN_CO_DINH and (key in PARTY_KEYS or key in SUPPLIER_KEYS):
+				return obj
 			ma = self._ma.get(s)
 			if ma is not None:
 				return self._phat(ma)
@@ -216,6 +228,18 @@ class Mask:
 			text = self._le.sub(lambda m: fn(m.group(0)) if m.group(0) in self._gui else m.group(0), text)
 		return text
 
+	def restrict(self, text) -> None:
+		"""Chỉ giữ là "đã gửi" những mã đã ghi nhận mà CÓ MẶT nguyên văn trong text (đề bài cuối cùng, sau khi
+		bc.ai.prompt.build_user cắt danh sách — E7): mã của dòng bị cắt khỏi đề bài thành mã lạ (lint loại), không bị
+		hoàn nguyên thành tên."""
+		text = "" if text is None else str(text)
+		if not self._gui:
+			return
+		co = {m.group(0) for m in _MA.finditer(text)}
+		if self._le is not None:
+			co |= {m.group(0) for m in self._le.finditer(text)}
+		self._gui &= co
+
 	def unmask(self, text: str) -> str:
 		"""Thay mã giả ĐÃ GỬI trong text về tên hiển thị thật; mã khác để nguyên."""
 		return self._thay(text, lambda ma: self._ten[ma])
@@ -247,36 +271,49 @@ def _doi_tac(doctype: str, cot: str) -> list:
 	return sorted(((r[0], r[1]) for r in rows if r[0]), key=lambda r: r[0])
 
 
-def _ten_hoa_don(doctype: str, cot_ma: str, cot_ten: str) -> list:
-	"""[(mã đối tác, tên chép trên hoá đơn đã duyệt)] — đọc mềm: thiếu bảng / cột → []."""
+def _ten_chep(doctype: str, cot_ma: str, cot_ten: str, da_duyet: bool) -> list:
+	"""[(mã đối tác hoặc None, tên chép)] — da_duyet: chỉ bản đã duyệt (docstatus 1), không thì mọi bản trừ bản huỷ.
+	Đọc mềm: thiếu bảng / cột mã → [] (thiếu cột tên → chỉ mã). Dòng không mã mà có tên vẫn lấy (mã None)."""
 	if not frappe.db.table_exists(doctype) or not frappe.db.has_column(doctype, cot_ma):
 		return []
 	ten = f"`{cot_ten}`" if frappe.db.has_column(doctype, cot_ten) else "NULL"
-	co_ds = frappe.db.has_column(doctype, "docstatus")
-	rows = _doc(f"SELECT DISTINCT `{cot_ma}`, {ten} FROM `tab{doctype}`" + (" WHERE docstatus = 1" if co_ds else ""))
-	return sorted(((r[0], r[1]) for r in rows if r[0]), key=lambda r: (str(r[0]), str(r[1] or "")))
+	loc = ""
+	if frappe.db.has_column(doctype, "docstatus"):
+		loc = " WHERE docstatus = 1" if da_duyet else " WHERE docstatus < 2"
+	rows = _doc(f"SELECT DISTINCT `{cot_ma}`, {ten} FROM `tab{doctype}`{loc}")
+	rows = [(r[0] or None, r[1]) for r in rows if r[0] or (isinstance(r[1], str) and r[1].strip())]
+	return sorted(rows, key=lambda r: (r[0] is None, str(r[0] or ""), str(r[1] or "")))
 
 
 def build(enabled: bool = True) -> Mask:
-	"""Mask từ tabCustomer / tabSupplier + tên chép trên hoá đơn đã duyệt (đọc mềm: thiếu bảng / cột thì bỏ). enabled
-	False → Mask rỗng. Mã đánh số theo `name` tăng dần (ổn định trong một lượt); đối tác chỉ có trên hoá đơn đánh số
-	tiếp sau, cũng theo mã tăng dần."""
+	"""Mask từ tabCustomer / tabSupplier + tên chép (hoá đơn đã duyệt; sổ cát / đánh giá NCC của sx — đọc mềm: thiếu
+	bảng / cột thì bỏ). enabled False → Mask rỗng. Mã đánh số theo `name` tăng dần (ổn định trong một lượt); đối tác
+	chỉ có ở bảng chép tên đánh số tiếp sau, cũng theo mã tăng dần; tên chép KHÔNG có mã đi kèm (và chưa là tên đã
+	biết) đánh số sau cùng, mỗi tên một mã."""
 	if not enabled:
 		return Mask()
 	parties, bi_danh = [], []
-	for doctype, cot, tien_to, (hd, cot_ma, cot_ten) in NGUON:
+	for doctype, cot, tien_to, nguon_chep in NGUON:
 		ho_so = _doi_tac(doctype, cot)
 		ma_cua = {}
 		for i, (name, ten) in enumerate(ho_so, 1):
 			ma_cua[name] = f"{tien_to}#{i:04d}"
 			parties.append((ma_cua[name], ten or name, {name, ten}))
-		hoa_don = _ten_hoa_don(hd, cot_ma, cot_ten)
-		them = sorted({str(ma) for ma, _t in hoa_don if ma not in ma_cua})
-		for j, name in enumerate(them, len(ho_so) + 1):
-			ten = next((t for m, t in hoa_don if str(m) == name and isinstance(t, str) and t.strip()), None)
-			ma_cua[name] = f"{tien_to}#{j:04d}"
+		chep = [x for nguon in nguon_chep for x in _ten_chep(*nguon)]
+		co_ma = [(m, t) for m, t in chep if m is not None]
+		them = sorted({str(ma) for ma, _t in co_ma if ma not in ma_cua})
+		n = len(ho_so)
+		for name in them:
+			ten = next((t for m, t in co_ma if str(m) == name and isinstance(t, str) and t.strip()), None)
+			n += 1
+			ma_cua[name] = f"{tien_to}#{n:04d}"
 			parties.append((ma_cua[name], ten or name, {name}))
-		bi_danh += [(ma_cua[str(m)], t) for m, t in hoa_don if str(m) in ma_cua]
+		bi_danh += [(ma_cua[str(m)], t) for m, t in co_ma if str(m) in ma_cua]
+		biet = {str(x).strip() for _m, ten, ds in parties for x in (ten, *ds) if isinstance(x, str)} \
+			| {t.strip() for _m, t in bi_danh if isinstance(t, str)}
+		for ten in sorted({t.strip() for m, t in chep if m is None} - biet):      # tên chép không có mã
+			n += 1
+			parties.append((f"{tien_to}#{n:04d}", ten, {ten}))
 	mask = Mask(parties, on=True)
 	for ma, ten in bi_danh:        # sau hồ sơ: tên trên hồ sơ của đối tác khác thắng bí danh
 		mask._alias(ten, ma)

@@ -221,4 +221,66 @@ eq("thiếu bảng hoá đơn → như cũ (chỉ hồ sơ)", B.mask(["NPP-A", "
 eq("… nhưng chuỗi lạ dưới khoá đối tác vẫn ra mã (đóng chặt theo khoá)",
 	B.mask({"customer": "Đại lý Phúc Lộc (tên cũ)", "customer_id": "NPP-A"})["customer"], "KH#0001")
 
+# ══ E6: tên NCC chép trong sổ của app sx; nhãn cố định không phải đối tác ════════════════════════════════
+print("\n— E6: redact.build thêm tên NCC chép trong sổ cát / đánh giá NCC của sx (MariaDB) —")
+reset(only={"Customer", "Supplier", "Sales Invoice", "Purchase Invoice", "SX Nhat Ky Cat", "SX Danh Gia NCC"})
+insert("Supplier", name="NCC-BB", supplier_name="NCC Bao bì Mới")
+insert("Supplier", name="NCC-CAT-01", supplier_name="Công ty TNHH Cát Sạch Miền Bắc")      # đã đổi tên
+insert("SX Nhat Ky Cat", ngay="2026-10-20", viec="Nhập cát", ncc_cat="NCC-CAT-01", ten_ncc="Công ty Cát Vàng Sông Hồng",
+	so_cu=0)
+insert("SX Nhat Ky Cat", ngay="2026-10-22", viec="Nhập cát", ncc_cat="NCC-CAT-XOA", ten_ncc="Cát Đã Xoá Hồ Sơ", so_cu=0)
+insert("SX Nhat Ky Cat", ngay="2026-10-23", viec="Nhập cát", ncc_cat=None, ten_ncc="Nguồn Cát Không Mã", so_cu=0)
+insert("SX Nhat Ky Cat", ngay="2026-10-24", viec="Rang", ncc_cat=None, ten_ncc="NCC Bao bì Mới", so_cu=0)
+insert("SX Danh Gia NCC", supplier="NCC-BB", ten_ncc="NCC Bao bì Tên Cũ")
+B = redact.build()
+begin(B)
+eq("E6: tên cũ trong sổ cát → CÙNG mã với hồ sơ NCC đã đổi tên",
+	B.mask(["NCC-CAT-01", "Công ty TNHH Cát Sạch Miền Bắc", "Công ty Cát Vàng Sông Hồng"]), ["NCC#0002"] * 3)
+eq("E6: tên cũ trên phiếu đánh giá NCC → cùng mã", B.mask(["NCC-BB", "NCC Bao bì Tên Cũ"]), ["NCC#0001"] * 2)
+eq("E6: NCC chỉ có trong sổ cát → mã đánh tiếp (NCC#0003), cả mã lẫn tên", B.mask(["NCC-CAT-XOA", "Cát Đã Xoá Hồ Sơ"]),
+	["NCC#0003", "NCC#0003"])
+eq("E6: tên chép KHÔNG có mã đi kèm → một mã riêng (NCC#0004); tên đã biết thì giữ mã cũ",
+	B.mask(["Nguồn Cát Không Mã", "NCC Bao bì Mới"]), ["NCC#0004", "NCC#0001"])
+eq("E6: câu ATTP 'Nguồn: <tên cũ>' trong gói số được che", B.mask({"attp": {"overview": {"viec": [
+	{"mo_ta": "Nguồn: Công ty Cát Vàng Sông Hồng, nhập ngày 20/10."}]}}})["attp"]["overview"]["viec"][0]["mo_ta"],
+	"Nguồn: NCC#0002, nhập ngày 20/10.")
+eq("E6: hoàn nguyên ra tên HIỆN TẠI của hồ sơ", B.unmask("NCC#0002"), "Công ty TNHH Cát Sạch Miền Bắc")
+drop_doctype("SX Danh Gia NCC")
+drop_column("SX Nhat Ky Cat", "ten_ncc")
+B = redact.build()
+eq("E6: thiếu bảng / cột của sx → vẫn chạy (đọc mềm)", B.mask(["NCC-CAT-01", "NCC-CAT-XOA"]), ["NCC#0002", "NCC#0003"])
+
+print("\n— E6: nhãn cố định dưới khoá đối tác không bị che —")
+M6 = base()
+g6 = M6.mask({"chains": [{"chain": "Chưa gán chuỗi", "amount": 5e6}, {"chain": "Saigon Co.op", "amount": 1}],
+	"rows": [{"customer": "Chưa gán chuỗi"}]})
+eq("E6: 'Chưa gán chuỗi' giữ nguyên; chuỗi thật vẫn ra mã", ([x["chain"] for x in g6["chains"]], g6["rows"][0]["customer"]),
+	(["Chưa gán chuỗi", "KH#0003"], "Chưa gán chuỗi"))
+c("E6: danh sách nhãn cố định là hằng trong redact.py", "Chưa gán chuỗi" in getattr(redact, "NHAN_CO_DINH", ()),
+	getattr(redact, "NHAN_CO_DINH", None))
+
+# ══ E7: "đã gửi" = có mặt trong đề bài cuối cùng ═══════════════════════════════════════════════════════════
+print("\n— E7: Mask.restrict(text) — chỉ mã có trong đề bài cuối cùng mới được hoàn nguyên —")
+M7 = base()
+begin(M7)
+goi7 = M7.mask({"top": [{"customer": "CUST-0001"}, {"customer": "CUST-0002"}], "ncc": [{"supplier": "SUP-0001"}]})
+de_bai = json.dumps({"top": goi7["top"][:1]}, ensure_ascii=False)        # dòng KH#0002, NCC#0001 bị cắt khỏi đề bài
+c("E7: có Mask.restrict", callable(getattr(M7, "restrict", None)))
+getattr(M7, "restrict", lambda t: None)(de_bai)
+eq("E7: mã có trong đề bài → vẫn hoàn nguyên; mã bị cắt khỏi đề bài → để nguyên (lint loại)",
+	M7.unmask("KH#0001, KH#0002, NCC#0001"), f"{LAN_ANH}, KH#0002, NCC#0001")
+r7 = render.render_insight({"title": "Khách KH#0002", "body": "Cần chăm sóc thêm KH#0001.", "advice": []},
+	{"x": {}}, {"x"}, M7)
+c("E7: render_insight loại mã đã ghi nhận nhưng không có trong đề bài cuối", r7["ok"] is False
+	and "so-tran:KH#0002" in r7["errors"] and ABC not in r7["title"], f"{r7['errors']} {r7['title']!r}")
+getattr(M7, "restrict", lambda t: None)("")
+eq("E7: restrict với đề bài không còn mã nào → không còn mã nào được hoàn nguyên", M7.unmask("KH#0001"), "KH#0001")
+M8 = redact.Mask([("KH-LE", "Khách Lẻ Riêng", {"X-1"})])
+M8.mask("X-1")
+getattr(M8, "restrict", lambda t: None)('{"a": "KH-LE"}')
+eq("E7: mã không theo dạng chuẩn (nơi gọi tự đặt) cũng nhận ra trong đề bài", M8.unmask("Gọi KH-LE"), "Gọi Khách Lẻ Riêng")
+M9 = redact.Mask()
+getattr(M9, "restrict", lambda t: None)("KH#0001")
+eq("E7: Mask rỗng — restrict không lỗi, không đổi gì", M9.unmask("KH#0001"), "KH#0001")
+
 c.done()

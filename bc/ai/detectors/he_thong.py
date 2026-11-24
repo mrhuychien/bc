@@ -251,12 +251,13 @@ def r_error_log(pack, cfg):
 	paths = [f"{b}.tong", f"{b}.tb_ngay"]
 	if isinstance(nhom, list) and nhom and isinstance(nhom[0], dict) and _chu(nhom[0].get("method")) \
 			and nhom[0].get("method") not in (KHAC, KHONG_GHI) and _so(nhom[0].get("so")) is not None:
-		detail = (f"Nhiều nhất là {ph(f'{b}.nhom[0].method', 'chu')} với {ph(f'{b}.nhom[0].so', 'so')} lần, "
+		detail = (f"Nhiều nhất là {ph(f'{b}.nhom[0].method', 'chu')} với {ph(f'{b}.nhom[0].so', 'so')} lượt, "
 			"quản trị cần xem Error Log trước khi lỗi ảnh hưởng người dùng.")
 	else:
 		detail = "Quản trị cần xem Error Log trước khi lỗi ảnh hưởng người dùng."
-	return [cfg.signal(muc, f"Lỗi hệ thống trong ngày qua: {ph(f'{b}.tong', 'so')} lần, trung bình "
-		f"{ph(f'{b}.tb_ngay', 'so')} lần", detail=detail, paths=paths)]
+	# "lượt" (không "lần") sau placeholder số: lời quy tắc cũng phải qua luật của lời mô hình (E5)
+	return [cfg.signal(muc, f"Lỗi hệ thống trong ngày qua: {ph(f'{b}.tong', 'so')} lượt, trung bình "
+		f"{ph(f'{b}.tb_ngay', 'so')} lượt", detail=detail, paths=paths)]
 
 
 @_ht("ht.job_that_bai", "job_that_bai", vang=0, unit="lượt", label="Tác vụ định kỳ thất bại trong 24 giờ")
@@ -345,9 +346,9 @@ def r_dang_nhap_sai(pack, cfg):
 	paths = [f"{b}.max_lan"] if _n(pack, f"{b}.max_lan") is not None else []
 	detail = ("Có thể có người dò mật khẩu, quản trị cần kiểm tra tài khoản và khoá địa chỉ lạ.")
 	if paths:
-		detail = (f"Nhiều nhất {ph(f'{b}.max_lan', 'so')} lần, có thể có người dò mật khẩu, quản trị cần kiểm "
+		detail = (f"Nhiều nhất {ph(f'{b}.max_lan', 'so')} lượt, có thể có người dò mật khẩu, quản trị cần kiểm "
 			"tra tài khoản.")
-	return [cfg.signal(muc, "{{@so_tk|so}} tài khoản đăng nhập sai quá {{@nguong|so}} lần trong ngày qua",
+	return [cfg.signal(muc, "{{@so_tk|so}} tài khoản đăng nhập sai quá {{@nguong|so}} lượt trong ngày qua",
 		detail=detail, paths=paths, tinh={"so_tk": vuot[muc], "nguong": nguong}, documents=docs)]
 
 

@@ -15,6 +15,7 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 import time
 from decimal import Decimal
 
@@ -734,8 +735,10 @@ MK = redact.Mask([("KH#0001", "Đại lý  Hai\tCách", {"C-1"})])
 MK.mask("C-1")          # D4: mã đã gửi mới hoàn nguyên được
 r = render.render_insight({"title": "KH#0001 quá hạn", "body": f"{{{{{R}.kpis.rong|chu}}}} Cần thu hồi sớm.",
 	"advice": ["Phòng Kế toán làm việc với KH#0001."]}, PACK, NHOM, MK)
-eq("khoảng trắng do tên thật / giá trị rỗng mang vào: tiêu đề + khuyến nghị gộp một dấu cách, thân bỏ đầu cuối",
-	(r["ok"], r["title"], r["body"], r["advice"]), (True, "Đại lý Hai Cách quá hạn", "Cần thu hồi sớm.",
+# E3: placeholder chu ra chuỗi rỗng → lỗi "chu-rong" (ok False); lời vẫn dựng như cũ
+eq("khoảng trắng do tên thật / giá trị rỗng mang vào: tiêu đề + khuyến nghị gộp một dấu cách, thân bỏ đầu cuối; "
+	"chu rỗng → lỗi chu-rong (E3)", (r["ok"], r["errors"], r["title"], r["body"], r["advice"]),
+	(False, [f"chu-rong:{R}.kpis.rong"], "Đại lý Hai Cách quá hạn", "Cần thu hồi sớm.",
 	["Phòng Kế toán làm việc với Đại lý Hai Cách."]))
 r = ri(body=f"Chủ {{{{{R}.top_overdue[1].customer_name|chu}}}} tỷ phú, đến {{{{{R}.as_of|ngay}}}} k rõ.")
 eq("đơn vị nhân chỉ xét sau placeholder SỐ (sau chu / ngay thì không)", (r["ok"], r["errors"]), (True, []))
@@ -880,8 +883,11 @@ c("D8: path có trong kinds (kind_map) → phải đúng kiểu đó", r["ok"] i
 	str(r["errors"]))
 r = rk(f"Khách lớn nhất nợ {{{{{R}.top_overdue[0].overdue|so}}}}.", {f"{R}.top_overdue.overdue": "so"})
 eq("D8: kinds thắng tên khoá (path đã bỏ chỉ số)", (r["ok"], r["errors"]), (True, []))
-r = rk(f"Hệ số {{{{{R}.kpis.he_so|so}}}}, tức {{{{{R}.kpis.he_so|pct}}}}; nhóm 31–60 ngày {{{{{R}.aging.31_60|tien}}}}.", {})
-eq("D8: khoá không đoán được tên → không xét kiểu", (r["ok"], r["errors"]), (True, []))
+r = rk(f"Hệ số {{{{{R}.kpis.he_so|so}}}}, nhóm 31–60 ngày {{{{{R}.aging.31_60|tien}}}}.", {})
+eq("D8/E2: khoá không đoán được tên → tien / so đều nhận", (r["ok"], r["errors"]), (True, []))
+r = rk(f"Hệ số chiếm {{{{{R}.kpis.he_so|pct}}}}.", {})
+eq("E2: khoá không đoán được tên → pct bị loại (tỷ lệ chỉ nhận trên khoá trông như tỷ lệ)", (r["ok"], r["errors"]),
+	(False, [f"kieu:{R}.kpis.he_so"]))
 r = rk(f"Nợ quá hạn {{{{{R}.kpis.overdue|tien}}}}, chiếm {{{{{R}.kpis.overdue_pct|pct}}}}; {{{{{R}.kpis.over_limit|so}}}} khách "
 	f"vượt hạn mức, DSO {{{{{R}.kpis.dso|so}}}} ngày.", {})
 eq("D8: đúng kiểu → nhận", (r["ok"], r["errors"]), (True, []))
@@ -915,9 +921,19 @@ LA_THAT = {
 	"van-chuyen.overview.su_co.mo_qua_n": "so", "kiem-ke.overview.kho.tong.qua_90": "so",
 	"kiem-ke.overview.kk_sx.gt_thieu": "tien", "nhan-su.overview.luong.bo_phan.thuc_nhan": "tien",
 	"nhan-su.overview.bhxh.ty_le": "pct", "he-thong.dia_day.pct": "pct", "he-thong.hang_doi.so_hang": "so",
-	# không đoán (để trống — không xét): đếm / tiền mà tên không nói rõ
-	"he-thong.error_log.tong": None, "van-chuyen.overview.cuoc.tong": None, "nhan-su.overview.bhxh.rui_ro": None,
-	"attp.overview.dem.do": None, "ngay.daily.meta.year": None, "van-chuyen.overview.cuoc.tra_bat_thuong": None,
+	# E2: lá vận chuyển / nhân sự / hệ thống trước đây không xếp được
+	"he-thong.error_log.tong": "so", "van-chuyen.overview.cuoc.tong": "tien", "attp.overview.dem.do": "so",
+	"ngay.daily.meta.year": "so", "van-chuyen.overview.cuoc.tra_bat_thuong": "so",
+	"van-chuyen.overview.xe.chi_phi_nam.tong": "tien", "van-chuyen.overview_truoc.cuoc.tong": "tien",
+	"van-chuyen.overview.chuyen.tai_tb": "pct", "van-chuyen.overview_truoc.chuyen.tai_tb": "pct",
+	"van-chuyen.overview.giao.cho": "so", "van-chuyen.overview.xe.dang_dung": "so", "nhan-su.overview.bhxh.dong": "so",
+	"nhan-su.overview.bhxh.dang_lam": "so", "van-chuyen.overview.xe.dem.dang_kiem.qua_han": "so",
+	"nhan-su.overview.nhan_su.loai.Khoán": "so", "han-dung.overview.am.ds_tong": "so",
+	# E2: "rate" trơ trọi là ĐƠN GIÁ (đồng); chỉ "*_rate" là tỷ lệ
+	"han-dung.overview.am.ds.rate": "tien", "nhap-tp.overview.nvl_treo.list.rate": "tien",
+	"tong-quan.channels.rows.return_rate": "pct",
+	# không đoán (để trống): tên không nói rõ
+	"nhan-su.overview.bhxh.rui_ro": None,
 }
 sai = {p: (getattr(render, "kieu_theo_ten", lambda x: "?")(p), k) for p, k in LA_THAT.items()
 	if getattr(render, "kieu_theo_ten", lambda x: "?")(p) != k}
@@ -1047,6 +1063,200 @@ eq("D4: Mask chưa begin(), chưa phát mã nào → unmask / strip không đổ
 	("KH#0001", "KH#0001"))
 M5.mask_text("gọi CUST-0001")
 eq("D4: mã phát ra qua mask_text cũng tính là đã gửi", M5.unmask("KH#0001 nợ"), f"{LAN_ANH} nợ")
+
+# ══ 7d. Vòng sửa 2: E1 (ngoặc nhọn), E2 (kiểu theo tên khoá), E3 (quanh placeholder), E4 (tốc độ), E5 ══════
+print("\n— E1: lint KHÔNG bỏ qua chữ trong ngoặc nhọn (chỉ bỏ dấu ngoặc / thẻ trơn) —")
+for text, want in (("Nợ quá hạn <khoảng 350 triệu> cần thu gấp.", "350 triệu"),
+		("Doanh số đạt <b 1.250.000 đ> trong tháng.", "1.250.000 đ"), ("Tỷ lệ &lt;x 35%&gt; so với cùng kỳ.", "35%"),
+		("Tỷ lệ trả hàng <uoc 35%> so với cùng kỳ.", "35%"), ("Có <x 1250> khách mới.", "1250"),
+		("Nợ <b>12</b> tỷ", "12 tỷ"), ("Nợ <span class=\"a\">12</span> tỷ", "12 tỷ"), ("Nợ 12 <tr>", "12 tr"),
+		("Nợ ＜khoảng 350 triệu＞", "350 triệu"), ("Nợ <it nhat 100 triệu> trong 7 ngày", "100 triệu")):
+	got = render.lint(text)
+	c(f"E1: lint bắt — {text!r} → {want!r}", want in got, str(got))
+for text in ("Nợ quá hạn <b>tăng</b> trong 7 ngày", "Tỷ lệ < ngưỡng, mã <SR900>", "<i>quý 4</i>"):
+	c(f"E1: lint giữ — {text!r}", render.lint(text) == [], str(render.lint(text)))
+r = rs(f"Bình quân {{{{{P0}.boxes|so}}}} hộp; riêng nhóm khách lớn nợ <khoảng 350 triệu> và chiếm <uoc 70%> tổng nợ.")
+c("E1: render_insight loại lời có số viết tay trong ngoặc nhọn", r["ok"] is False and "so-tran:350 triệu" in r["errors"]
+	and "so-tran:70%" in r["errors"], f"{r['ok']} {r['errors']}")
+r = rs(f"Chiếm {{{{{P0}.boxes|so}}}} <tr> mỗi tháng.")
+c("E1: đơn vị trong ngoặc nhọn ngay sau placeholder → loại", r["ok"] is False, f"{r['ok']} {r['errors']}")
+
+print("\n— E2: kiểu theo tên khoá — 'rate' là đơn giá, khoá không xếp được thì cấm pct —")
+PR = {"han-dung": {"overview": {"am": {"ds": [{"item_code": "HAN-NL", "qty": -5.0, "rate": 30000.0,
+	"value_abs": 150000.0}]}}}, "nhap-tp": {"overview": {"nvl_treo": {"list": [{"rate": 50000.0}]}}},
+	"tong-quan": {"summary": {"rows": [{"return_rate": 1.1}]}},
+	"attp": {"report": {"bang": [{"ma": "ty_le_luot", "don_vi": "%", "thang": {"2026-09": 87.5}, "ky": 87.5},
+		{"ma": "su_co", "don_vi": "phiếu", "thang": {"2026-09": 3}, "ky": 3}]}}}
+SR = {"han-dung", "nhap-tp", "tong-quan", "attp"}
+
+
+def re2(body):
+	return render.render_insight({"title": "Kho", "body": body, "advice": []}, PR, SR, None, kinds={})
+
+
+for path, dung, sai in (("han-dung.overview.am.ds[0].rate", "tien", ("pct", "so")),
+		("nhap-tp.overview.nvl_treo.list[0].rate", "tien", ("pct", "so")),
+		("tong-quan.summary.rows[0].return_rate", "pct", ("tien", "so")),
+		("attp.report.bang[0].thang.2026-09", "pct", ("tien", "so")), ("attp.report.bang[1].ky", "so", ("pct", "tien"))):
+	r = re2(f"Mục này ở mức {{{{{path}|{dung}}}}} theo sổ.")
+	c(f"E2: {path} |{dung} → nhận", r["ok"] is True, f"{r['errors']} {r['body']!r}")
+	for k in sai:
+		r = re2(f"Mục này ở mức {{{{{path}|{k}}}}} theo sổ.")
+		c(f"E2: {path} |{k} → loại (kieu)", r["ok"] is False and f"kieu:{path}" in r["errors"], f"{r['ok']} {r['errors']}")
+eq("E2: kieu_theo_ten — 'rate' → tien, '*_rate' → pct", [render.kieu_theo_ten(x) for x in (
+	"han-dung.overview.am.ds.rate", "tong-quan.summary.rows.return_rate", "x.y.qty_no_rate")], ["tien", "pct", "so"])
+
+# Gói số THẬT (seed gộp seed_ui2 + seed sổ kho seed_ui_kho): MỌI lá số phải xếp được kiểu (kinds của lượt → đơn vị của
+# dòng → tên khoá); mọi lời quy tắc của lượt, chép nguyên làm lời mô hình, phải qua render_insight với kinds (E5).
+# Mỗi seed chạy ở tiến trình riêng, DB riêng; kết quả trả qua stdout (gói số không ghi ra tệp).
+LA_DE_TRONG = {}        # lá cố ý để trống (không xếp được): hiện không có
+_CON = r"""
+import json, os, sys, decimal, tempfile, importlib
+sys.dont_write_bytecode = True
+importlib.import_module(sys.argv[1])
+import frappe
+from bc.ai import collect, registry, render
+frappe.session.user = "Administrator"
+frappe.FAKE_SITE_PATH = tempfile.mkdtemp(prefix="bc_ai_r_")
+now = frappe.utils.now_datetime()
+pack = collect.build(frappe.utils.getdate(now))
+pack["he-thong"] = registry.run_detectors(now)
+rr = registry.run_rules(pack, registry.overrides_from_settings())
+kinds = registry.kind_map(rr.signals)
+kieu = getattr(render, "kieu_cua", None) or (lambda pk, p, kd: kd.get(registry.strip_index(p))
+	or render.kieu_theo_ten(registry.strip_index(p)))
+def walk(o, p=""):
+	if isinstance(o, dict):
+		for k, v in o.items():
+			yield from walk(v, f"{p}.{k}" if p else str(k))
+	elif isinstance(o, (list, tuple)):
+		for i, v in enumerate(o):
+			yield from walk(v, f"{p}[{i}]")
+	else:
+		yield p, o
+la = {}
+for p, v in walk(pack):
+	if isinstance(v, bool) or not isinstance(v, (int, float, decimal.Decimal)):
+		continue
+	la.setdefault(registry.strip_index(p), set()).add(str(kieu(pack, p, kinds)))
+quy_tac = []
+for s in rr.signals:
+	g = registry.group_of(s.section)
+	secs = set(registry.GROUPS[g]["sections"]) if g else {s.section}
+	r = render.render_insight({"title": s.title, "body": s.detail or s.title, "advice": []}, pack, secs, None, kinds=kinds)
+	quy_tac.append([s.key, r["ok"], r["errors"]])
+gia = {}
+if "han-dung" in pack:
+	for p in ("han-dung.overview.am.ds[0].rate", "nhap-tp.overview.nvl_treo.list[0].rate"):
+		if registry.resolve(pack, p, None) is None:
+			continue
+		g = registry.group_of(p.split(".")[0])
+		gia[p] = {k: render.render_insight({"title": "Kho", "body": "Đơn giá sổ {{" + p + "|" + k + "}} mỗi đơn vị.",
+			"advice": []}, pack, set(registry.GROUPS[g]["sections"]), None, kinds=kinds)["ok"] for k in ("tien", "pct", "so")}
+print("@@KQ@@" + json.dumps({"la": {k: sorted(v) for k, v in la.items()}, "quy_tac": quy_tac, "gia": gia,
+	"not_run": rr.not_run}, ensure_ascii=False))
+"""
+THAT = {}
+for ten, seed in (("chung", "seed_ui2"), ("kho", "seed_ui_kho")):
+	env = dict(os.environ, BC_TEST_DB=os.environ.get("BC_TEST_DB", "bc_test_ai_render") + ("_g" if ten == "chung" else "_k"))
+	pr = subprocess.run([sys.executable, "-B", "-c", _CON, seed], cwd=os.path.dirname(os.path.abspath(__file__)),
+		env=env, capture_output=True, text=True, timeout=900)
+	kq = [x for x in pr.stdout.splitlines() if x.startswith("@@KQ@@")]
+	c(f"E2: dựng gói số thật ({seed}) trong tiến trình riêng", pr.returncode == 0 and len(kq) == 1,
+		(pr.stderr or pr.stdout)[-800:])
+	THAT[ten] = json.loads(kq[0][6:]) if kq else {"la": {}, "quy_tac": [], "gia": {}}
+la_that = {}
+for ten, kq in THAT.items():
+	for p, ks in kq["la"].items():
+		la_that.setdefault(p, set()).update(ks)
+c("E2: gói số thật có đủ lá để soát (≥ 900 path, cả van-chuyen / nhan-su / han-dung / nhap-tp)", len(la_that) >= 900
+	and all(any(p.startswith(m + ".") for p in la_that) for m in ("van-chuyen", "nhan-su", "han-dung", "nhap-tp")),
+	len(la_that))
+eq("E2: MỌI lá số của hai gói số thật đều xếp được kiểu (trừ danh sách cố ý để trống)",
+	sorted(p for p, ks in la_that.items() if "None" in ks and p not in LA_DE_TRONG), [])
+# (bảng chỉ số ATTP: cùng khoá, đơn vị theo từng dòng — "%" hoặc số đếm — nên được hai kiểu)
+eq("E2: không lá nào bị hai kiểu khác nhau (trừ bảng chỉ số ATTP, kiểu theo don_vi của dòng)", sorted(p for p, ks
+	in la_that.items() if len(ks - {"None"}) > 1 and not p.startswith(("attp.report.bang.", "attp.report.chi_tieu."))),
+	[])
+DUNG_THAT = {"van-chuyen.overview.chuyen.tai_tb": "pct", "van-chuyen.overview.cuoc.tong": "tien",
+	"van-chuyen.overview.xe.chi_phi_nam.tong": "tien", "van-chuyen.overview.giao.cho": "so",
+	"van-chuyen.overview.xe.dang_dung": "so", "nhan-su.overview.bhxh.dong": "so", "nhan-su.overview.bhxh.dang_lam": "so",
+	"nhan-su.overview.bhxh.ty_le": "pct", "han-dung.overview.am.ds.rate": "tien",
+	"nhap-tp.overview.nvl_treo.list.rate": "tien", "tong-quan.summary.rows.return_rate": "pct"}
+eq("E2: lá đại diện trên gói số thật → đúng kiểu", {p: sorted(la_that.get(p, {"thiếu"})) for p, k in DUNG_THAT.items()
+	if la_that.get(p) != {k}}, {})
+eq("E2: đơn giá sổ thật (seed kho) — |tien nhận, |pct và |so loại", THAT["kho"]["gia"],
+	{p: {"tien": True, "pct": False, "so": False} for p in ("han-dung.overview.am.ds[0].rate",
+	"nhap-tp.overview.nvl_treo.list[0].rate")})
+print("\n— E5: lời quy tắc (tiêu đề / chi tiết) chép nguyên làm lời mô hình → render_insight nhận (kinds của lượt) —")
+c("E5: có lời quy tắc để soát (≥ 30 tín hiệu trên hai seed)", sum(len(k["quy_tac"]) for k in THAT.values()) >= 30,
+	{t: len(k["quy_tac"]) for t, k in THAT.items()})
+eq("E5: mọi lời quy tắc của seed chung + seed kho qua được luật của chính nó",
+	[f"{t}:{k}: {e}" for t, kq in THAT.items() for k, ok, e in kq["quy_tac"] if not ok], [])
+
+print("\n— E3: số / từ chỉ số / dấu quanh placeholder số —")
+PS["attp"] = {"overview": {"du_lieu_mau": "", "gach": "–", "trang": "   ", "nhan": "Xanh"}}
+P1 = "tong-quan.summary.rows[0].invoices"
+
+
+def r3(body):
+	return render.render_insight({"title": "Tiêu đề", "body": body, "advice": []}, PS, {"san-pham", "tong-quan", "attp"},
+		redact.Mask())
+
+
+for body, nhan in (
+		(f"Còn {{{{{P1}|so}}}}{{{{attp.overview.du_lieu_mau|chu}}}}{{{{{P1}|so}}}} việc treo.", "chu rỗng giữa hai số"),
+		(f"Còn 1{{{{attp.overview.du_lieu_mau|chu}}}}{{{{{P1}|so}}}} việc.", "chữ số + chu rỗng + số"),
+		(f"Còn {{{{attp.overview.trang|chu}}}} {{{{{P1}|so}}}} việc.", "chu chỉ có khoảng trắng"),
+		(f"Lệch {{{{attp.overview.gach|chu}}}}{{{{{P1}|so}}}} so với tuần trước.", "chu là dấu gạch trước số (dấu âm)"),
+		(f"Có {{{{{P1}|so}}}}{{{{attp.overview.gach|chu}}}}5 việc.", "chu là dấu gạch + chữ số sau"),
+		(f"Hơn mười {{{{{P1}|so}}}} khách quá hạn.", "'mười' trước placeholder"),
+		(f"Có hai mươi {{{{{P1}|so}}}} khách.", "'mươi' trước placeholder"),
+		(f"Có {{{{{P1}|so}}}} mươi khách chậm trả.", "'mươi' sau placeholder"),
+		(f"Vượt {{{{{P1}|so}}}} rưỡi.", "'rưỡi' sau"), (f"Còn {{{{{P1}|so}}}} tá khách.", "'tá' sau"),
+		(f"Còn {{{{{P1}|so}}}} lẻ hộp.", "'lẻ' sau"), (f"Có một trăm linh {{{{{P1}|so}}}} đơn.", "'linh' trước"),
+		(f"Cứ 1/{{{{{P1}|so}}}} số khách trả chậm.", "'1/' trước"), (f"Tức {{{{{P1}|so}}}}/10 khách.", "'/10' sau"),
+		(f"Tỷ số 3:{{{{{P1}|so}}}} khách.", "'3:' trước"), (f"Tỷ số {{{{{P1}|so}}}}: 4 khách.", "': 4' sau"),
+		(f"Từ 5-{{{{{P1}|so}}}} ngày.", "'5-' dính trước"), (f"Từ {{{{{P1}|so}}}}–9 ngày.", "'–9' dính sau"),
+		(f"Tăng trưởng thu nợ-{{{{{P0}.ty_le|chu}}}}.", "chu trông như số sau gạch dính chữ"),
+		(f"Doanh số đạt {{{{tong-quan.summary.rows[0].sales|tien}}}}, đồng nghĩa tăng.", "(giữ chỗ: không lỗi)")):
+	r = r3(body)
+	if nhan.startswith("(giữ"):
+		c(f"E3: giữ — 'đồng nghĩa' không phải đơn vị", r["ok"] is True, f"{r['errors']}")
+		continue
+	c(f"E3: loại — {nhan}", r["ok"] is False and any(e.startswith(("so-tran:", "chu-rong:")) for e in r["errors"]),
+		f"{r['ok']} {r['errors']} {r['body']!r}")
+PP = {"cong-no": {"receivables": {"kpis": {"overdue_pct": 54.5, "overdue": 120e6}}}}
+r = render.render_insight({"title": "Nợ", "body": "Tăng trưởng thu nợ-{{cong-no.receivables.kpis.overdue_pct|pct}}.",
+	"advice": []}, PP, {"cong-no"}, None, kinds={})
+c("E3: '-' dính chữ ngay trước placeholder pct → loại", r["ok"] is False and any(e.startswith("so-tran:") for e in
+	r["errors"]), f"{r['ok']} {r['errors']}")
+r = render.render_insight({"title": "Nợ", "body": "Mã KK-{{cong-no.receivables.kpis.overdue|tien}} vẫn là nối.",
+	"advice": []}, PP, {"cong-no"}, None, kinds={})
+c("E3: '-' dính chữ trước placeholder tien (nối mã) vẫn giữ như cũ", r["ok"] is True, f"{r['errors']}")
+r = r3(f"Nhãn {{{{attp.overview.nhan|chu}}}} đạt {{{{{P1}|so}}}} việc.")
+c("E3: chu có chữ (không rỗng) bên cạnh vẫn nhận", r["ok"] is True, f"{r['errors']}")
+for text, want in (("Nợ quá hạn (12) tỷ", "12) tỷ"), ("Tổng 12 x tỷ", "12 x tỷ"), ("Còn 12: tỷ", "12: tỷ"),
+		("Đạt 12 = tỷ", "12 = tỷ"), ("Đạt 12 · tỷ", "12 · tỷ"), ("Nợ \"12\" tỷ", "12\" tỷ"), ("khoảng 4 per cent", "4 per cent"),
+		("tăng 35 bps", "35 bps"), ("hao 5 phần nghìn", "5 phần nghìn"), ("đạt 3 phần mười", "3 phần mười"),
+		("tức ba lăm % phải thu", "ba lăm %"), ("thêm 2 củ", "2 củ"), ("chín mươi%", "chín mươi%")):
+	got = render.lint(text)
+	c(f"E3: lint bắt — {text!r} → {want!r}", want in got, str(got))
+for text in ("DSO 62 ngày, 99 khách quá hạn", "quý 3, đồng thời kho tăng", "Bước 5: kiểm kho", "5 khách, 12 đơn",
+		"trong 7 ngày (gấp)", "củ hành", "Ông Ba tới"):
+	c(f"E3: lint giữ — {text!r}", render.lint(text) == [], str(render.lint(text)))
+
+print("\n— E4: lint không chạy bậc hai trên dãy số dài —")
+for nhan, text in (("một dãy 40.000 chữ số", "1" * 40000), ("'1.2.' × 10.000", "1.2." * 10000),
+		("'12.' × 13.000", "12." * 13000), ("'4E' + 40.000 chữ số", "4E" + "1" * 40000)):
+	t0 = time.monotonic()
+	got = render.lint(text)
+	dt = time.monotonic() - t0
+	c(f"E4: lint {nhan} < 2 s ({dt:.2f} s), có bắt", dt < 2 and got, f"{dt:.2f} s")
+t0 = time.monotonic()
+r = rs(f"Có {{{{{P0}.boxes|so}}}} " + "1" * 20000)
+dt = time.monotonic() - t0
+c(f"E4: render_insight placeholder + 20.000 chữ số < 2 s ({dt:.2f} s), loại", dt < 2 and r["ok"] is False, f"{dt:.2f} s")
 
 # ══ 8. Luật tĩnh ══════════════════════════════════════════════════════════════
 print("\n— luật tĩnh: render thuần (không DB), không module nào đụng mạng / khoá —")

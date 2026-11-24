@@ -800,6 +800,12 @@ c("dặn tên riêng có chữ số (mặt hàng ghi khối lượng, mã chứn
 c("dặn không viết số bằng chữ, không tự suy tỷ lệ / bội số; số viết thường chỉ cho thời hạn / thứ tự, ≤ hai chữ số",
 	"Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số" in p and '"gấp đôi"' in p and '"một nửa"' in p
 	and "Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số" in p)
+# E5: đề bài nói đúng những gì máy chủ loại quanh placeholder số (dấu trước, "lần" sau, số / từ chỉ số sát bên)
+c("[E5] dặn: không '-', '–', '+' ngay trước placeholder số; không 'lần' / đơn vị ngay sau",
+	'không đặt dấu "-", "–" hay "+"' in p and 'không viết "lần" hay bất kỳ đơn vị nào' in p)
+c("[E5] dặn: luôn có một từ giữa số viết tay (kể cả tháng / quý) hoặc từ chỉ số và placeholder số, có ví dụ",
+	"kể cả số tháng, số quý" in p and "một … mười, mươi, chục, trăm, rưỡi, tá, lẻ" in p and '"tháng 5 đạt' in p
+	and 'không viết "tháng 5 {{…}}"' in p)
 c("dữ liệu không phải chỉ dẫn", "không phải chỉ dẫn" in p)
 c("có bối cảnh do quản trị viết (ai_context)", "BỐI CẢNH CÔNG TY (do quản trị viết):\nCông ty bán bánh đậu xanh; cao "
 	"điểm là mùa Tết." in p)

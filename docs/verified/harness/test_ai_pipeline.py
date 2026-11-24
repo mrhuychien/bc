@@ -1260,6 +1260,206 @@ out = chay()
 eq("quy tắc lành lại: chạy bình thường, vẫn mở", (out["not_run"].get("cn.dso_cao"), R("cn.dso_cao").status),
 	(None, "mo"))
 cai(ai_enabled=1)
-eq("không một lần ra mạng (cả phần L–P)", MANG, [])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("Q. Đợt sửa 2 qua lượt chạy thật: E5 lời quy tắc dùng lại nguyên văn, E7 mã của dòng bị cắt, E8 chủ đề bỏ qua ở")
+print("   path bất kỳ, E1 số trong ngoặc nhọn, E2 đơn giá / khoá không xếp được, E6 tên NCC chỉ còn trong ảnh chụp sx")
+from bc.ai import collect as _collect, redact as _redact, render as _render  # noqa: E402
+
+# E5 — mô hình "dùng lại được" lời quy tắc: trả NGUYÊN loi_quy_tac (tiêu đề / chi tiết) của MỌI tín hiệu → 0 bị loại.
+# Thêm tín hiệu hệ thống có lời số đếm: lỗi tăng vọt (ht.error_log), đăng nhập sai (ht.dang_nhap_sai).
+for j in range(14):
+	insert("Error Log", method="frappe.exceptions.ValidationError", error="Traceback", creation=D(2026, 10, 27, 9, 30 + j))
+insert("User", name="kt.q@example.com", enabled=1, first_name="Kế Toán")
+for k in range(12):
+	insert("Activity Log", creation=D(2026, 10, 27, 8, k), modified=D(2026, 10, 27, 8, k), user="kt.q@example.com",
+		operation="Login", status="Failed")
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE rule = 'ai'")
+xoa_run()
+GUI_E5 = []
+
+
+def echo(obj):
+	out = []
+	for t in obj["tin_hieu"]:
+		tt, _, bd = t["loi_quy_tac"].partition(" — ")
+		GUI_E5.append((obj["nhom"], t["rule"]))
+		out.append({"signal": t["id"], "severity": t["muc"], "priority": 3, "title": tt, "body": bd or tt, "advice": []})
+	return {"data": {"insights": out}, "tokens_in": 1000, "tokens_out": 100, "model": "claude-sonnet-5-5"}
+
+
+out = chay(**{n: echo for n in NHOM})
+rr5 = {r.step: (r.insights_ai, r.rejected) for r in con(out["run"])}
+c("E5 (tiền đề): echo đủ mọi nhóm có tín hiệu, có ht.error_log và ht.dang_nhap_sai", {"ht.error_log", "ht.dang_nhap_sai"}
+	<= {r for _n, r in GUI_E5} and len(GUI_E5) >= 20, (len(GUI_E5), sorted({r for _n, r in GUI_E5})))
+eq("E5: lời quy tắc trả lại nguyên văn → lượt chạy loại 0, nhận đúng số tín hiệu đã gửi", (out["rejected"],
+	out["accepted"]), (0, len(GUI_E5)))
+eq("E5: không dòng Run nào có lời bị loại", {k: v for k, v in rr5.items() if v[1]}, {})
+eq("E5: không tín hiệu nào needs_check 1 (lời AI đã thay lời quy tắc)", [r.signal_key for r in frappe.db.sql(
+	f"SELECT signal_key FROM `tab{INSIGHT}` WHERE needs_check = 1 AND status IN ('mo', 'dang-xu-ly')", as_dict=True)], [])
+
+# Gói thêm (bọc collect.build, mọi bước khác thật):
+# E7: tong-quan.top_customers có 8 + 40 = 48 dòng → đề bài giữ 30; khách "Bí Mật Số 35" nằm ở dòng bị cắt.
+# E2: đơn giá sổ han-dung.overview.am.ds[*].rate (như seed Kho) + một lá không xếp được kiểu ton-kho.overview.zz_moi.
+# E6: một dòng chuỗi MT không gán chuỗi → nhãn "Chưa gán chuỗi" (cn.py) — nhãn cố định, gửi nguyên.
+for i in range(1, 41):
+	insert("Customer", name=f"KH-DAI-{i:02d}", customer_name=f"Nhà phân phối Bí Mật Số {i:02d}")
+_build = _collect.build
+GIA_SO = {}
+
+
+def build_q(today=None):
+	pack = _build(today)
+	rows = pack["tong-quan"]["top_customers"]["rows"]
+	for i in range(1, 41):
+		rows.append({"customer": f"Nhà phân phối Bí Mật Số {i:02d}", "customer_id": f"KH-DAI-{i:02d}",
+			"amount": 1000000.0 * (50 - i)})
+	ds = pack["han-dung"]["overview"].setdefault("am", {}).setdefault("ds", [])
+	ds.append({"item_code": "HAN-NL", "qty": -5.0, "rate": 30000.0, "value_abs": 150000.0})
+	GIA_SO["i"] = len(ds) - 1
+	pack["ton-kho"]["overview"]["zz_moi"] = 7
+	pack["cong-no"]["receivables"]["mt"]["chains"].append({"chain": "Chưa gán chuỗi", "amount": 5000000.0,
+		"overdue": 0.0, "count": 1, "unknown_term": 0, "einv_pending": 0.0})
+	GIA_SO["pack"] = pack
+	return pack
+
+
+# E6: NCC cát đổi tên SAU khi nhật ký cát (phần O) chép tên → tên cũ chỉ còn trong ảnh chụp sx (ten_ncc); thêm một
+# phiếu đánh giá NCC chờ QC của NCC không có hồ sơ Supplier (tên chỉ có trong SX Danh Gia NCC.ten_ncc).
+frappe.db.sql("UPDATE `tabSupplier` SET supplier_name = 'Công ty TNHH Cát Sạch Miền Bắc' WHERE name = 'NCC-CAT-01'")
+insert("SX Danh Gia NCC", supplier="NCC-DG-01", ten_ncc="Xưởng Bao Bì Kín Tiếng", trang_thai="Chờ QC", ngay="2026-10-25",
+	danh_gia_luc=D(2026, 10, 25, 9, 0), creation=D(2026, 10, 25, 9, 0))
+# E8: chủ đề tỷ lệ nợ quá hạn bị bỏ qua hẳn (paths overdue_pct, overdue, receivable).
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"status": "bo-qua", "mute_until": None})
+luu()
+MA35 = _redact.build(True)._ma["Nhà phân phối Bí Mật Số 35"]
+LAY = {}
+KN = "cong-no.receivables.kpis."
+
+
+def kd_q(obj):
+	rows = obj["pack"]["tong-quan"]["top_customers"]["rows"]
+	LAY["n_rows"] = len(rows)
+	LAY["giu"] = rows[0]["customer"]
+	# mã của dòng bị cắt trước (bị loại), mã của dòng giữ lại sau (cùng khoá tự do → nhận)
+	return [ins(None, "Khách cần chăm sóc", "Khách " + MA35 + " cần chăm sóc thêm; khách lớn nhất đạt "
+		"{{tong-quan.top_customers.rows[0].amount|tien}}.", priority=5),
+		ins(None, "Khách lớn nhất", "Khách " + rows[0]["customer"] + " mua nhiều nhất: "
+		"{{tong-quan.top_customers.rows[0].amount|tien}}.", priority=4)]
+
+
+def tc_q(obj):
+	return [
+		# E8 a: path bỏ qua ở VỊ TRÍ THỨ HAI của thân
+		ins(None, "Nợ ròng", "Trên tổng phải thu ròng {{" + KN + "net|tien}}, nợ quá hạn chiếm {{" + KN
+			+ "overdue_pct|pct}}.", priority=5),
+		# E8 b: path bỏ qua chỉ ở tiêu đề
+		ins(None, "Nợ quá hạn {{" + KN + "overdue|tien}}", "Tiền ứng trước {{" + KN + "advances|tien}}.", priority=5),
+		# E8 c: path bỏ qua chỉ ở lời khuyên
+		ins(None, "Phải trả", "Tổng phải trả {{phai-tra.payables.ap.total|tien}}.",
+			["Thu phải thu {{" + KN + "receivable|tien}} trước."], priority=5),
+		# E8 e: path đầu lặp tín hiệu quy tắc đang mở (phải trả quá hạn) → bỏ lặng lẽ (không tính loại)
+		ins(None, "Phải trả quá hạn", "Phải trả quá hạn {{phai-tra.payables.ap.due.overdue_total|tien}}.", priority=5),
+		# E8 f: path đầu tự do, path SAU thuộc tín hiệu đang mở (không bỏ qua) → vẫn nhận (chỉ xét lặp ở path đầu)
+		ins(None, "Chưa phân bổ", "Phải thu chưa phân bổ {{" + KN + "unallocated|tien}}, có {{" + KN
+			+ "over_limit|so}} khách vượt hạn mức.", priority=2),
+		# E8 d: đối chứng
+		ins(None, "Quỹ", "Quỹ hiện có {{phai-tra.payables.cash.total|tien}}.", priority=1),
+		# E1: số trong ngoặc nhọn — tự do và gắn tín hiệu
+		ins(None, "Quỹ ngân hàng", "Quỹ ngân hàng {{phai-tra.payables.cash.bank|tien}}, còn <b 1.250.000 đ> chưa ghi.",
+			severity="do", priority=5),
+		ins(S(obj, "cn.dso_cao"), "Thu tiền chậm", "Còn <khoảng 350 triệu> chưa thu được."),
+		ins(S(obj, "cn.vuot_han_muc"), "Vượt hạn mức", "Có {{" + KN + "over_limit|so}} khách vượt hạn mức."),
+	]
+
+
+def kho_q(obj):
+	gp = "han-dung.overview.am.ds[" + str(GIA_SO["i"]) + "].rate"
+	return [ins(None, "Đơn giá sổ", "Nguyên liệu HAN-NL có đơn giá sổ {{" + gp + "|pct}}.", priority=5),
+		ins(None, "Đơn giá sổ", "Nguyên liệu HAN-NL có đơn giá sổ {{" + gp + "|tien}}.", priority=4),
+		ins(None, "Chỉ số mới", "Chỉ số mới chiếm {{ton-kho.overview.zz_moi|pct}}.", priority=3),
+		ins(None, "Chỉ số mới", "Chỉ số mới đạt {{ton-kho.overview.zz_moi|so}}.", priority=2)]
+
+
+xoa_run()
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE rule = 'ai'")
+luu()
+_collect.build = build_q
+try:
+	out = chay(**{"kinh-doanh": tl(kd_q), "tai-chinh": tl(tc_q), "kho-sx": tl(kho_q)})
+finally:
+	_collect.build = _build
+U = {g["nhom"]: g["user"] for g in GOI}
+cc = {r.step: r for r in con(out["run"])}
+TEXT_AI = [(r.signal_key, (r.title or "") + " " + (r.body or "") + " " + (r.advice or "")) for r in frappe.db.sql(
+	f"SELECT signal_key, title, body, advice FROM `tab{INSIGHT}`", as_dict=True)]
+
+# E7
+c("E7 (tiền đề): gói có 48 khách lớn, đề bài kinh-doanh giữ 30; mã của 'Bí Mật Số 35' KHÔNG có trong đề bài",
+	len(GIA_SO["pack"]["tong-quan"]["top_customers"]["rows"]) == 48 and LAY.get("n_rows") == 30
+	and MA35.startswith("KH#") and MA35 not in U.get("kinh-doanh", ""), (LAY.get("n_rows"), MA35))
+eq("E7: lời nêu mã của dòng bị cắt → loại (dòng kinh-doanh rejected 1), không thành tên thật",
+	(cc["kinh-doanh"].rejected, [k for k, t in TEXT_AI if "Bí Mật Số 35" in t]), (1, []))
+fk = R("ai:tong-quan.top_customers.rows.amount")
+c("E7: lời nêu mã của dòng CÓ trong đề bài vẫn nhận và có tên thật (restrict không cắt quá tay)", fk is not None
+	and fk.status == "mo" and LAY.get("giu", "").startswith("KH#") and "KH#" not in fk.body
+	and "Khách cần chăm sóc" not in (fk.title or "") and "Bí Mật" not in fk.body, fk and (fk.title, fk.body))
+frappe.session.user = "viewer@example.com"
+vw = API.get_feed()["insights"]
+eq("E7: người xem không thấy tên của dòng bị cắt", [i["title"] for i in vw if "Bí Mật Số 35" in i["title"] + i["body"]],
+	[])
+
+# E8
+eq("E8: tự do có path bỏ qua ở vị trí 2 / tiêu đề / lời khuyên → không tạo", [R("ai:" + KN + "net"),
+	R("ai:" + KN + "advances"), R("ai:phai-tra.payables.ap.total")], [None, None, None])
+eq("E8: tự do lặp tín hiệu đang mở ở path đầu → không tạo (bỏ lặng lẽ)", R("ai:phai-tra.payables.ap.due.overdue_total"),
+	None)
+eq("E8: path SAU thuộc tín hiệu đang mở (không bỏ qua) và đối chứng → vẫn tạo", [(R(k) or {}).get("status") for k in
+	("ai:" + KN + "unallocated", "ai:phai-tra.payables.cash.total")], ["mo", "mo"])
+eq("E8+E1: dòng tai-chinh rejected 5 (3 bỏ qua + 2 ngoặc nhọn; lặp không tính), insights_ai 3",
+	(cc["tai-chinh"].rejected, cc["tai-chinh"].insights_ai), (5, 3))
+eq("E8: không lời AI nào mang số của chủ đề bỏ qua (54,5% / 120 triệu / 220 triệu)", [k for k, t in TEXT_AI
+	if k.startswith("ai:") and any(x in t for x in ("54,5", "120 triệu", "220 triệu"))], [])
+eq("E8: người xem không thấy thẻ tự do nào nói số bị bỏ qua", [i["title"] for i in vw if i["source"] == "ai"
+	and any(x in i["title"] + i["body"] for x in ("54,5", "120 triệu", "220 triệu"))], [])
+
+# E1
+eq("E1: tự do có số trong ngoặc nhọn → không tạo", R("ai:phai-tra.payables.cash.bank"), None)
+eq("E1: lời gắn tín hiệu có '<khoảng 350 triệu>' → loại (lời quy tắc, needs_check 1)", (R("cn.dso_cao").source,
+	R("cn.dso_cao").needs_check), ("quy-tac", 1))
+eq("E1: đối chứng — lời sạch của tín hiệu khác vẫn nhận", (R("cn.vuot_han_muc").source, R("cn.vuot_han_muc").needs_check),
+	("ai", 0))
+eq("E1: không chuỗi '350 triệu' / '1.250.000' nào được lưu", [k for k, t in TEXT_AI if "350 triệu" in t
+	or "1.250.000" in t], [])
+
+# E2
+gp = "han-dung.overview.am.ds[" + str(GIA_SO["i"]) + "].rate"
+_kieu = getattr(_render, "kieu_cua", lambda *a, **k: "chưa có kieu_cua")
+c("E2 (tiền đề): kiểu của đơn giá sổ là tien; zz_moi không xếp được", _kieu(GIA_SO["pack"], gp) == "tien"
+	and _kieu(GIA_SO["pack"], "ton-kho.overview.zz_moi") is None,
+	(_kieu(GIA_SO["pack"], gp), _kieu(GIA_SO["pack"], "ton-kho.overview.zz_moi")))
+fg, fz = R("ai:han-dung.overview.am.ds.rate"), R("ai:ton-kho.overview.zz_moi")
+c("E2: đơn giá |pct loại, |tien nhận (lời lưu là bản |tien: '30.000 đ')", fg is not None and fg.status == "mo"
+	and "30.000" in fg.body and "%" not in fg.body, fg and fg.body)
+c("E2: khoá không xếp được |pct loại, |so nhận", fz is not None and fz.status == "mo" and "%" not in fz.body
+	and "đạt" in fz.body, fz and fz.body)
+eq("E2: dòng kho-sx rejected 2, insights_ai 2", (cc["kho-sx"].rejected, cc["kho-sx"].insights_ai), (2, 2))
+
+# E6
+SNAP = json.dumps(GIA_SO["pack"], ensure_ascii=False, default=str)
+# (phiếu đánh giá NCC hiện không vào gói AI — mảng attp chỉ có các lĩnh vực ATTP; giữ "Kín Tiếng" để canh khi có)
+c("E6 (tiền đề): gói THÔ có tên NCC cũ (ảnh chụp nhật ký cát), hồ sơ Supplier đã mang tên mới",
+	"Cát Vàng Sông Hồng" in SNAP and frappe.db.sql("SELECT supplier_name FROM `tabSupplier` WHERE name = 'NCC-CAT-01'")
+	[0][0] == "Công ty TNHH Cát Sạch Miền Bắc", "Cát Vàng Sông Hồng" in SNAP)
+eq("E6: không đề bài nào có tên NCC cũ / mới / tên chỉ có trong phiếu đánh giá", [(n, x) for n, u in U.items()
+	for x in ("Cát Vàng Sông Hồng", "Cát Sạch Miền Bắc", "Kín Tiếng") if x in u], [])
+c("E6: câu ATTP vẫn mang mã NCC giả thay tên", bool(re.search(r"Nguồn:? NCC#\d+", U.get("attp", ""))),
+	"Nguồn" in U.get("attp", ""))     # không in đề bài ra log
+c("E6: nhãn cố định 'Chưa gán chuỗi' gửi nguyên; chuỗi thật (Saigon Co.op) vẫn mang mã", '"Chưa gán chuỗi"'
+	in U.get("tai-chinh", "") and "Saigon Co.op" not in U.get("tai-chinh", ""), "Chưa gán chuỗi" in U.get("tai-chinh", ""))
+frappe.db.set_value(INSIGHT, R("cn.qua_han_ty_le").name, {"status": "mo"})
+luu()
+eq("không một lần ra mạng (cả phần L–Q)", MANG, [])
 
 c.done()

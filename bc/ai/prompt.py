@@ -113,6 +113,11 @@ placeholder kiểu chu — viết tay sẽ bị loại.
 khách"). Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số ("trong 7 ngày", "quý 4").
 - Không đặt con số viết tay sát một placeholder số, không đặt hai placeholder số liền nhau, không viết từ chỉ \
 bậc ("trăm", "nghìn", "triệu") ngay sau placeholder — giữa chúng luôn có ít nhất một từ thường.
+- Ngay trước một placeholder số không đặt dấu "-", "–" hay "+" (dùng dấu phẩy, dấu hai chấm hoặc một từ). Ngay sau \
+placeholder số không viết "lần" hay bất kỳ đơn vị nào ("lượt", "khách", "ngày" thì được).
+- Giữa một số viết tay (kể cả số tháng, số quý) hoặc một từ chỉ số (một … mười, mươi, chục, trăm, rưỡi, tá, lẻ, \
+linh — cả khi "năm", "lẻ" mang nghĩa khác) và một placeholder số luôn có ít nhất một từ thường: viết "tháng 5 đạt \
+{{…}}", "cả năm đạt {{…}}", "bán lẻ đạt {{…}}"; không viết "tháng 5 {{…}}", "cả năm {{…}}".
 - Lời còn con số viết tay, placeholder sai path hoặc sai kiểu sẽ bị máy chủ loại bỏ cả nhận định."""
 
 _DAU_RA = """ĐẦU RA — JSON {"insights": [...]}, mỗi phần tử:
