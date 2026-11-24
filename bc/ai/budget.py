@@ -13,6 +13,9 @@ Bẫy đã xử lý:
 - Hôm nay chưa tới ngày kỳ của tháng này → kỳ bắt đầu từ ngày kỳ của THÁNG TRƯỚC.
 - Dòng tổng của lượt chạy (step "tong") và dòng "bước AI bị bỏ" (step "ai": tắt / thiếu khoá / vượt trần) không phải
   lượt gọi mạng → không đếm vào số lượt trong ngày.
+- Hỏi đáp (P3, run_type "hoi-dap", MỘT dòng / câu hỏi, số lượt gọi thật ở kpis.goi): KHÔNG tính vào 30 lượt / ngày của
+  lượt chạy sáng; giới hạn riêng MAX_QA_CALLS_PER_DAY lượt gọi / ngày (qa_calls_today — câu chưa xong giữ chỗ đủ
+  QA_RESERVE lượt). Chi phí hỏi đáp VẪN tính vào trần chi theo kỳ của Claude (spent đếm mọi dòng có provider).
 Mọi mốc ngày truyền từ Python (không NOW() / CURDATE() trong SQL).
 """
 
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import calendar
 import datetime
+import json
 
 import frappe
 from frappe.utils import add_days, cint, flt, getdate, nowdate
@@ -27,6 +31,9 @@ from frappe.utils import add_days, cint, flt, getdate, nowdate
 from bc.api._common import get_settings, setting_int
 
 MAX_CALLS_PER_DAY = 30
+MAX_QA_CALLS_PER_DAY = 300                    # hỏi đáp: lượt gọi / ngày, riêng (đặc tả P3 §6)
+QA_RUN = "hoi-dap"                            # run_type của dòng hỏi đáp
+QA_RESERVE = 7                                # câu chưa xong giữ chỗ = số lượt gọi tối đa / câu (bc.ai.qa.MAX_CALLS)
 DEFAULT_CAP_USD = 90.0
 RUN = "BC AI Run"
 NOT_CALLS = ("tong", "ai")                    # step của dòng không gọi mạng
@@ -88,14 +95,44 @@ def spent(provider: str, today=None) -> float:
 
 
 def calls_today(provider: str, today=None) -> int:
-	"""Số lượt gọi mô hình hôm nay của provider (dòng BC AI Run có provider, mọi trạng thái đã thật sự gọi mạng)."""
+	"""Số lượt gọi mô hình hôm nay của provider (dòng BC AI Run có provider, mọi trạng thái đã thật sự gọi mạng) — TRỪ
+	hỏi đáp (run_type hoi-dap: giới hạn riêng, qa_calls_today)."""
 	today = getdate(today or nowdate())
 	r = frappe.db.sql(
 		f"""SELECT COUNT(*) FROM `tab{RUN}`
 			WHERE provider = %(p)s AND IFNULL(step, '') NOT IN %(bo)s AND status IN %(goi)s
-				AND started >= %(tu)s AND started < %(den)s""",
-		{"p": provider, "bo": NOT_CALLS, "goi": CALLED, "tu": str(today), "den": str(add_days(today, 1))})
+				AND IFNULL(run_type, '') != %(qa)s AND started >= %(tu)s AND started < %(den)s""",
+		{"p": provider, "bo": NOT_CALLS, "goi": CALLED, "qa": QA_RUN, "tu": str(today), "den": str(add_days(today, 1))})
 	return cint(r[0][0]) if r else 0
+
+
+def _goi(kpis) -> int:
+	"""kpis.goi của dòng hỏi đáp (số lượt gọi thật); hỏng / thiếu → 0."""
+	try:
+		d = json.loads(kpis) if isinstance(kpis, (str, bytes)) else kpis
+	except ValueError:
+		return 0
+	return max(cint(d.get("goi")), 0) if isinstance(d, dict) else 0
+
+
+def qa_calls_today(today=None) -> int:
+	"""Số lượt gọi mô hình của hỏi đáp hôm nay (mọi người): câu đã xong → kpis.goi; câu chưa xong (finished trống) giữ
+	chỗ max(goi, QA_RESERVE) — hai câu cùng lúc không vượt được trần ngày."""
+	today = getdate(today or nowdate())
+	rows = frappe.db.sql(
+		f"""SELECT kpis, finished FROM `tab{RUN}` WHERE run_type = %(qa)s AND started >= %(tu)s AND started < %(den)s""",
+		{"qa": QA_RUN, "tu": str(today), "den": str(add_days(today, 1))})
+	return sum(_goi(k) if f else max(_goi(k), QA_RESERVE) for k, f in rows)
+
+
+def can_call_qa(provider: str, today=None, need: int = 0) -> tuple:
+	"""Hỏi đáp: (được_gọi, "" | "vuot-tran" | "qua-so-luot"). Cùng trần chi theo kỳ với lượt ngày; số lượt gọi theo
+	MAX_QA_CALLS_PER_DAY (need = số lượt sắp giữ chỗ — câu mới: QA_RESERVE; trong lúc chạy: 0, đã giữ chỗ)."""
+	if spent(provider, today) >= cap(provider):
+		return False, "vuot-tran"
+	if qa_calls_today(today) + cint(need) > MAX_QA_CALLS_PER_DAY:
+		return False, "qua-so-luot"
+	return True, ""
 
 
 def can_call(provider: str, today=None) -> tuple:

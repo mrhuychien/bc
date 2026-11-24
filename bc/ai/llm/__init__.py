@@ -11,7 +11,7 @@ chỉ còn khung của call() và khung đó đã bỏ các biến mang đề b�
 Module khác cần lưu / ghi log một chuỗi lỗi bất kỳ của bước AI: đưa qua clean() trước.
 
 Đầu ra mô hình được kiểm lại theo schema ở đây (schema_error) dù nhà cung cấp đã ép cấu trúc — sai → kind "schema".
-Bộ thử thay `bc.ai.llm.call` bằng bản giả — không test nào được ra mạng.
+Bộ thử thay `bc.ai.llm.call` / `bc.ai.llm.chat` bằng bản giả — không test nào được ra mạng.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def clean(text) -> str:
 class LLMError(Exception):
 	"""Lỗi gọi mô hình. kind ∈ KINDS; message ≤ 300 ký tự, ĐÃ xoá mọi chuỗi trùng khoá.
 
-	tokens_in / tokens_out / model: số token ĐÃ BỊ TÍNH TIỀN của lượt hỏng khi máy chủ có trả lời (từ chối, đầu ra bị
+	tokens_in / tokens_out / cost_tokens_in / model: số token ĐÃ BỊ TÍNH TIỀN của lượt hỏng khi máy chủ có trả lời (từ chối, đầu ra bị
 	cắt, sai cấu trúc) — nơi gọi nên ghi vào Run để trần chi không đếm thiếu; lỗi HTTP / mạng thì 0."""
 
 	def __init__(self, kind: str, message: str = ""):
@@ -76,6 +76,7 @@ class LLMError(Exception):
 		self.message = message
 		self.tokens_in = 0
 		self.tokens_out = 0
+		self.cost_tokens_in = 0.0   # token vào quy theo giá thường (ghi cache × 1,25, đọc cache × 0,1) — xem chat()
 		self.model = ""
 
 	def __reduce__(self):   # pickle (job nền) dựng lại đúng (kind, message) thay vì chỉ args
@@ -197,4 +198,41 @@ def call(provider: str, model: str, system: str, user: str, schema_name: str, sc
 	# Ném NGOÀI khối except (không kéo theo ngoại lệ gốc), bỏ vết các khung bên trong và bỏ các biến mang đề bài: vết
 	# lỗi KÈM BIẾN của Frappe (get_traceback(with_context=True) ở developer_mode) cũng không thấy khoá, đề bài, gói số.
 	del system, user, schema
+	raise err.with_traceback(None)
+
+
+def _dispatch_chat(provider: str, model: str, system: str, messages: list, tools: list, max_tokens: int, timeout: int,
+		tool_choice) -> dict:
+	if provider != "claude":   # hỏi đáp chỉ chạy trên Claude (đặc tả P3 §0) — không gọi mạng
+		raise LLMError("http", "hỏi đáp chỉ hỗ trợ nhà cung cấp claude")
+	if not has_key(provider):   # trước mọi lời gọi mạng
+		if str(frappe.conf.get(PROVIDERS[provider]) or "").strip():
+			raise LLMError("no_key", f"{PROVIDERS[provider]} khai sai dạng (có dấu cách / xuống dòng / ký tự lạ)")
+		raise LLMError("no_key", f"chưa khai {PROVIDERS[provider]} trong site_config")
+	if not str(model or "").strip():
+		raise LLMError("http", "chưa chọn mô hình (ô model trong BC Settings đang trống)")
+	from bc.ai.llm import anthropic as adapter
+	return adapter.chat(model, system, messages, tools, max_tokens=max_tokens, timeout=timeout, tool_choice=tool_choice)
+
+
+def chat(provider: str, model: str, system: str, messages: list, tools: list, max_tokens: int = 2000,
+		timeout: int = 60, tool_choice=None) -> dict:
+	"""Một lượt gọi Messages API CÓ công cụ (P3 hỏi đáp). provider phải là "claude".
+
+	messages: [{"role": "user" | "assistant", "content": chuỗi | [khối]}] — content của lượt assistant trước gửi lại
+	NGUYÊN như đã nhận (mọi khối, kể cả thinking / fallback, không sửa); kết quả công cụ: MỘT tin user gồm các khối
+	tool_result. tools: [{"name", "description", "input_schema"}]; tool_choice: None (auto) hoặc {"type": "none"}.
+	→ {"content": [khối nguyên như API trả], "stop_reason": "end_turn" | "tool_use" | "max_tokens" | …, "tokens_in",
+	"tokens_out", "cost_tokens_in", "model"}; tokens_in = vào + ghi cache + đọc cache, cost_tokens_in = vào + 1,25 × ghi
+	+ 0,1 × đọc. Lỗi → LLMError (kind như call; "refusal" khi cả chuỗi fallback từ chối — mang token đã tính tiền); cùng
+	luật khoá, cùng retry (5 s / 20 s cho 429 / 5xx / quá giờ; hết credit không retry)."""
+	err = None
+	try:
+		return _dispatch_chat(provider, model, system, messages, tools, max_tokens, timeout, tool_choice)
+	except LLMError as e:
+		err = e
+	except Exception as e:   # lỗi không lường: chỉ TÊN loại + nơi lỗi — lời của nó có thể chép câu hỏi / kết quả công cụ
+		err = LLMError("http", f"lỗi không lường khi gọi mô hình{_noi_loi(e)}: {type(e).__name__}")
+	# Như call: ném ngoài except, bỏ vết bên trong và bỏ biến mang đề bài / câu hỏi / kết quả công cụ.
+	del system, messages, tools
 	raise err.with_traceback(None)

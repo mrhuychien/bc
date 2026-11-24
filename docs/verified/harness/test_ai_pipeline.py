@@ -84,8 +84,8 @@ c("ngoài llm/: không import requests", not lo_req, lo_req)
 lo_khoa = [k for k, t in NGOAI_LLM.items() if any(re.search(r"bc_ai_\w*key", s) for s in strings_of(t))]
 c("ngoài llm/: không chuỗi bc_ai_anthropic_key / bc_ai_openai_key", not lo_khoa, lo_khoa)
 lo_conf = [k for k, t in NGOAI_LLM.items() for n in ast.walk(t) if isinstance(n, ast.Attribute) and n.attr == "conf"
-	and isinstance(n.value, ast.Name) and n.value.id == "frappe"]
-c("ngoài llm/: không đọc frappe.conf", not lo_conf, lo_conf)
+	and isinstance(n.value, ast.Name) and n.value.id == "frappe" and k != "sqlro.py"]   # P3: sqlro — khoá đọc soát ở test_ai_tinh
+c("ngoài llm/ (trừ sqlro.py — tài khoản chỉ đọc): không đọc frappe.conf", not lo_conf, lo_conf)
 c("llm/ có đọc khoá (bc_ai_anthropic_key) — luật trên không rỗng nghĩa", any("bc_ai_anthropic_key" in strings_of(t)
 	for k, t in TREES.items() if k.startswith("llm/")))
 

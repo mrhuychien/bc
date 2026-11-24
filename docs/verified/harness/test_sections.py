@@ -7,6 +7,7 @@ mảng khác không bị ảnh hưởng; cache dùng chung không lách được
 import ast
 import glob
 import importlib
+import inspect
 import os
 import re
 
@@ -20,6 +21,7 @@ VIEWER, ADMIN, SM = "viewer@example.com", "Administrator", "sm@example.com"  # S
 EXPECTED = {
 	"live.get_snapshot": "thoi-gian-thuc",
 	"ai.get_feed": "tro-ly", "ai.get_badge": "tro-ly",
+	"ai.get_qa": "tro-ly", "ai.ask": "tro-ly", "ai.get_answer": "tro-ly",   # hỏi đáp (P3)
 	"kd.get_summary": "tong-quan", "kd.get_channels": "tong-quan", "kd.get_item_groups": "tong-quan",
 	"kd.get_top_customers": "tong-quan", "kd.get_daily": "ngay", "kd.get_orders": "ngay", "kd.get_monthly": "thang",
 	"kd.get_provinces": "tinh-thanh", "kd.get_top_products": "san-pham",
@@ -61,10 +63,17 @@ def guard_section(stmt):
 
 
 def call(dotted, user):
+	"""Gọi method dưới user: refresh=1 nếu method nhận; tham số bắt buộc khác (ask.question, get_answer.id) = "" —
+	guard phải chặn TRƯỚC khi xét tham số."""
 	mod, fn = dotted.split(".")
 	frappe.session.user = user
 	try:
-		getattr(importlib.import_module(f"bc.api.{mod}"), fn)(refresh=1)
+		f = getattr(importlib.import_module(f"bc.api.{mod}"), fn)
+		sig = inspect.signature(f).parameters
+		kw = {k: "" for k, p in sig.items() if p.default is inspect.Parameter.empty}
+		if "refresh" in sig:
+			kw["refresh"] = 1
+		f(**kw)
 		return None
 	except frappe.PermissionError as e:
 		return f"PermissionError: {e}"

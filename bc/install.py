@@ -45,7 +45,7 @@ SEED_AI_PRICES = {"claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.
 # field → mặc định; chỉ điền khi field CHƯA TỪNG được lưu (không có dòng trong tabSingles) — 0 do quản trị đặt giữ nguyên.
 SEED_AI = {"ai_claude_model": "claude-sonnet-5-5", "ai_claude_model_deep": "claude-opus-5-5", "ai_mask_parties": 1,
 	"ai_max_signals": 40, "ai_cap_claude_usd": 90, "ai_cap_openai_usd": 90, "ai_cycle_day_claude": 1,
-	"ai_cycle_day_openai": 1}
+	"ai_cycle_day_openai": 1, "ai_qa_per_day": 20}   # hỏi đáp (P3): ai_qa_enabled KHÔNG điền — cài xong vẫn tắt
 
 
 def _chua_luu(field: str) -> bool:

@@ -25,6 +25,8 @@ Nhóm kiem-soat (tín hiệu kiểm soát chứng từ / giá, mảng tro-ly): s
 nguồn để mở).
 
 Khoá API: chỉ trả có / không (bc.ai.llm.has_key); lỗi của lượt gọi thử đã qua bc.ai.llm.clean.
+Hỏi đáp (P3): get_qa / ask / get_answer — _guard("tro-ly") ở dòng đầu, việc thật ở bc.ai.qa (câu trả lời chỉ người hỏi
+lấy được: khoá cache gắn với tài khoản).
 Module bc.ai.{llm, budget, store} nạp muộn trong hàm (bộ thử thay bằng bản giả).
 """
 
@@ -499,3 +501,30 @@ def test_connection(provider):
 	store.finish_run(run, status="ok", tokens_in=ti, tokens_out=to, cost_usd=_cost(m, model, ti, to),
 		error=None if good else "mô hình không trả ok", model=m)
 	return {"ok": good, "model": m, "error": "" if good else "mô hình không trả ok"}
+
+
+# ─── Hỏi đáp (P3, SPEC_bc_ai_p3 §8) — mọi người vào được mảng Trợ lý AI ──────
+@frappe.whitelist()
+def get_qa(refresh=0):
+	"""{enabled, limit, used, remaining, sql, max_question} của người gọi. sql chỉ True với quản trị đã khai tài khoản
+	chỉ đọc (bc.ai.qa.status)."""
+	_guard("tro-ly")
+	from bc.ai import qa
+	return qa.status()
+
+
+@frappe.whitelist(methods=["POST"])
+def ask(question, history=None):
+	"""Xếp một câu hỏi → {"id", "status": "cho"}. Tắt / thiếu khoá / hết lượt / vượt trần / đang có câu khác / câu rỗng
+	hoặc quá 500 ký tự → ValidationError có lời. history: ≤ 3 lượt {"q", "a"} gần nhất do trình duyệt giữ (JSON)."""
+	_guard("tro-ly")
+	from bc.ai import qa
+	return qa.start(question, history)
+
+
+@frappe.whitelist()
+def get_answer(id):  # noqa: A002 — tên tham số theo đặc tả
+	"""Trạng thái câu hỏi `id` CỦA NGƯỜI GỌI: cho | xong (segments, unverified, sources, steps) | loi (message)."""
+	_guard("tro-ly")
+	from bc.ai import qa
+	return qa.answer(id)

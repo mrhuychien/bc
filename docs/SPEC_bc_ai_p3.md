@@ -155,7 +155,8 @@ tra — kiểm lại ở màn gốc trước khi dùng." Bước này không s�
 - `ai_qa_per_day` (mặc định 20) câu / ngày / người, đếm theo dòng `BC AI Run` loại `hoi-dap` của người đó trong
   ngày; 200 câu / ngày toàn site (hằng số). Mỗi người một câu tại một thời điểm.
 - Câu hỏi ≤ 500 ký tự. ≤ 6 bước tra cứu và ≤ 7 lượt gọi mô hình / câu; hết lượt tra thì mô hình phải trả lời bằng
-  số đã có. Câu trả lời ≤ 2.000 token. Toàn bộ ≤ 150 giây.
+  số đã có. Mỗi lượt gọi ≤ 6.000 token đầu ra (gồm cả phần suy nghĩ của mô hình — model 5.5 luôn suy nghĩ và phần đó
+  tính vào giới hạn; lời trả lời được yêu cầu ngắn). Toàn bộ ≤ 150 giây.
 - Cùng trần chi theo kỳ của Claude (`ai_cap_claude_usd`): đã chạm trần → từ chối. Lượt gọi hỏi đáp **không** tính
   vào giới hạn 30 lượt gọi / ngày của lượt chạy sáng, và có giới hạn riêng 300 lượt gọi / ngày.
 - Dùng cache đề bài của Claude cho phần lặp lại giữa các lượt gọi trong một câu; chi phí ghi theo token thực tế.

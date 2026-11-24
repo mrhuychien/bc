@@ -2,7 +2,9 @@
 
 1. Mạng / khoá: MỌI file .py dưới bc/ (không riêng bc/ai) — chỉ bc/ai/llm/ được import requests / socket / http /
    urllib (trừ urllib.parse: chỉ xử lý chuỗi), nhắc tên khoá bc_ai_*key, đọc frappe.conf; ngoài llm/ chỉ các file
-   trong DANH SÁCH CHO PHÉP đọc frappe.conf (cờ cấu hình không phải khoá).
+   trong DANH SÁCH CHO PHÉP đọc frappe.conf (cờ cấu hình không phải khoá). P3: chỉ bc/ai/sqlro.py nhắc / đọc
+   bc_ai_ro_* và mở kết nối thứ hai (frappe.database.get_db); sqlguard.py chỉ import thư viện chuẩn; không file nào
+   import driver CSDL.
 2. collect.py chỉ import frappe, bc.api.*, thư viện chuẩn (không bc.ai.*: gói số chỉ lấy từ màn bc).
 3. DocType JSON: mọi field ai_* của BC Settings (và mọi field từ ai_section trở xuống) permlevel 1; BC AI Insight /
    BC AI Run chỉ System Manager; Select đúng đặc tả §6.1–6.2 (và khớp hằng số của store).
@@ -100,7 +102,9 @@ c("ngoài bc/ai/llm/: không chuỗi tên khoá bc_ai_*key", not lo_khoa, lo_kho
 c("luật tên khoá không rỗng nghĩa: llm/ có nhắc bc_ai_anthropic_key", any(KHOA.search(s) for k in LLM
 	for s in strings_of(TREES[k])))
 # Đọc site config: frappe.conf / frappe.get_conf / frappe.get_site_config / frappe.local.conf.
-CONF_ALLOW = {"api/ns.py": {"ns_tinh_lai_salaryday"}}   # cờ cấu hình nghiệp vụ, không phải khoá
+CONF_ALLOW = {"api/ns.py": {"ns_tinh_lai_salaryday"},   # cờ cấu hình nghiệp vụ, không phải khoá
+	# P3: nơi DUY NHẤT đọc tài khoản chỉ đọc (spec P3 §5) + thông số nối CSDL của site
+	"ai/sqlro.py": {"bc_ai_ro_user", "bc_ai_ro_password", "db_name", "db_socket", "db_host", "db_port"}}
 
 
 def conf_reads(t):
@@ -146,6 +150,27 @@ c("danh sách cho phép còn đúng (mỗi mục vẫn được đọc — xoá 
 lo_mod = [(k, ast.unparse(n)[:60]) for k, t in TREES.items() for n in t.body if isinstance(n, (ast.Assign,
 	ast.AnnAssign)) and any(conf_reads(n))]
 c("không file nào giữ site config vào biến cấp module", not lo_mod, lo_mod)
+# P3 (hỏi đáp, spec P3 §1, §5): tài khoản MariaDB chỉ đọc chỉ ở sqlro.py; sqlguard là hàm thuần; không driver CSDL.
+RO = re.compile(r"bc_ai_ro_")
+lo_ro = [k for k, t in TREES.items() if k != "ai/sqlro.py" and any(RO.search(s) for s in strings_of(t))]
+c("P3: chỉ bc/ai/sqlro.py nhắc bc_ai_ro_user / bc_ai_ro_password", not lo_ro, lo_ro)
+c("P3: luật tài khoản chỉ đọc không rỗng nghĩa — sqlro.py đọc cả hai giá trị", {"bc_ai_ro_user", "bc_ai_ro_password"}
+	<= {khoa_doc(TREES["ai/sqlro.py"], n) for n in conf_reads(TREES["ai/sqlro.py"])} if "ai/sqlro.py" in TREES else False)
+imp_g = imports_of(TREES.get("ai/sqlguard.py", ast.parse("")))
+lo_g = [m for m in imp_g if m.startswith(".") or m.split(".")[0] not in sys.stdlib_module_names]
+c("P3: sqlguard.py chỉ import thư viện chuẩn (không frappe, không bc.*)", "ai/sqlguard.py" in TREES and not lo_g, lo_g)
+c("P3: sqlguard.py không import động / không gọi frappe", not [n for n in ast.walk(TREES.get("ai/sqlguard.py",
+	ast.parse(""))) if isinstance(n, ast.Name) and n.id in ("frappe", "__import__", "importlib")])
+DRIVER = ("pymysql", "MySQLdb", "mysql", "mariadb", "psycopg", "psycopg2", "sqlite3", "sqlalchemy", "aiomysql",
+	"asyncmy", "mysqlclient", "_mysql")
+lo_drv = [(k, m) for k, t in TREES.items() for m in imports_of(t) if m.split(".")[0] in DRIVER]
+lo_drv += [(k, ast.unparse(n)[:60]) for k, t in TREES.items() for n in ast.walk(t) if isinstance(n, ast.Call)
+	and (getattr(n.func, "attr", "") or getattr(n.func, "id", "")) in ("__import__", "import_module")
+	and n.args and isinstance(n.args[0], ast.Constant) and str(n.args[0].value).split(".")[0] in DRIVER]
+c("P3: không file nào dưới bc/ import driver CSDL (pymysql / MySQLdb / mariadb / sqlite3…)", not lo_drv, lo_drv)
+lo_getdb = [k for k, t in TREES.items() if k != "ai/sqlro.py" and any(isinstance(n, (ast.Name, ast.Attribute))
+	and (getattr(n, "id", None) or getattr(n, "attr", None)) == "get_db" for n in ast.walk(t))]
+c("P3: kết nối CSDL thứ hai (frappe.database.get_db) chỉ ở sqlro.py", not lo_getdb, lo_getdb)
 
 # ═══════════════════════════════════════════════════════════════════════════
 print("2. collect.py: import chỉ frappe / bc.api.* / thư viện chuẩn")

@@ -103,6 +103,10 @@ export const ai = {
     setStatus: (insight, status, mute_days, note)    => call('bc.api.ai.set_status', { insight, status, mute_days, note }),
     setRule:   (rule_key, disabled, threshold, threshold_red) => call('bc.api.ai.set_rule', { rule_key, disabled, threshold, threshold_red }),
     test:      (provider)                            => call('bc.api.ai.test_connection', { provider }),
+    // Hỏi đáp (P3): ask là POST có lời từ chối (417) — lịch sử là ≤ 3 lượt {q, a} của phiên trình duyệt (gửi JSON)
+    qa:        ()                                    => call('bc.api.ai.get_qa'),
+    ask:       (question, history)                   => call('bc.api.ai.ask', { question, history }),
+    answer:    (id)                                  => call('bc.api.ai.get_answer', { id }),
 };
 
 export const common = {

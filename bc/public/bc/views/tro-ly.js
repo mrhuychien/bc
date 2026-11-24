@@ -4,6 +4,7 @@
 // Quản trị (System Manager): thêm nút đổi trạng thái, ghi chú, chứng từ, dòng kỹ thuật — người xem không có trong DOM.
 // Bản tin tuần / tháng (feed.briefs) vẽ dưới bản tin ngày: máy chủ đã bỏ mục dùng số của mảng ẩn (người xem), mục là
 // chữ thuần. Nhóm Kiểm soát (chứng từ / giá) không có nút "Xem ở màn" — máy chủ trả route trống.
+// P3: nút "Hỏi trợ lý" sang #/hoi-dap, chỉ hiện khi bc.api.ai.get_qa().enabled.
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
@@ -305,6 +306,7 @@ export async function render({ container, isCurrent }) {
                 <div class="bc-view-banner-sub" id="tl-sub">Đang tải…</div></div>
             <span class="bc-view-banner-badge" id="tl-mode">…</span>
         </div>
+        <div id="tl-qa"></div>
         <div id="tl-alert"></div>
         <div id="tl-stale"></div>
         <div id="tl-brief">${skeleton(120)}</div>
@@ -325,5 +327,16 @@ export async function render({ container, isCurrent }) {
     root.addEventListener('change', (e) => {
         if (e.target.id === 'tl-closed') { st.closed = e.target.checked; load(isCurrent); }
     });
+    qaButton(isCurrent);
     await load(isCurrent);
+}
+
+/** Nút "Hỏi trợ lý" (#/hoi-dap) — chỉ khi get_qa().enabled; lỗi / lib/api.js cũ (tab mở trước deploy) → không có nút. */
+async function qaButton(isCurrent) {
+    try {
+        const q = await api.ai.qa();
+        if (!isCurrent() || !q?.enabled) return;
+        fill('tl-qa', `<div class="bc-ai-qa-bar"><a class="bc-btn bc-btn-primary bc-btn-sm" id="tl-qa-btn" href="#/hoi-dap">
+            <i class="fas fa-comments"></i> Hỏi trợ lý</a></div>`);
+    } catch { /* không có nút */ }
 }

@@ -6,7 +6,7 @@ import { showModal, closeModal } from './components/modal.js';
 import { NAV_GROUPS as REPORT_GROUPS, sectionOf } from './lib/nav.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p8-r1';
+const BUILD = 'bc-p9-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -46,6 +46,10 @@ if (IS_ADMIN) {
     VIEW_MODULES['/an-mang'] = () => import(withV('./views/an-mang.js'));
     VIEW_MODULES['/ai'] = () => import(withV('./views/ai-quan-tri.js'));
 }
+// Hỏi đáp (#/hoi-dap) đi theo mảng Trợ lý AI (máy chủ: _guard("tro-ly")) — không phải mảng, không có mục menu, vào từ
+// nút "Hỏi trợ lý" trên #/tro-ly. Mảng Trợ lý AI đang ẩn với người xem → route này chuyển về #/tro-ly (xử lý như màn ẩn).
+const QA_ROUTE = '/hoi-dap';
+if (VIEW_MODULES['/tro-ly']) VIEW_MODULES[QA_ROUTE] = () => import(withV('./views/hoi-dap.js'));
 
 // Nhóm điều hướng (danh mục ở lib/nav.js — dùng chung với màn Ẩn / hiện mảng).
 const NAV_GROUPS = REPORT_GROUPS.map((g) => ({ ...g, items: g.items.slice() }));
@@ -57,6 +61,7 @@ if (IS_ADMIN) NAV_GROUPS.push({ title: 'Quản trị', admin: true, items: [
 ] });
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items).filter((it) => VIEW_MODULES[it.route]);
 const TITLES = Object.fromEntries(ALL_ITEMS.map((it) => [it.route, it.label]));
+TITLES[QA_ROUTE] = 'Hỏi trợ lý';
 const REPORT_ROUTES = REPORT_GROUPS.flatMap((g) => g.items.map((it) => it.route)).filter((r) => VIEW_MODULES[r]);
 // Thanh dưới (điện thoại): 4 màn ưu tiên còn mở, thiếu thì lấy màn báo cáo kế tiếp.
 const BOTTOM = ['/thoi-gian-thuc', '/tong-quan', '/tet', '/sx-tet'].filter((r) => VIEW_MODULES[r]);
@@ -227,6 +232,7 @@ Object.keys(ALL_VIEWS).filter((r) => !VIEW_MODULES[r]).forEach((r) => router.add
     showToast('Mảng báo cáo này đang được quản trị ẩn.', 'info');
     router.navigate(HOME || '/', true);
 }));
+if (!VIEW_MODULES[QA_ROUTE]) router.add(QA_ROUTE, () => router.navigate('/tro-ly', true));
 router.add('/', () => {
     if (HOME) { router.navigate(HOME, true); return; }
     document.getElementById('bc-header-title').textContent = 'Báo cáo';

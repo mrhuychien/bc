@@ -13,7 +13,7 @@ for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py t
 done
 # Trợ lý AI: mỗi bộ thử một DB riêng; LLM giả, không bộ nào ra mạng
 for t in render redact llm store rules_kd rules_kho rules_cn rules_vc rules_ns he_thong api pipeline tinh \
-		p2_nen openai review ks kpi brief p2_e2e; do
+		p2_nen openai review ks kpi brief p2_e2e chat sql qa p3_e2e; do
 	echo "═══ test_ai_$t.py"; out=$(BC_TEST_DB=bc_test_ai_$t python3 -B "test_ai_$t.py" 2>&1); rc=$?
 	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 done
@@ -55,6 +55,16 @@ if node -e "require('playwright')" 2>/dev/null; then
 		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	done
 	pkill -f 'seed_ui_ai.py serve 812[89]' || true
+	# Hỏi đáp (P3): #/hoi-dap hai vai — API thật (guard), máy hỏi đáp theo kịch bản (seed_ui_qa.py); seed lại mỗi lượt
+	pkill -f 'seed_ui_qa.py serve 815[01]' || true; sleep 0.5
+	rm -f /tmp/bc-ui-qa-mode.json
+	BC_TEST_DB=bc_test_ai_qa_ui python3 -B seed_ui_qa.py seed >/dev/null || fail=1
+	(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_ai_qa_ui BC_UI_QA_MODE=/tmp/bc-ui-qa-mode.json python3 -B seed_ui_qa.py serve 8150 > /tmp/bc-ui-qa-v.log 2>&1 &)
+	(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_ai_qa_ui BC_UI_QA_MODE=/tmp/bc-ui-qa-mode.json BC_UI_USER=Administrator python3 -B seed_ui_qa.py serve 8151 > /tmp/bc-ui-qa-a.log 2>&1 &)
+	sleep 1.5
+	echo "═══ ui_qa.mjs"; out=$(node ui_qa.mjs http://127.0.0.1:8150 http://127.0.0.1:8151 /tmp/bc-ui-qa-mode.json 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	pkill -f 'seed_ui_qa.py serve 815[01]' || true
 	if [ -n "${BC_OLD_PUBLIC:-}" ]; then  # public/bc của bản đang chạy trên site trước deploy
 		(BC_OLD_PUBLIC="$BC_OLD_PUBLIC" python3 -B server.py 8125 > /tmp/bc-ui-server-old.log 2>&1 &) && sleep 1
 		echo "═══ old_tab_check.mjs"; node old_tab_check.mjs http://127.0.0.1:8125 | tail -1 || fail=1
