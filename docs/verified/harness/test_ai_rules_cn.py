@@ -226,9 +226,9 @@ eq("tên trống → vẫn báo, thân không nêu tên", (sig[K].severity, [k f
 # D12 (N6): NPP-C nợ quá hạn 100tr ở mọi tuổi (chỉ 1tr quá 149 ngày) → lời nói đúng số đó là gì.
 run, sig, pk = mot(rc(top=[kh("NPP-C", 100 * TR, 149)]), K)
 eq("D12: lời nói rõ tổng là nợ quá hạn ở mọi tuổi nợ, tiêu đề không có tiền", loi(sig[K], pk),
-	"1 khách có hoá đơn quá hạn trên 90 ngày | Tổng nợ quá hạn ở mọi tuổi nợ của các khách này là 100 triệu, nhiều "
-	"nhất NPP-C 100 triệu; cần thu hồi gấp trước khi thành nợ khó đòi.")
-c("D12: không câu nào gắn tiền với 'trên 90 ngày'", not re.search(r"(quá hạn )?trên \S+ ngày,? tổng", loi(sig[K], pk)),
+	"1 khách có hoá đơn quá hạn hơn 90 ngày | Tổng nợ quá hạn ở mọi tuổi nợ của các khách này là 100 triệu, nhiều "
+	"nhất khách NPP-C nợ 100 triệu; cần thu hồi gấp trước khi thành nợ khó đòi.")   # G2: "hơn", "khách … nợ …"
+c("D12: không câu nào gắn tiền với 'hơn 90 ngày'", not re.search(r"(quá hạn )?(trên|hơn) \S+ ngày,? tổng", loi(sig[K], pk)),
 	loi(sig[K], pk))
 eq("top rỗng / None / không phải list → chạy, không báo", (muc(rc(top=[]), K), muc(rc(top="x"), K)), (None, None))
 pk = rc()

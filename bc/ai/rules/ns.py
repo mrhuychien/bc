@@ -110,7 +110,7 @@ def viec_ton(pack, cfg):
 		if not muc:
 			continue
 		viec = ph(f"{p}.ten", "chu") if _chu(r.get("ten")) else "Việc nhân sự mức gấp"
-		out.append(cfg.signal(muc, f"{viec}: {ph(f'{p}.so_nguoi', 'so')} người",
+		out.append(cfg.signal(muc, f"{viec}: còn {ph(f'{p}.so_nguoi', 'so')} người",      # G2: một từ trước placeholder
 			detail="Hồ sơ nhân sự còn việc mức gấp chưa xử lý, bộ phận nhân sự cần làm xong trên màn Nhân sự.",
 			paths=[f"{p}.so_nguoi"], obj=ma))
 	return out

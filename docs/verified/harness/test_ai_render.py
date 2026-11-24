@@ -270,14 +270,15 @@ BAT = [
 	("tổng 1\u00a0250\u00a0000", ["1 250 000"], "nhóm nghìn bằng dấu cách không ngắt (NBSP)"),
 	("tổng 1\u202f250", ["1 250"], "nhóm nghìn bằng dấu cách hẹp"),
 	("DSO 45,3 ngày", ["45,3"], "số có phần lẻ không kèm đơn vị vẫn là số liệu"),
-	("ngày 05.11.2026", ["05.11.2026"], "ngày viết bằng dấu chấm KHÔNG thuộc ngoại lệ (chỉ nhận dấu /)"),
+	("ngày 05.11.26", ["05.11.26"], "ngày viết bằng dấu chấm chỉ được ở dạng đủ d.m.yyyy (G1)"),
+	("tăng 12.5 lần", ["12.5"], "'12.5' không phải ngày (dạng chấm chỉ nhận d.m.yyyy) — là số có phần lẻ"),
 	# Dãy ≥ 3 chữ số
 	("có 1250 đơn", ["1250"], "dãy 4 chữ số"),
 	("quá hạn 120 ngày", ["120"], "số ngày 3 chữ số là số liệu (ngoại lệ thời hạn chỉ ≤ 2 chữ số)"),
 	("top 100 khách", ["100"], "'top 100' cũng bị bắt (chấp nhận loại nhầm)"),
 	("năm 1999", ["1999"], "năm ngoài 20xx"),
 	("mã 20260", ["20260"], "5 chữ số bắt đầu bằng 20 không phải năm"),
-	("ISO 22000", ["22000"], "số tiêu chuẩn cách chữ một dấu cách: không phải mã dính liền"),
+	("iso 22000, ABC 22000", ["22000"], "số tiêu chuẩn chỉ được sau đúng các chữ HOA ISO, HACCP, TCVN, QCVN, TK, QĐ, NĐ, TT (G1)"),
 	("Bánh quy 300g bán chậm", ["300"], "tên hàng có số viết thẳng → phải đi qua {{…|chu}}"),
 	("từ 100-200 đơn", ["100", "200"], "khoảng số: gạch nối sau SỐ không tạo thành mã"),
 	("giảm-150 đơn", ["150"], "gạch nối sau chữ thường không tạo thành mã"),
@@ -293,7 +294,7 @@ BAT = [
 	("còn 12 nghìn hộp", ["12 nghìn"], "nghìn"),
 	("còn 12 ngàn hộp", ["12 ngàn"], "ngàn"),
 	("tăng 12,5%", ["12,5%"], "số lẻ + %"),
-	("giảm 10–15% so cùng kỳ", ["15%"], "khoảng 10–15%: vế có % bị bắt → cả lời bị loại"),
+	("giảm 10–15% so cùng kỳ", ["10", "15%"], "khoảng 10–15%: cả hai vế bị bắt (G1: '10' không thuộc dạng được phép)"),
 	("phí 7 tr mỗi tháng", ["7 tr"], "tr"),
 	("phí 7tr/tháng", ["7tr"], "tr dính liền"),
 	("nợ 50 trđ", ["50 trđ"], "trđ"),
@@ -311,8 +312,8 @@ BAT = [
 	("tỷ lệ 5‰", ["5‰"], "phần nghìn"),
 	("tăng12% so cùng kỳ", ["12%"], "đơn vị thắng luật 'dính chữ đứng trước'"),
 	("dự kiến 2026 triệu", ["2026 triệu"], "năm 20xx kèm đơn vị không còn là năm"),
-	("vay 1tỷ6", ["1tỷ"], "viết tắt '1 tỷ 6': đơn vị kẹp giữa hai chữ số"),
-	("phí 2tr5 mỗi chuyến", ["2tr"], "viết tắt '2 triệu rưỡi'"),
+	("vay 1tỷ6", ["1tỷ", "6"], "viết tắt '1 tỷ 6': đơn vị kẹp giữa hai chữ số"),
+	("phí 2tr5 mỗi chuyến", ["2tr", "5"], "viết tắt '2 triệu rưỡi'"),
 	("tồn 2 tỷ giá trị hàng", ["2 tỷ"], "'tỷ giá trị' vẫn là tiền (khác 'tỷ giá')"),
 	("khoảng 1,2-1,5 tỷ", ["1,2", "1,5 tỷ"], "khoảng số lẻ"),
 	("đạt 100% chỉ tiêu", ["100%"], "'100%' cũng là số liệu"),
@@ -380,7 +381,27 @@ BAT = [
 	("KH #0001 và NCC# 0002", ["KH #0001", "NCC# 0002"], "mã giả chép hỏng (thêm dấu cách quanh #)"),
 	# Trùng → báo một lần; nhiều mẩu → theo thứ tự xuất hiện
 	("1.250.000 rồi lại 1.250.000", ["1.250.000"], "mẩu trùng báo một lần"),
-	("tăng 35% lên 2 tỷ, top 5, còn 1250", ["35%", "2 tỷ", "1250"], "nhiều mẩu, đúng thứ tự"),
+	("tăng 35% lên 2 tỷ, top 5, còn 1250", ["35%", "2 tỷ", "5", "1250"], "nhiều mẩu, đúng thứ tự"),
+	# G1 — chữ số viết tay chỉ được ở 4 dạng (năm, ngày, mã, thời hạn / thứ tự ≤ 2 chữ số sau / trước từ chỉ thời gian)
+	("99 khách quá hạn, tăng 5 lần", ["99", "5"], "G1: số đếm / bội số ≤ 2 chữ số không kèm đơn vị KHÔNG còn lọt"),
+	("top 10 khách, 18 x 10 đơn", ["10", "18"], "G1: 'top 10', '18 x 10' (mẩu trùng báo một lần)"),
+	("từ 5-7/11 phải xong", ["5"], "G1: khoảng ngày viết tắt — chỉ vế d/m là ngày, '5-' thì không"),
+	("xử lý trong 24h, lúc 5:30, họp 17h30", ["24", "5", "30", "17"], "G1: giờ viết tay"),
+	("quý 3, top 5, tuần 45, ca 2, lần 2, thứ 2", ["5", "2"], "G1: 'top' và 'lần' không phải từ chỉ thời gian / thứ tự"),
+	("diện tích 50 m², mục x2", ["50", "2"], "G1: chữ số dính chữ thường không phải mã"),
+	("5 khách, 7 trường hợp, 10 kênh, 3 đơn", ["5", "7", "10", "3"], "G1: số đếm viết tay"),
+	("5 km, 2 kg, 10 KPI, 5 KH lớn", ["5", "2", "10"], "G1: số trước chữ / mã viết hoa đứng riêng"),
+	("5 chục khách", ["5"], "G1: '5 chục'"),
+	("12 ; tỷ, 3 • tỷ, 12 / tỷ, 12 | tỷ, 12‐tỷ, 12<!-- -->tỷ", ["12 ; tỷ", "3 • tỷ", "12 / tỷ", "12 | tỷ", "12‐tỷ",
+		"12 tỷ"], "W1: mọi dấu chen giữa số và đơn vị"),
+	("ước còn 5 tỏi, khoảng XII tỷ, XXXV phần trăm", ["5", "XII", "XXXV"], "W2: tiếng lóng 'tỏi' (G1 bắt chữ số), số La Mã + đơn vị"),
+	("năm tỏi, hai ; tỷ, ba • triệu, chín mươi chín %", ["năm tỏi", "hai ; tỷ", "ba • triệu", "chín mươi chín %"],
+		"W1/W2: từ chỉ số + dấu chen giữa / tiếng lóng + đơn vị"),
+	("đ350000000, x1250, 10^9, 1 2 5 0 đơn", ["350000000", "1250", "10^9", "1 2 5 0"], "G1: các dạng viết khác"),
+	("١٢ khách, quý ٤, trong ٧ ngày", ["١٢", "٤", "٧"], "G1: chữ số hệ khác (kể cả ≤ 2 chữ số, kể cả ở chỗ được phép) không "
+		"bao giờ được phép"),
+	("mã abc2026, x2026, 2026x", ["2026"], "G1: năm dính chữ thường không còn là năm"),
+	("mục Ab12, Top5 khách", ["12", "5"], "G1: mã cần ≥ 2 chữ HOA hoặc chữ HOA đứng liền trước chữ số"),
 ]
 for text, want, nhan in BAT:
 	eq(f"bắt — {nhan}: {text!r}", render.lint(text), want)
@@ -397,7 +418,14 @@ GIU = [
 	("hoàn tất trước 05/11/2026", "ngày d/m/yyyy"),
 	("hạn 05/11/26", "ngày d/m/yy"),
 	("kỳ tháng 10/2026 và quý 3/2026", "tháng/năm, quý/năm"),
-	("từ 5-7/11, đến 5/11 phải xong", "khoảng ngày"),
+	("đến 5/11 phải xong, từ 5/11 đến 7/11", "ngày"),
+	("ngày 05.11.2026, ngày 5-11-2026, mốc 2026-11-05", "G1: ngày đủ viết bằng dấu chấm / gạch"),
+	("chuẩn ISO 22000:2018, HACCP 2020, TCVN 5603:2008, TT 200/2014/TT-BTC", "G1: số hiệu tiêu chuẩn / văn bản"),
+	("quý4, tháng10, T10, tuần 2, ngày 5, mùng 3, thứ 2, ca 2, đợt 3, bước 1, kỳ 2, Tết 2027, lần thứ 3",
+		"G1: thứ tự sau từ chỉ thời gian"),
+	("trong 2 tuần, 3 tháng, 24 giờ, 15 phút, 2 hôm, 2 năm, 1 quý", "G1: thời hạn trước từ chỉ thời gian"),
+	("2025-26 và 2026/27", "G1: cặp năm"),
+	("Quý IV, QĐ II, mục III", "số La Mã không kèm đơn vị"),
 	("giao được ngày 5/11", "có chữ 'ngày' chen giữa nên không phải 'được a/b'"),
 	("mốc 5/11 tổng kết quý, mốc 7/11 tổng hợp số", "'tổng kết', 'tổng hợp' sau ngày (không có chữ chỉ ngày đứng trước)"),
 	("ngày 2/3 số đơn tăng", "'a/b số …' nhưng có chữ 'ngày' đứng trước → ngày"),
@@ -405,18 +433,15 @@ GIU = [
 	("5/11 số liệu được chốt, đến 5/11 tổng hợp", "'số liệu', 'tổng hợp' sau ngày"),
 	("năm tài chính 2026/2027, niên độ 2026/27", "năm/năm"),
 	("kỳ Q3/2026 và T10/2026 (05/11), từ 5/11-10/11", "mã kỳ, ngày trong ngoặc, khoảng ngày"),
-	("xử lý trong 24h, chậm nhất 48 giờ", "số giờ ≤ 2 chữ số"),
+	("xử lý chậm nhất trong 48 giờ", "số giờ ≤ 2 chữ số"),
 	("quý 3 tỷ giá tăng", "'tỷ giá'"),
-	("cập nhật lúc 5:30 mỗi sáng, họp 17h30", "giờ"),
-	("quý 3, top 5, tuần 45, ca 2, lần 2, thứ 2", "số thứ tự"),
+	("quý 3, tuần 45, ca 2, lần thứ 2, thứ 2", "số thứ tự"),
 	("mã SR900 bán chậm", "mã có chữ đứng liền trước (đặc tả)"),
 	("phiếu KK-2026-002 và ACC-SINV-2026-00012", "số trong mã chứng từ viết hoa nối bằng gạch"),
 	("phiếu ACC-SINV-PINV-STE-MAT-HGC-KK-2026-00012", "mã dài 39 ký tự vẫn là mã"),
 	("kho HGC/2026/001", "mã nối bằng dấu /"),
 	("kỳ T10, Q4, đợt N1", "mã ngắn"),
-	("diện tích 50 m²", "m² → m2 sau chuẩn hoá: chữ số dính chữ"),
-	("5 khách, 7 trường hợp, 10 kênh, 3 đơn, 12 đơn vị, 3 đợt", "k / tr / đ là đầu một TỪ, không phải đơn vị"),
-	("5 km, 2 kg, 10 KPI, 5 KH lớn", "km / kg / KPI / KH"),
+	("trong 5 ngày khách, 7 ngày trường hợp, đợt 3", "k / tr / đ là đầu một TỪ, không phải đơn vị"),
 	("Quý 3 tỷ lệ giao lần đầu giảm", "'3 tỷ lệ': tỷ lệ không phải đơn vị"),
 	("trong 2026 tỷ lệ trả hàng tăng, tháng 10 tỷ trọng kênh MT tăng", "tỷ lệ / tỷ trọng sau số"),
 	("trong năm tỷ lệ trả hàng tăng", "'năm tỷ lệ': không phải 'năm tỷ'"),
@@ -437,11 +462,11 @@ GIU = [
 	("rà soát quá tỉ mỉ, dẫn đến triệu hồi sản phẩm", "'tỉ mỉ', 'triệu hồi' không phải đơn vị"),
 	("giao đến Triệu Sơn, hàng Vạn Phúc, tiền Triệu Sơn, cả Vạn Ninh, Tỷ Hai", "tên riêng viết HOA: đơn vị không có "
 		"chữ số đứng trước chỉ nhận khi viết thường"),
-	("5 chục khách, vài chục đơn", "'chục' không kèm đơn vị lớn: như số < 100 viết bằng số"),
+	("vài chục đơn", "'chục' không kèm đơn vị lớn: như số < 100 viết bằng số"),
 	("phiếu KK_2026_002", "mã nối bằng gạch dưới"),
-	("DSO 62 ngày, tăng 5 lần", "GIỚI HẠN đã biết: số ≤ 2 chữ số không kèm đơn vị luôn lọt (đặc tả cho phép "
-		"'trong 7 ngày') dù ở đây là số liệu — đề bài (bc.ai.prompt) phải răn, lint không phân biệt được"),
-	("mục x2", "chữ số dính chữ đứng trước (đặc tả giữ)"),
+	("DSO 62 ngày", "GIỚI HẠN đã biết (G4): dạng được phép (≤ 2 chữ số trước 'ngày') lọt dù ở đây là số liệu — lint "
+		"không biết thật / giả; đề bài (bc.ai.prompt) phải răn"),
+	("chín mươi chín hoá đơn", "GIỚI HẠN đã biết (G4): số bằng chữ không kèm đơn vị, không sát placeholder"),
 	("", "lời rỗng"),
 	(None, "None"),
 	("Không có số nào trong lời này.", "lời không có số"),
@@ -580,8 +605,8 @@ eq("mã tự đặt dính chữ phía trước / sau: không phải mã", M2.unm
 print("\n— render_insight: lời mô hình (đặc tả §5.3 bước 1–4, §9.3, §9.5; hợp đồng §1 mục 9) —")
 RAW = {
 	"title": f"KH#0001 quá hạn {{{{{R}.top_overdue[0].overdue|tien}}}}",
-	"body": (f"Nợ quá hạn chiếm {{{{{R}.kpis.overdue_pct|pct}}}} phải thu ({{{{{R}.kpis.overdue|tien}}}} trên "
-		f"{{{{{R}.kpis.total|tien}}}}). KH#0001 và {{{{{R}.top_overdue[1].customer_name|chu}}}} quá hạn lâu nhất, từ "
+	"body": (f"Nợ quá hạn chiếm {{{{{R}.kpis.overdue_pct|pct}}}} phải thu (quá hạn {{{{{R}.kpis.overdue|tien}}}}, tổng "
+		f"nợ {{{{{R}.kpis.total|tien}}}}). KH#0001 và {{{{{R}.top_overdue[1].customer_name|chu}}}} quá hạn lâu nhất, từ "
 		f"{{{{{R}.top_overdue[0].oldest|ngay}}}}. Cần kiểm tra: lịch thanh toán với NCC#0001."),
 	"advice": ["Phòng Kế toán đối chiếu và thu hồi trong 7 ngày.", "   ",
 		"- Phòng Kinh doanh tạm dừng bán chịu cho KH#0001 trước 30/11.",
@@ -599,7 +624,7 @@ r = ri()
 eq("lời đúng → ok, không lỗi", (r["ok"], r["errors"]), (True, []))
 eq("tiêu đề: thay số TRƯỚC, hoàn nguyên tên SAU (tên có '268' không bị lint)", r["title"], f"{LAN_ANH} quá hạn 251 triệu")
 eq("thân: tỷ / triệu / % / ngày đúng định dạng, mã giả → tên thật, 'chu' lấy tên thật từ pack gốc", r["body"],
-	f"Nợ quá hạn chiếm 35,3% phải thu (33 triệu trên 1,6 tỷ). {LAN_ANH} và {ABC} quá hạn lâu nhất, từ 8/7/2026. "
+	f"Nợ quá hạn chiếm 35,3% phải thu (quá hạn 33 triệu, tổng nợ 1,6 tỷ). {LAN_ANH} và {ABC} quá hạn lâu nhất, từ 8/7/2026. "
 	f"Cần kiểm tra: lịch thanh toán với {BAO_BI}.")
 eq("khuyến nghị: bỏ dòng rỗng, bỏ gạch / số đầu dòng, gộp một dòng, tối đa 3; 'trong 7 ngày', '30/11', 'quý 4' được giữ",
 	r["advice"], ["Phòng Kế toán đối chiếu và thu hồi trong 7 ngày.",
@@ -679,8 +704,11 @@ r = ri(body=f"Giao lần đầu {{{{{R}.kpis.overdue_pct|pct}}}} tỷ lệ còn 
 	f"{{{{{R}.kpis.over_limit|so}}}} trường hợp.")
 eq("'tỷ lệ', 'khách', 'trường hợp' sau placeholder số không phải đơn vị nhân", (r["ok"], r["errors"]), (True, []))
 r = ri(body=f"Phải thu cuối quý 4, top 5 {{{{{R}.top_overdue[0].customer_name|chu}}}}.")
-eq("chữ số + dấu cách + placeholder chu (tên): không phải ghép số", (r["ok"], r["body"]),
-	(True, f"Phải thu cuối quý 4, top 5 {LAN_ANH}."))
+c("G1/G2: 'top 5' viết tay, chữ số sát placeholder chu (mọi kiểu) → loại", r["ok"] is False
+	and "so-tran:5" in r["errors"] and f"so-tran:5 {{{{{R}.top_overdue[0].customer_name|chu}}}}" in r["errors"], str(r["errors"]))
+r = ri(body=f"Phải thu cuối quý 4, đứng đầu là {{{{{R}.top_overdue[0].customer_name|chu}}}}.")
+eq("G2: chữ thường trước placeholder chu → nhận", (r["ok"], r["body"]),
+	(True, f"Phải thu cuối quý 4, đứng đầu là {LAN_ANH}."))
 # D7: số rời + dấu cách trước placeholder số bị loại với MỌI kiểu số ("quý 3 1,6 tỷ" đọc như "31,6 tỷ")
 r = ri(body=f"Phải thu cuối quý 3 {{{{{R}.kpis.total|tien}}}}.")
 c("D7: chữ số + dấu cách + placeholder tien → loại", r["ok"] is False
@@ -688,20 +716,31 @@ c("D7: chữ số + dấu cách + placeholder tien → loại", r["ok"] is False
 # over_limit = 3. Ngày (11 đứng sau "/"), năm (4 chữ số), mã (900 dính chữ), giờ (30 đứng sau ":") KHÔNG phải đầu nhóm nghìn
 r = ri(body=f"Đến 5/11 {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 {{{{{R}.kpis.over_limit|so}}}} khách; "
 	f"mã SR900 {{{{{R}.kpis.over_limit|so}}}} phiếu; lúc 5:30 {{{{{R}.kpis.over_limit|so}}}} đơn.")
-eq("ngày / năm / mã / giờ đứng trước placeholder so không phải số ghép", (r["ok"], r["errors"], r["body"]),
-	(True, [], "Đến 5/11 3 khách vượt hạn mức; năm 2026 3 khách; mã SR900 3 phiếu; lúc 5:30 3 đơn."))
+c("G2: ngày / năm / mã đứng SÁT trước placeholder → loại (trước placeholder chỉ được chữ thường hoặc ( , : ; )",
+	r["ok"] is False and all(f"so-tran:{x} {{{{{R}.kpis.over_limit|so}}}}" in r["errors"] for x in ("5/11", "2026", "SR900",
+	"5:30")),
+	str(r["errors"]))
+r = ri(body=f"Đến 5/11, có {{{{{R}.kpis.over_limit|so}}}} khách vượt hạn mức; năm 2026 có {{{{{R}.kpis.over_limit|so}}}} "
+	f"khách; mã SR900 còn {{{{{R}.kpis.over_limit|so}}}} phiếu.")
+eq("G2: ngày / năm / mã rồi một từ (hoặc dấu phẩy + từ) trước placeholder → nhận", (r["ok"], r["errors"], r["body"]),
+	(True, [], "Đến 5/11, có 3 khách vượt hạn mức; năm 2026 có 3 khách; mã SR900 còn 3 phiếu."))
 # Hai số THẬT đặt cạnh nhau có dấu phân cách rõ ("3/5"), chu dính so, so cách tien: không tạo ra con số nào mới
 r = ri(body=f"{{{{{R}.kpis.over_limit|so}}}}/{{{{{R}.kpis.qua_120|so}}}} khách đã trả; "
 	f"{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}} đơn trễ.")
-eq("'{{a|so}}/{{b|so}}', chu (tên) dính so: không phải số ghép", (r["ok"], r["errors"], r["body"]),
-	(True, [], "3/5 khách đã trả; Công ty ABC3 đơn trễ."))
+c("G2: '{{a|so}}/{{b|so}}' và chu dính so → loại (giữa hai placeholder phải có một từ)", r["ok"] is False
+	and f"so-tran:{{{{{R}.kpis.over_limit|so}}}}/{{{{{R}.kpis.qua_120|so}}}}" in r["errors"]
+	and f"so-tran:{{{{{R}.top_overdue[1].customer_name|chu}}}}{{{{{R}.kpis.over_limit|so}}}}" in r["errors"], str(r["errors"]))
 # D7: hai placeholder số cách nhau bởi khoảng trắng bất kỳ (kể cả so + tien) bị loại
 r = ri(body=f"Nhóm {{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}.")
 c("D7: so cách tien một dấu cách → loại", r["ok"] is False
 	and f"so-tran:{{{{{R}.kpis.over_limit|so}}}} {{{{{R}.kpis.overdue|tien}}}}" in r["errors"], str(r["errors"]))
 r = ri(body=f"Nợ của KH#0001,{{{{{R}.top_overdue[0].overdue|tien}}}} đã quá hạn; KH#0002 {{{{{R}.kpis.over_limit|so}}}} đơn trễ.")
-eq("chữ số trong mã giả HỢP LỆ đứng sát placeholder không phải số ghép", (r["ok"], r["body"]),
-	(True, f"Nợ của {LAN_ANH},251 triệu đã quá hạn; {ABC} 3 đơn trễ."))
+c("G2: mã giả HỢP LỆ đứng sát placeholder → loại (mã không phải chữ; tên thật có thể tận cùng bằng chữ số)",
+	r["ok"] is False and any(e.startswith("so-tran:KH#…") for e in r["errors"]), str(r["errors"]))
+r = ri(body=f"Nợ của KH#0001 là {{{{{R}.top_overdue[0].overdue|tien}}}}, đã quá hạn; KH#0002 có {{{{{R}.kpis.over_limit|so}}}} "
+	"đơn trễ.")
+eq("G2: mã giả + một từ trước placeholder → nhận, mã thành tên thật", (r["ok"], r["body"]),
+	(True, f"Nợ của {LAN_ANH} là 251 triệu, đã quá hạn; {ABC} có 3 đơn trễ."))
 # Khoá "31_60": nếu lint chạy trên lời CHƯA bỏ placeholder thì ".31_60" thành dãy 4 chữ số "3160" → bị bắt nhầm.
 # 7.000.000 → one(7,0) = "7" → "7 triệu"
 r = ri(body=f"Có {{{{{R}.kpis.qua_120|so}}}} khách quá hạn lâu, nhóm trễ vừa {{{{{R}.aging.31_60|tien}}}}, "
@@ -740,8 +779,12 @@ eq("khoảng trắng do tên thật / giá trị rỗng mang vào: tiêu đề +
 	"chu rỗng → lỗi chu-rong (E3)", (r["ok"], r["errors"], r["title"], r["body"], r["advice"]),
 	(False, [f"chu-rong:{R}.kpis.rong"], "Đại lý Hai Cách quá hạn", "Cần thu hồi sớm.",
 	["Phòng Kế toán làm việc với Đại lý Hai Cách."]))
-r = ri(body=f"Chủ {{{{{R}.top_overdue[1].customer_name|chu}}}} tỷ phú, đến {{{{{R}.as_of|ngay}}}} k rõ.")
-eq("đơn vị nhân chỉ xét sau placeholder SỐ (sau chu / ngay thì không)", (r["ok"], r["errors"]), (True, []))
+r = ri(body=f"Chủ {{{{{R}.top_overdue[1].customer_name|chu}}}} tỷ phú, đến {{{{{R}.as_of|ngay}}}} không rõ.")
+eq("G2: 'tỷ phú' (từ ghép) sau placeholder chu không phải đơn vị", (r["ok"], r["errors"]), (True, []))
+r = ri(body=f"Chủ {{{{{R}.top_overdue[1].customer_name|chu}}}} tỷ, đến {{{{{R}.as_of|ngay}}}} k rõ.")
+c("G2: đơn vị sau placeholder chu / ngay cũng bị loại (G2 xét MỌI kiểu)", r["ok"] is False
+	and f"so-tran:{{{{{R}.top_overdue[1].customer_name|chu}}}} tỷ" in r["errors"]
+	and f"so-tran:{{{{{R}.as_of|ngay}}}} k" in r["errors"], str(r["errors"]))
 eq("advice không phải list → []; chuỗi → tách dòng", (ri(advice=None)["advice"], ri(advice="Một.\nHai.")["advice"]),
 	([], ["Một.", "Hai."]))
 eq("advice có phần tử không phải chuỗi → bỏ", ri(advice=[None, 5, "Được."])["advice"], ["Được."])
@@ -878,17 +921,17 @@ KIEU_SAI = [
 for body, want, nhan in KIEU_SAI:
 	r = rk(body, {})
 	c(f"D8: loại — {nhan} → {want}", r["ok"] is False and want in r["errors"], f"{r['ok']} {r['errors']}")
-r = rk(f"Nhóm 31–60 ngày {{{{{R}.aging.31_60|so}}}}.", {f"{R}.aging.31_60": "tien"})
+r = rk(f"Nhóm tuổi nợ vừa {{{{{R}.aging.31_60|so}}}}.", {f"{R}.aging.31_60": "tien"})
 c("D8: path có trong kinds (kind_map) → phải đúng kiểu đó", r["ok"] is False and f"kieu:{R}.aging.31_60" in r["errors"],
 	str(r["errors"]))
 r = rk(f"Khách lớn nhất nợ {{{{{R}.top_overdue[0].overdue|so}}}}.", {f"{R}.top_overdue.overdue": "so"})
 eq("D8: kinds thắng tên khoá (path đã bỏ chỉ số)", (r["ok"], r["errors"]), (True, []))
-r = rk(f"Hệ số {{{{{R}.kpis.he_so|so}}}}, nhóm 31–60 ngày {{{{{R}.aging.31_60|tien}}}}.", {})
+r = rk(f"Hệ số {{{{{R}.kpis.he_so|so}}}}, nhóm tuổi nợ vừa {{{{{R}.aging.31_60|tien}}}}.", {})
 eq("D8/E2: khoá không đoán được tên → tien / so đều nhận", (r["ok"], r["errors"]), (True, []))
 r = rk(f"Hệ số chiếm {{{{{R}.kpis.he_so|pct}}}}.", {})
 eq("E2: khoá không đoán được tên → pct bị loại (tỷ lệ chỉ nhận trên khoá trông như tỷ lệ)", (r["ok"], r["errors"]),
 	(False, [f"kieu:{R}.kpis.he_so"]))
-r = rk(f"Nợ quá hạn {{{{{R}.kpis.overdue|tien}}}}, chiếm {{{{{R}.kpis.overdue_pct|pct}}}}; {{{{{R}.kpis.over_limit|so}}}} khách "
+r = rk(f"Nợ quá hạn {{{{{R}.kpis.overdue|tien}}}}, chiếm {{{{{R}.kpis.overdue_pct|pct}}}}; có {{{{{R}.kpis.over_limit|so}}}} khách "
 	f"vượt hạn mức, DSO {{{{{R}.kpis.dso|so}}}} ngày.", {})
 eq("D8: đúng kiểu → nhận", (r["ok"], r["errors"]), (True, []))
 r = render.render_insight({"title": "Công nợ", "body": f"Chiếm {{{{{R}.kpis.over_limit|pct}}}}.", "advice": []}, PK, NHOM, None)
@@ -979,6 +1022,9 @@ GHEP_MOI = [
 	(f"Có {{{{{P0}.boxes|so}}}}\t{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp.", "hai placeholder cách tab"),
 	(f"Có 1\t{{{{{P0}.boxes|so}}}} hộp.", "chữ số + tab + placeholder so"),
 	(f"Có 12 {{{{tong-quan.summary.rows[0].sales|tien}}}}.", "số rời + dấu cách + placeholder tien"),
+	(f"Từ {{{{{P0}.boxes|so}}}}-{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp.", "G2: hai placeholder nối gạch"),
+	(f"Mã KK-{{{{{P0}.boxes|so}}}}.", "G2: gạch dính chữ trước placeholder (kể cả nối mã)"),
+	(f"Đến 5/11 {{{{{P0}.boxes|so}}}} hộp.", "G2: ngày đứng sát trước placeholder"),
 ]
 for body, nhan in GHEP_MOI:
 	r = rs(body)
@@ -987,8 +1033,8 @@ for body, nhan in GHEP_MOI:
 GIU_MOI = [
 	f"Mã {{{{{P0}.item_name|chu}}}} bán {{{{{P0}.boxes|so}}}} hộp, đạt {{{{{P0}.ty_le|chu}}}} chỉ tiêu.",
 	f"Doanh số ({{{{tong-quan.summary.rows[0].sales|tien}}}}) từ {{{{tong-quan.summary.rows[0].invoices|so}}}} hoá đơn.",
-	f"Từ {{{{{P0}.boxes|so}}}}-{{{{tong-quan.summary.rows[0].invoices|so}}}} hộp; mã KK-{{{{{P0}.boxes|so}}}}.",
-	f"Đến 5/11 {{{{{P0}.boxes|so}}}} hộp, trong 7 ngày, quý 4.",
+	f"Từ {{{{{P0}.boxes|so}}}} đến {{{{tong-quan.summary.rows[0].invoices|so}}}} hộp; mã KK-2026-002.",
+	f"Đến 5/11, còn {{{{{P0}.boxes|so}}}} hộp, trong 7 ngày, quý 4.",
 ]
 for body in GIU_MOI:
 	r = rs(body)
@@ -1009,13 +1055,16 @@ LINT_MOI = [
 for text, want in LINT_MOI:
 	got = render.lint(text)
 	c(f"D7: lint bắt — {text!r} → {want!r}", want in got, str(got))
-LINT_GIU = ["năm 2026", "ngày 5/11", "mã SR900", "phiếu KK-2026-002", "trong 7 ngày", "quý 4", "3 ty le", "Top 5 Mart",
+LINT_GIU = ["năm 2026", "ngày 5/11", "mã SR900", "phiếu KK-2026-002", "trong 7 ngày", "quý 4", "quý 3 ty le",
 	"PNTP-X120", "KKE-TP10", "TON-TRAD1", "HAN-SINV-90", "KKE-SR-26", "SE-NL-X8", "TET1", "X12", "LO-TET-01",
-	"công ty Ba Tiến", "hàng ty vi", "trong 7 (bảy) ngày", "Bước 1.\n2. Gọi khách", "5 khách, 12 đơn"]
+	"công ty Ba Tiến", "hàng ty vi", "trong 7 ngày (bảy ngày)", "Bước 1. Gọi khách"]
 for text in LINT_GIU:
 	c(f"D7: lint giữ — {text!r}", render.lint(text) == [], str(render.lint(text)))
+for text, want in (("3 ty le", "3"), ("Top 5 Mart", "5"), ("trong 7 (bảy) ngày", "7"), ("Bước 1.\n2. Gọi khách", "2"),
+		("5 khách, 12 đơn", "12")):
+	c(f"G1: lint bắt (trước đây lọt) — {text!r} → {want!r}", want in render.lint(text), str(render.lint(text)))
 t0 = time.monotonic()
-dai = ("Nợ quá hạn của nhóm khách 12 đơn, mã SR900, ngày 5/11, công ty ABC tăng. " * 1200)[:80000]
+dai = ("Nợ quá hạn của nhóm khách trong 12 ngày, mã SR900, ngày 5/11, công ty ABC tăng. " * 1200)[:80000]
 got = render.lint(dai)
 dt = time.monotonic() - t0
 c(f"D7: lint 80.000 ký tự lời thường < 5 s ({dt:.2f} s), sạch", dt < 5 and got == [], f"{dt:.2f} s {got[:3]}")
@@ -1110,8 +1159,265 @@ eq("E2: kieu_theo_ten — 'rate' → tien, '*_rate' → pct", [render.kieu_theo_
 # dòng → tên khoá); mọi lời quy tắc của lượt, chép nguyên làm lời mô hình, phải qua render_insight với kinds (E5).
 # Mỗi seed chạy ở tiến trình riêng, DB riêng; kết quả trả qua stdout (gói số không ghi ra tệp).
 LA_DE_TRONG = {}        # lá cố ý để trống (không xếp được): hiện không có
+# G4: ≥ 60 nhận định ĐÚNG viết theo đề bài (bc.ai.prompt), đủ 7 nhóm, hai seed (g = seed_ui2, k = seed_ui_kho) —
+# chỉ có placeholder, không số liệu; §path§ = chép mã giả có ở path đó trong gói đã che của lượt (như mô hình chép).
+# (seed, nhóm, tiêu đề, thân, khuyến nghị). Gốc: scratchpad fx2_text/insights30 + vf2/ok40, sửa theo G1 / G2.
+DUNG = [
+	("g", "kinh-doanh", "Doanh số luỹ kế tăng mạnh so với cùng kỳ",
+		"Doanh số luỹ kế đạt {{tong-quan.summary.rows[0].sales|tien}}, tăng {{tong-quan.summary.meta.growth.sales|pct}} so với cùng kỳ năm trước ({{tong-quan.summary.rows[1].sales|tien}}). Mức tăng lớn bất thường, cần kiểm tra: có đơn hàng lớn một lần hay không.",
+		["Kinh doanh rà lại các đơn lớn trong kỳ để xác nhận mức tăng là bền vững."]),
+	("g", "kinh-doanh", "Doanh thu phụ thuộc nhiều vào kênh NPP",
+		"Kênh {{tong-quan.channels.rows[0].channel|chu}} đạt {{tong-quan.channels.rows[0].sales|tien}}, trong tổng doanh số {{tong-quan.summary.rows[0].sales|tien}}, kênh {{tong-quan.channels.rows[1].channel|chu}} đứng sau với {{tong-quan.channels.rows[1].sales|tien}}. Doanh thu dồn vào một kênh thì rủi ro khi kênh đó chững lại.",
+		["Kinh doanh lập kế hoạch mở rộng kênh MT và du lịch trong quý 4."]),
+	("g", "kinh-doanh", "Khách lớn nhất chiếm phần đáng kể doanh số",
+		"Khách §tong-quan.top_customers.rows[0].customer§ mua {{tong-quan.top_customers.rows[0].amount|tien}}, khách đứng thứ hai §tong-quan.top_customers.rows[1].customer§ mua {{tong-quan.top_customers.rows[1].amount|tien}}. Doanh số phụ thuộc vài khách lớn nên mất một khách sẽ ảnh hưởng mạnh.",
+		["Kinh doanh lên kế hoạch chăm sóc riêng cho nhóm khách lớn.", "Kinh doanh tìm thêm khách mới để giảm phụ thuộc."]),
+	("g", "kinh-doanh", "Doanh số tháng dồn vào những ngày gần đây",
+		"Ngày {{ngay.daily.rows[8].date|ngay}} bán {{ngay.daily.rows[8].sales|tien}} với {{ngay.daily.rows[8].orders|so}} đơn, ngày {{ngay.daily.rows[9].date|ngay}} bán {{ngay.daily.rows[9].sales|tien}}; các ngày trước đó thấp hơn nhiều. Cần kiểm tra: đơn dồn cuối tháng hay ghi nhận trễ.",
+		["Kế toán kiểm tra ngày ghi nhận của các hoá đơn lớn cuối tháng."]),
+	("g", "kinh-doanh", "Hàng trả lại tập trung ở kênh NPP",
+		"Kênh {{tong-quan.channels.rows[0].channel|chu}} có {{tong-quan.channels.rows[0].returns|tien}} hàng trả lại, tỷ lệ trả {{tong-quan.channels.rows[0].return_rate|pct}}; toàn công ty trả lại {{tong-quan.summary.rows[0].returns|tien}}. Cần kiểm tra: nguyên nhân trả hàng ngày {{ngay.daily.rows[2].date|ngay}} với {{ngay.daily.rows[2].return_orders|so}} đơn trả.",
+		["Kinh doanh làm việc với nhà phân phối về lý do trả hàng.", "Chất lượng kiểm tra lô hàng bị trả."]),
+	("g", "kinh-doanh", "Tháng 10 đạt doanh số cao nhất từ đầu năm tài chính",
+		"Tháng 10 đạt {{thang.monthly.rows[5].sales|tien}}, cao hơn tháng 9 với {{thang.monthly.rows[4].sales|tien}}; hàng trả lại trong tháng là {{thang.monthly.rows[5].returns|tien}}. Cùng tháng năm trước chỉ đạt {{thang.monthly.rows[17].sales|tien}}.",
+		["Kinh doanh giữ nhịp bán hàng cho mùa Tết sắp tới."]),
+	("g", "tai-chinh", "Thu tiền bán hàng đang rất chậm",
+		"Bình quân {{cong-no.receivables.kpis.dso.dso|so}} ngày mới thu được tiền, khách đang nợ {{cong-no.receivables.kpis.dso.debt|tien}}, doanh thu là {{cong-no.receivables.kpis.dso.revenue|tien}} trong {{cong-no.receivables.kpis.dso.window_days|so}} ngày gần nhất. Vốn bị khách giữ lâu làm thiếu tiền quay vòng.",
+		["Kế toán đối chiếu công nợ với từng khách lớn trong 7 ngày.", "Kinh doanh thương lượng lại hạn thanh toán với khách nợ lâu."]),
+	("g", "tai-chinh", "Nợ quá hạn chiếm tỷ trọng lớn",
+		"Nợ quá hạn {{cong-no.receivables.kpis.overdue|tien}}, bằng {{cong-no.receivables.kpis.overdue_pct|pct}} tổng phải thu {{cong-no.receivables.kpis.receivable|tien}}, ở {{cong-no.receivables.kpis.overdue_customers|so}} khách. Khoản lớn nhất của §cong-no.receivables.top_overdue[0].customer§ là {{cong-no.receivables.top_overdue[0].overdue|tien}}, đã quá hạn {{cong-no.receivables.top_overdue[0].max_days|so}} ngày.",
+		["Kế toán gửi đối chiếu công nợ cho các khách quá hạn trong 7 ngày.", "Kinh doanh tạm dừng bán chịu cho khách đã quá hạn trên 60 ngày."]),
+	("g", "tai-chinh", "Tiền hàng nhà cung cấp đã quá hạn trả",
+		"Còn {{phai-tra.payables.ap.due.overdue_total|tien}} quá hạn ở {{phai-tra.payables.ap.due.overdue_count|so}} hoá đơn mua, lớn nhất là §phai-tra.payables.ap.top[0].supplier§ với {{phai-tra.payables.ap.top[0].outstanding|tien}}, trễ {{phai-tra.payables.ap.top[0].days_overdue|so}} ngày. Quỹ hiện có {{phai-tra.payables.cash.total|tien}} nên đủ khả năng trả.",
+		["Kế toán thanh toán khoản quá hạn cho nhà cung cấp trong 3 ngày."]),
+	("g", "tai-chinh", "Có khách nợ vượt hạn mức tín dụng",
+		"{{cong-no.receivables.kpis.over_limit|so}} khách đang nợ vượt hạn mức, trong khi tổng phải thu ròng là {{cong-no.receivables.kpis.net|tien}}. Bán thêm cho khách này làm tăng rủi ro mất vốn.",
+		["Kinh doanh tạm dừng giao hàng cho khách vượt hạn mức đến khi thu được nợ.", "Kế toán trình duyệt lại hạn mức tín dụng."]),
+	("g", "tai-chinh", "Công nợ kênh MT còn chờ hoá đơn điện tử",
+		"Chuỗi §cong-no.receivables.mt.chains[0].chain§ còn nợ {{cong-no.receivables.mt.chains[0].amount|tien}}, trong đó {{cong-no.receivables.mt.chains[0].overdue|tien}} đã quá hạn và {{cong-no.receivables.mt.chains[0].einv_pending|tien}} chưa xuất hoá đơn điện tử. Chưa có hoá đơn thì chuỗi chưa thanh toán.",
+		["Kế toán xuất hoá đơn điện tử cho chuỗi MT trong 5 ngày."]),
+	("g", "tai-chinh", "Quỹ tiền đủ trả nợ nhà cung cấp đến hạn",
+		"Quỹ hiện có {{phai-tra.payables.cash.total|tien}}, gồm ngân hàng {{phai-tra.payables.cash.bank|tien}} và tiền mặt {{phai-tra.payables.cash.cash|tien}}; phải trả nhà cung cấp tổng {{phai-tra.payables.ap.total|tien}}. Khả năng thanh toán tốt, không cần vay thêm.",
+		["Kế toán lập lịch trả nhà cung cấp theo hạn để giữ uy tín."]),
+	("g", "van-chuyen", "Đơn chờ giao quá hạn dồn nhiều",
+		"{{van-chuyen.overview.giao.cho_qua_han.qua_n|so}} đơn đã chờ giao quá {{van-chuyen.overview.giao.cho_qua_han.so_ngay|so}} ngày, nhiều nhất ở nhóm {{van-chuyen.overview.giao.cho_qua_han.rows[0].hinh_thuc|chu}} với {{van-chuyen.overview.giao.cho_qua_han.rows[0].qua_n|so}} đơn. Tỷ lệ đã phân công mới đạt {{van-chuyen.overview.giao.ty_le_phan_cong|pct}}.",
+		["Vận chuyển phân công ngay các đơn chưa có người giao trong 2 ngày."]),
+	("g", "van-chuyen", "Xe quá hạn đăng kiểm vẫn đang dùng",
+		"Xe {{van-chuyen.overview.xe.can_xu_ly[0].xe|chu}} đã quá hạn {{van-chuyen.overview.xe.can_xu_ly[0].viec[0].viec|chu}} từ {{van-chuyen.overview.xe.can_xu_ly[0].viec[0].han|ngay}}; thêm {{van-chuyen._ai.vc_xe_qua_han.sap_den|so}} xe sắp đến hạn. Xe quá hạn chạy đường sẽ bị phạt và không được bảo hiểm.",
+		["Vận chuyển đưa xe đi đăng kiểm trong 3 ngày.", "Vận chuyển lên lịch bảo dưỡng cho xe sắp đến hạn."]),
+	("g", "van-chuyen", "Đơn tự giao chưa xếp chuyến",
+		"Còn {{van-chuyen.overview.giao.xep.chua_xep|so}} đơn tự giao chưa xếp lên chuyến và {{van-chuyen.overview.giao.xep.mot_phan|so}} đơn mới xếp một phần, trong khi đã xếp {{van-chuyen.overview.giao.xep.da_xep|so}} đơn. Đơn chưa xếp thì chưa có ai đi giao.",
+		["Vận chuyển xếp chuyến cho các đơn còn lại trong ngày."]),
+	("g", "van-chuyen", "Sự cố vận chuyển tồn lâu chưa xử lý",
+		"{{van-chuyen.overview.su_co.mo_qua_n|so}} sự cố đã mở quá {{van-chuyen.overview.su_co.so_ngay|so}} ngày, tổng đang mở {{van-chuyen.overview.su_co.dang_mo|so}} vụ với giá trị ảnh hưởng {{van-chuyen.overview.su_co.gia_tri_anh_huong|tien}}. Bồi thường còn phải đòi {{van-chuyen.overview.su_co.boi_thuong_con_doi|tien}}.",
+		["Vận chuyển chốt hướng xử lý từng sự cố trong 7 ngày.", "Kế toán theo dõi khoản bồi thường còn phải thu."]),
+	("g", "van-chuyen", "Cước sửa tay cần duyệt lại",
+		"Có {{van-chuyen._ai.vc_cuoc_canh_bao_sua_tay.so|so}} chuyến bị sửa cước bằng tay trên tổng {{van-chuyen.overview.cuoc.so_chuyen|so}} chuyến, tổng cước tháng {{van-chuyen.overview.cuoc.tong|tien}}, bằng {{van-chuyen.overview.cuoc.ty_le_doanh_thu|pct}} doanh thu đã giao. Cước ngoài bảng giá dễ phát sinh chi sai.",
+		["Vận chuyển giải trình từng chuyến sửa cước.", "Kế toán đối chiếu cước với bảng giá trước khi chi."]),
+	("g", "van-chuyen", "Tỷ lệ giao hàng trong tháng còn thấp",
+		"Mới giao xong {{van-chuyen.overview.giao.da|so}} đơn, trong tổng số {{van-chuyen.overview.giao.total|so}} đơn, tỷ lệ {{van-chuyen.overview.giao.ty_le_giao|pct}}; còn {{van-chuyen.overview.giao.cho|so}} đơn chờ và {{van-chuyen.overview.giao.dang|so}} đơn đang giao. Giao chậm làm chậm ghi nhận doanh thu và thu tiền.",
+		["Vận chuyển tăng chuyến để giải quyết đơn chờ trong tuần này."]),
+	("g", "nhan-su", "Nhiều lao động chưa đóng BHXH",
+		"{{nhan-su.overview.bhxh.rui_ro|so}} người quá một tháng chưa đóng BHXH mà chưa ghi lý do; hiện có {{nhan-su.overview.bhxh.dong|so}} người đóng, trong số {{nhan-su.overview.bhxh.dang_lam|so}} người đang làm, tỷ lệ {{nhan-su.overview.bhxh.ty_le|pct}}. Công ty có thể bị truy thu và phạt.",
+		["Nhân sự đăng ký BHXH hoặc ghi rõ lý do cho từng người trong 7 ngày."]),
+	("g", "nhan-su", "Hợp đồng lao động hết hạn chưa ký lại",
+		"{{nhan-su.overview.giay_to.hd.do|so}} người đã hết hạn hợp đồng lao động và {{nhan-su.overview.giay_to.hd.vang|so}} người sẽ hết hạn trong {{nhan-su.overview.giay_to.so_ngay|so}} ngày tới. Làm việc không hợp đồng là vi phạm khi thanh tra lao động.",
+		["Nhân sự ký lại hợp đồng cho người đã hết hạn trong 5 ngày."]),
+	("g", "nhan-su", "Khám sức khỏe định kỳ đã quá hạn",
+		"{{nhan-su.overview.giay_to.ksk.do|so}} người hết hạn khám sức khỏe, {{nhan-su.overview.giay_to.ksk.vang|so}} người sắp hết hạn. Với cơ sở thực phẩm, thiếu giấy khám là lỗi bị phạt khi kiểm tra.",
+		["Nhân sự đặt lịch khám sức khỏe cho người hết hạn trong 10 ngày."]),
+	("g", "nhan-su", "Trùng phiếu lương nháp cần xử lý",
+		"Cảnh báo {{nhan-su.overview.canh_bao.rows[1].ten|chu}} đang có {{nhan-su.overview.canh_bao.rows[1].so_nguoi|so}} người; kỳ lương {{nhan-su.overview.luong.ky|chu}} còn {{nhan-su.overview.luong.loi_ky|so}} lỗi kỳ. Trả lương trùng sẽ thất thoát tiền.",
+		["Nhân sự xoá phiếu lương trùng trước khi chốt kỳ.", "Kế toán chỉ chi lương sau khi nhân sự xác nhận."]),
+	("g", "nhan-su", "Biến động nhân sự trong kỳ",
+		"Đang làm {{nhan-su.overview.nhan_su.dang_lam|so}} người, tạm nghỉ {{nhan-su.overview.nhan_su.tam_nghi|so}} người; trong kỳ có {{nhan-su.overview.bien_dong.vao|so}} người vào và {{nhan-su.overview.bien_dong.nghi|so}} người nghỉ. Bộ phận {{nhan-su.overview.nhan_su.by_dept[0].bo_phan|chu}} đông nhất với {{nhan-su.overview.nhan_su.by_dept[0].dang_lam|so}} người.",
+		["Nhân sự rà soát kế hoạch tuyển cho mùa cao điểm."]),
+	("g", "attp", "Vòng kiểm hằng ngày đang thiếu lượt",
+		"Lĩnh vực {{attp.overview.linh_vuc[0].ten|chu}} báo đèn đỏ: còn {{attp._ai.attp_den_do_vong_kiem.viec|so}} việc treo, trong đó {{attp._ai.attp_den_do_vong_kiem.cao|so}} việc mức cao; tỷ lệ lượt đủ mới đạt {{attp.overview.linh_vuc[0].so|chu}}. Bỏ lượt kiểm thì không phát hiện kịp nguy cơ mất an toàn.",
+		["Chất lượng bố trí người đi đủ lượt kiểm mỗi ngày sản xuất.", "Sản xuất nhắc tổ trưởng ký xác nhận sau từng lượt."]),
+	("g", "attp", "Phiếu sự cố ATTP quá hạn chưa đóng",
+		"Lĩnh vực {{attp.overview.linh_vuc[1].ten|chu}} còn {{attp._ai.attp_den_do_su_co.viec|so}} việc treo, cả {{attp._ai.attp_den_do_su_co.cao|so}} việc đều ở mức cao. Hệ thống ghi nhận: {{attp.overview.linh_vuc[1].nhac[0].tieu_de|chu}}. Sự cố không đóng thì không biết lô hàng liên quan đã xử lý chưa.",
+		["Chất lượng đóng phiếu sự cố quá hạn trong 3 ngày."]),
+	("g", "attp", "Truy xuất, thu hồi còn việc treo",
+		"Lĩnh vực {{attp.overview.linh_vuc[5].ten|chu}} còn {{attp._ai.attp_den_do_truy_xuat.viec|so}} việc treo, {{attp._ai.attp_den_do_truy_xuat.cao|so}} việc mức cao. Không truy xuất được lô thì khi có khiếu nại sẽ phải thu hồi rộng.",
+		["Chất lượng hoàn tất diễn tập truy xuất còn thiếu trong tháng này."]),
+	("g", "attp", "Nhiều lĩnh vực ATTP đang báo đỏ",
+		"Trong kỳ {{attp.overview.so_ngay|so}} ngày có {{attp.overview.dem.do|so}} lĩnh vực đèn đỏ, {{attp.overview.dem.vang|so}} đèn vàng và {{attp.overview.dem.xanh|so}} đèn xanh. Số lĩnh vực đỏ nhiều cho thấy hồ sơ ATTP chưa được duy trì đều.",
+		["Chất lượng lập kế hoạch xử lý từng lĩnh vực đỏ trong 14 ngày."]),
+	("g", "he-thong", "Lỗi hệ thống tăng vọt trong ngày",
+		"Ngày qua ghi nhận {{he-thong.error_log.tong|so}} lỗi, bình quân mỗi ngày {{he-thong.error_log.tb_ngay|so}} lỗi. Lỗi tăng thường do một tác vụ hỏng lặp lại.",
+		["Quản trị xem Error Log và xử lý nhóm lỗi nhiều nhất trong ngày."]),
+	("g", "he-thong", "Có tài khoản bị dò mật khẩu",
+		"{{he-thong.dang_nhap_sai.so_tk|so}} tài khoản đăng nhập sai nhiều bất thường, nhiều nhất {{he-thong.dang_nhap_sai.max_lan|so}} lượt trong ngày qua, tổng cộng {{he-thong.dang_nhap_sai.tong|so}} lượt sai. Cần kiểm tra: có người dò mật khẩu hay nhân viên quên mật khẩu.",
+		["Quản trị khoá tạm tài khoản và đổi mật khẩu trong ngày."]),
+	("g", "he-thong", "Tác vụ định kỳ thất bại",
+		"{{he-thong.job_that_bai.tong|so}} lượt tác vụ định kỳ thất bại trong ngày qua, thuộc {{he-thong.job_that_bai.so_loai|so}} loại việc. Việc chạy tự động có thể bị bỏ sót.",
+		["Quản trị xem nhật ký tác vụ và chạy lại việc bị lỗi."]),
+	("g", "he-thong", "Email gửi đi bị lỗi",
+		"{{he-thong.email_loi.so|so}} email gửi lỗi trong ngày qua. Thư báo cho khách hoặc nội bộ có thể không tới nơi.",
+		["Quản trị kiểm tra tài khoản email gửi đi."]),
+	("g", "kinh-doanh", "Sản lượng bánh tăng mạnh so với cùng kỳ",
+		"Mã {{san-pham.top_products.rows[0].item_code|chu}} bán {{san-pham.top_products.rows[0].qty|so}} hộp, tăng {{san-pham.top_products.rows[0].growth_pct|pct}} so với cùng kỳ ({{san-pham.top_products.rows[0].qty_sp|so}} hộp). Tăng nhanh thì cần chuẩn bị đủ hàng cho mùa Tết sắp tới.",
+		["Sản xuất rà lại kế hoạch cho mã bán chạy."]),
+	("g", "kinh-doanh", "Chưa phân được doanh số theo tỉnh",
+		"Toàn bộ {{tinh-thanh.provinces.rows[0].sales|tien}} doanh số đang nằm ở nhóm {{tinh-thanh.provinces.rows[0].province|chu}}, chiếm {{tinh-thanh.provinces.rows[0].pct|pct}}. Cần kiểm tra: địa chỉ khách chưa khai tỉnh nên không phân tích được theo vùng.",
+		["Kinh doanh bổ sung tỉnh thành cho hồ sơ khách hàng trong 14 ngày."]),
+	("g", "kinh-doanh", "Hàng Tết và hàng truyền thống đóng góp gần ngang nhau",
+		"Nhóm {{tong-quan.item_groups.rows[0].item_group|chu}} đạt {{tong-quan.item_groups.rows[0].amount|tien}}, nhóm {{tong-quan.item_groups.rows[1].item_group|chu}} đạt {{tong-quan.item_groups.rows[1].amount|tien}}. Hai nhóm cân bằng giúp giảm phụ thuộc mùa vụ.",
+		["Kinh doanh giữ cơ cấu hàng cân bằng khi lập kế hoạch năm."]),
+	("g", "tai-chinh", "Tiền khách trả chưa được gán vào hoá đơn",
+		"Còn {{cong-no.receivables.kpis.unallocated|tien}} tiền khách đã trả chưa gán vào hoá đơn và {{cong-no.receivables.kpis.unknown|tien}} nợ chưa rõ hạn. Số liệu quá hạn có thể chưa chính xác cho tới khi kế toán gán xong.",
+		["Kế toán gán các khoản đã thu vào hoá đơn trong 7 ngày."]),
+	("g", "van-chuyen", "Chi phí xe từ đầu năm",
+		"Chi phí xe từ đầu năm là {{van-chuyen.overview.xe.chi_phi_nam.tong|tien}}, lớn nhất là khoản {{van-chuyen.overview.xe.chi_phi_nam.rows[0].loai|chu}} với {{van-chuyen.overview.xe.chi_phi_nam.rows[0].tien|tien}}; công ty đang dùng {{van-chuyen.overview.xe.dang_dung|so}} xe. Cần kiểm tra: xe nào sửa chữa nhiều để cân nhắc thay.",
+		["Vận chuyển lập bảng chi phí theo từng xe."]),
+	("g", "nhan-su", "Quỹ lương nhóm văn phòng",
+		"Nhóm {{nhan-su.overview.luong.bo_phan[0].nhom|chu}} có {{nhan-su.overview.luong.bo_phan[0].so_nguoi|so}} người, tổng lương {{nhan-su.overview.luong.bo_phan[0].tong_tien|tien}}, thực nhận {{nhan-su.overview.luong.bo_phan[0].thuc_nhan|tien}}.",
+		["Nhân sự đối chiếu quỹ lương với kế hoạch."]),
+	("g", "he-thong", "Chưa có bản sao lưu dữ liệu",
+		"Hệ thống không tìm thấy bản sao lưu nào. Mất dữ liệu sẽ không khôi phục được.",
+		["Quản trị bật sao lưu tự động ngay hôm nay."]),
+	("g", "van-chuyen", "Tải xe còn thấp so với sức chứa",
+		"Trong tháng có {{van-chuyen.overview.chuyen.so_chuyen|so}} chuyến, tải trung bình {{van-chuyen.overview.chuyen.tai_tb|pct}} sức chứa; {{van-chuyen.overview.chuyen.qua_tai|so}} chuyến quá tải và {{van-chuyen.overview.chuyen.thieu_cap|so}} chuyến thiếu cặp lái. Xe chạy non tải làm cước mỗi đơn cao.",
+		["Vận chuyển gom đơn theo tuyến để tăng tải mỗi chuyến."]),
+	("k", "kho-sx", "Hàng truyền thống tồn quá nhiều so với sức bán",
+		"Hàng truyền thống đang tồn {{ton-kho.overview.doi.traditional.value|tien}}, đủ bán {{ton-kho.overview.doi.traditional.days|so}} ngày theo giá vốn bán {{ton-kho.overview.doi.traditional.cogs|tien}} của {{ton-kho.overview.doi.window_days|so}} ngày gần nhất. Tồn lâu làm đọng vốn và tăng rủi ro hết hạn.",
+		["Kinh doanh lập chương trình đẩy hàng truyền thống trong quý 4.", "Sản xuất giảm kế hoạch nhập kho nhóm hàng này."]),
+	("k", "kho-sx", "Thành phẩm hết hạn còn nằm trong kho bán",
+		"Còn {{han-dung.overview.han.buckets[0].value|tien}} thành phẩm đã hết hạn, gồm {{han-dung.overview.han.buckets[0].lots|so}} lô với {{han-dung.overview.han.buckets[0].qty|so}} {{han-dung.overview.han.buckets[0].uom|chu}}; hàng cận hạn trong {{han-dung.overview.han.can_date_ngay|so}} ngày tới trị giá {{han-dung.overview.han.can_date.value|tien}}. Hàng hết hạn lẫn trong kho bán có thể bị giao nhầm cho khách.",
+		["Kho tách riêng hàng hết hạn trong ngày.", "Chất lượng lập biên bản huỷ hàng hết hạn."]),
+	("k", "kho-sx", "Nhiều kho quá lâu chưa kiểm kê",
+		"{{kiem-ke._ai.kho_kk_lech_tre.so_kho|so}} kho chưa kiểm kê lần nào hoặc đã quá {{kiem-ke.overview.meta.nguong.nguy|so}} ngày; cả công ty có {{kiem-ke.overview.kho.tong.so_kho|so}} kho, trong đó {{kiem-ke.overview.kho.tong.chua_kiem|so}} kho chưa từng kiểm. Số tồn trên sổ có thể đã lệch thực tế.",
+		["Kho lập lịch kiểm kê cho các kho quá hạn trong 14 ngày."]),
+	("k", "kho-sx", "Thành phẩm nhập kho chưa có định mức",
+		"{{nhap-tp.overview.no_bom.items|so}} mã thành phẩm với {{nhap-tp.overview.no_bom.qty|so}} {{nhap-tp.overview.no_bom.uom|chu}} đã nhập kho mà chưa có định mức, lâu nhất {{nhap-tp.overview.no_bom.age_days|so}} ngày, giá trị tạm tính {{nhap-tp.overview.no_bom.value_tam|tien}}. Nguyên liệu chưa được trừ kho nên giá vốn đang sai.",
+		["Sản xuất khai định mức cho các mã còn thiếu trong 7 ngày.", "Kế toán tính lại giá vốn sau khi có định mức."]),
+	("k", "kho-sx", "Tồn chết làm đọng vốn kho",
+		"Tồn chết chiếm {{ton-kho.overview.slow.total.dead_pct|pct}} giá trị kho bán được, gồm {{ton-kho.overview.slow.total.dead_items|so}} mã trị giá {{ton-kho.overview.slow.total.dead_value|tien}}; hàng chậm bán chiếm thêm {{ton-kho.overview.slow.total.slow_pct|pct}}. Mã đọng nhiều nhất là {{ton-kho.overview.slow.total.top[0].short_name|chu}} với {{ton-kho.overview.slow.total.top[0].value|tien}}.",
+		["Kinh doanh đề xuất phương án thanh lý hàng tồn chết.", "Kho rà lại hạn dùng của các mã này."]),
+	("k", "kho-sx", "Tồn âm ở nhiều kho",
+		"{{han-dung.overview.am.items|so}} mã đang tồn âm ở {{han-dung.overview.am.warehouses|so}} kho, giá trị {{han-dung.overview.am.value_abs|tien}}. Ví dụ mã {{han-dung.overview.am.ds[0].item_code|chu}} còn tồn {{han-dung.overview.am.ds[0].qty|so}} {{han-dung.overview.am.ds[0].uom|chu}} với đơn giá {{han-dung.overview.am.ds[0].rate|tien}}. Xuất trước khi nhập làm giá vốn sai.",
+		["Kho nhập bù chứng từ còn thiếu trong 3 ngày."]),
+	("k", "kho-sx", "Kiểm kê gần nhất lệch sổ nhiều",
+		"Lần kiểm kê gần nhất chỉ {{kiem-ke.overview.ira.so_ma_khop|so}} mã khớp sổ, trong tổng số {{kiem-ke.overview.ira.so_ma|so}} mã đã đếm, tỷ lệ {{kiem-ke.overview.ira.ty_le|pct}}. Kiểm kê sản xuất thiếu {{kiem-ke.overview.kk_sx.gt_thieu|tien}} và thừa {{kiem-ke.overview.kk_sx.gt_thua|tien}}.",
+		["Kho tìm nguyên nhân lệch cho từng mã.", "Kế toán chỉ duyệt điều chỉnh sau khi có giải trình."]),
+	("k", "kho-sx", "Tính lại giá vốn bị lỗi",
+		"{{ton-kho.overview.health.failed_reposts|so}} lượt tính lại giá vốn bị lỗi từ {{ton-kho.overview.health.failed_repost_since|ngay}}, còn {{ton-kho.overview.health.pending_reposts|so}} lượt đang chờ. Giá trị tồn kho {{ton-kho.overview.value.totals.value|tien}} có thể chưa đúng cho tới khi chạy lại.",
+		["Kế toán chạy lại việc tính giá vốn và báo quản trị nếu vẫn lỗi."]),
+	("k", "kho-sx", "Nguyên liệu treo chưa trừ kho",
+		"Còn {{nhap-tp.overview.nvl_treo.n_rm|so}} nguyên liệu treo trị giá {{nhap-tp.overview.nvl_treo.value|tien}}; lớn nhất là {{nhap-tp.overview.nvl_treo.list[0].short_name|chu}} với {{nhap-tp.overview.nvl_treo.list[0].qty|so}} {{nhap-tp.overview.nvl_treo.list[0].uom|chu}}, đơn giá {{nhap-tp.overview.nvl_treo.list[0].rate|tien}}.",
+		["Sản xuất khai định mức để hệ thống trừ nguyên liệu."]),
+	("k", "kho-sx", "Thành phẩm tồn chưa có giá vốn",
+		"{{nhap-tp.overview.gia_von_0.ton.items|so}} mã thành phẩm đang tồn mà chưa có giá vốn, trong tháng thêm {{nhap-tp.overview.gia_von_0.nhap_ky.items|so}} mã nhập kho không có đơn giá. Giá trị tồn và lãi gộp đang bị tính thiếu.",
+		["Kế toán bổ sung giá vốn cho các mã còn thiếu trong 7 ngày."]),
+	("k", "kho-sx", "Phiếu nhập thành phẩm chờ duyệt lâu",
+		"{{nhap-tp.overview.cho_duyet.count|so}} phiếu nhập thành phẩm đang chờ duyệt với {{nhap-tp.overview.cho_duyet.qty|so}} {{nhap-tp.overview.cho_duyet.uom|chu}}, phiếu cũ nhất từ {{nhap-tp.overview.cho_duyet.oldest_date|ngay}}, đã {{nhap-tp.overview.cho_duyet.oldest_age_days|so}} ngày.",
+		["Kho duyệt các phiếu tồn trong 2 ngày."]),
+	("k", "kho-sx", "Mã bán chạy xuất vượt sản lượng sản xuất",
+		"Mã {{sx-tet.items.rows[0].item_code|chu}} đã xuất {{sx-tet.items.rows[0].outgoing|so}} hộp, bằng {{sx-tet.items.rows[0].outgoing_pct|pct}} sản lượng sản xuất {{sx-tet.items.rows[0].produced|so}} hộp; tồn hiện còn {{sx-tet.items.rows[0].stock|so}} hộp.",
+		["Sản xuất tăng kế hoạch cho mã này."]),
+	("k", "van-chuyen", "Đơn chờ giao quá hạn chưa phân công",
+		"{{van-chuyen.overview.giao.cho_qua_han.qua_n|so}} đơn chờ giao quá {{van-chuyen.overview.giao.cho_qua_han.so_ngay|so}} ngày, đều ở nhóm {{van-chuyen.overview.giao.cho_qua_han.rows[0].hinh_thuc|chu}}.",
+		["Vận chuyển phân công người giao trong ngày."]),
+	("k", "attp", "Truy xuất còn việc mức cao",
+		"Lĩnh vực {{attp.overview.linh_vuc[5].ten|chu}} còn {{attp._ai.attp_den_do_truy_xuat.viec|so}} việc treo, {{attp._ai.attp_den_do_truy_xuat.cao|so}} việc mức cao.",
+		["Chất lượng xử lý việc mức cao trong 3 ngày."]),
+	("k", "kho-sx", "Giá trị tồn kho và phần không bán được",
+		"Tổng tồn kho {{ton-kho.overview.value.totals.value|tien}} ở {{ton-kho.overview.value.totals.warehouses_in_stock|so}} kho với {{ton-kho.overview.value.totals.items_in_stock|so}} mã; phần không bán được là {{ton-kho.overview.value.totals.value_unsellable|tien}}, hàng đang đi đường {{ton-kho.overview.value.totals.value_transit|tien}}.",
+		["Kho rà soát phần hàng không bán được."]),
+	("g", "kinh-doanh", "Doanh số tăng mạnh so với cùng kỳ",
+		"Từ đầu năm tài chính bán ra {{tong-quan.summary.rows[0].sales|tien}}, cùng kỳ năm trước chỉ {{tong-quan.summary.rows[1].sales|tien}}; tăng trưởng đạt {{tong-quan.summary.meta.growth.sales|pct}}.",
+		["Kinh doanh: giữ nhịp giao hàng cho các khách lớn trong 30 ngày tới."]),
+	("g", "kinh-doanh", "Kênh NPP trả hàng nhiều nhất",
+		"Kênh {{tong-quan.channels.rows[0].channel|chu}} có tỷ lệ trả hàng {{tong-quan.channels.rows[0].return_rate|pct}}, giá trị trả về {{tong-quan.channels.rows[0].returns|tien}}; cần kiểm tra: nguyên nhân trả hàng theo từng nhà phân phối.",
+		["Kinh doanh: rà lại các đơn trả của kênh NPP trong 7 ngày."]),
+	("g", "kinh-doanh", "Doanh số dồn vào hai khách lớn",
+		"Khách §tong-quan.top_customers.rows[0].customer§ mua {{tong-quan.top_customers.rows[0].amount|tien}} từ đầu năm, khách thứ hai là §tong-quan.top_customers.rows[1].customer§ với {{tong-quan.top_customers.rows[1].amount|tien}}.",
+		["Kinh doanh: chăm sóc riêng hai khách lớn nhất và mở thêm khách mới để giảm phụ thuộc."]),
+	("g", "kinh-doanh", "Hàng Tết dẫn đầu cơ cấu bán",
+		"Nhóm {{tong-quan.item_groups.rows[0].item_group|chu}} đạt {{tong-quan.item_groups.rows[0].amount|tien}}, nhóm {{tong-quan.item_groups.rows[1].item_group|chu}} đạt {{tong-quan.item_groups.rows[1].amount|tien}}.",
+		["Sản xuất: chuẩn bị nguyên liệu cho mùa Tết theo kế hoạch bán.", "Kinh doanh: chốt đơn Tết sớm với nhà phân phối."]),
+	("g", "kinh-doanh", "Mã bánh Tết tăng nhanh",
+		"Mã {{san-pham.top_products.rows[0].item_code|chu}} bán {{san-pham.top_products.rows[0].qty|so}} sản phẩm, tăng {{san-pham.top_products.rows[0].growth_pct|pct}} so với cùng kỳ.",
+		["Kho: giữ đủ tồn mã này cho các đơn tuần tới."]),
+	("g", "kinh-doanh", "Doanh số tháng giảm sau tháng đầu năm",
+		"Tháng đầu năm tài chính đạt {{thang.monthly.rows[0].sales|tien}}, tháng kế tiếp giảm còn {{thang.monthly.rows[1].sales|tien}}; cần kiểm tra: lịch giao hàng của tháng sau.",
+		["Kinh doanh: so lại kế hoạch bán từng tháng với thực tế."]),
+	("g", "tai-chinh", "Nợ quá hạn chiếm phần lớn phải thu",
+		"Nợ quá hạn {{cong-no.receivables.kpis.overdue|tien}}, chiếm {{cong-no.receivables.kpis.overdue_pct|pct}} tổng phải thu {{cong-no.receivables.kpis.receivable|tien}}; có {{cong-no.receivables.kpis.overdue_customers|so}} khách đang trễ hạn.",
+		["Kế toán: gọi điện nhắc nợ từng khách quá hạn trong 7 ngày.", "Kinh doanh: tạm dừng giao thêm cho khách quá hạn lâu nhất."]),
+	("g", "tai-chinh", "Khách nợ quá hạn lâu nhất",
+		"Khách §cong-no.receivables.top_overdue[1].customer§ quá hạn {{cong-no.receivables.top_overdue[1].overdue|tien}}, khoản cũ nhất đã {{cong-no.receivables.top_overdue[1].max_days|so}} ngày.",
+		["Kế toán: làm biên bản đối chiếu công nợ với khách này trong tuần."]),
+	("g", "tai-chinh", "Tiền bán hàng thu về chậm",
+		"Bình quân {{cong-no.receivables.kpis.dso.dso|so}} ngày mới thu được tiền, khách đang nợ {{cong-no.receivables.kpis.dso.debt|tien}} so với doanh thu {{cong-no.receivables.kpis.dso.revenue|tien}}.",
+		["Kế toán: rút ngắn hạn thanh toán với khách mới."]),
+	("g", "tai-chinh", "Còn hoá đơn mua quá hạn chưa trả",
+		"Đã quá hạn {{phai-tra.payables.ap.due.overdue_total|tien}} với {{phai-tra.payables.ap.due.overdue_count|so}} hoá đơn; sắp đến hạn thêm {{phai-tra.payables.ap.due.upcoming_total|tien}}.",
+		["Kế toán: lên lịch trả nhà cung cấp trong 7 ngày."]),
+	("g", "tai-chinh", "Quỹ đủ trả nợ nhà cung cấp",
+		"Tiền mặt và tiền gửi còn {{phai-tra.payables.cash.total|tien}}, trong đó tiền gửi ngân hàng {{phai-tra.payables.cash.bank|tien}}.",
+		["Kế toán: ưu tiên trả các hoá đơn đã quá hạn."]),
+	("g", "tai-chinh", "Có {{cong-no.receivables.kpis.over_limit|so}} khách vượt hạn mức tín dụng",
+		"Ứng trước của khách {{cong-no.receivables.kpis.advances|tien}}, phải thu ròng {{cong-no.receivables.kpis.net|tien}}; cần kiểm tra: hạn mức có còn phù hợp.",
+		["Kinh doanh: duyệt lại hạn mức của khách vượt hạn."]),
+	("g", "van-chuyen", "Đơn chờ giao dồn nhiều",
+		"Có {{van-chuyen.overview.giao.cho|so}} đơn đang chờ giao trên tổng {{van-chuyen.overview.giao.total|so}} đơn, tỷ lệ đã giao chỉ {{van-chuyen.overview.giao.ty_le_giao|pct}}.",
+		["Vận chuyển: xếp thêm chuyến cho các đơn chờ lâu trong 2 ngày."]),
+	("g", "van-chuyen", "Cước vận chuyển cao so với doanh thu",
+		"Tổng cước tháng {{van-chuyen.overview.cuoc.tong|tien}}, bình quân {{van-chuyen.overview.cuoc.moi_chuyen|tien}} mỗi chuyến, bằng {{van-chuyen.overview.cuoc.ty_le_doanh_thu|pct}} doanh thu đơn đã giao.",
+		["Vận chuyển: ghép đơn cùng tuyến để giảm số chuyến."]),
+	("g", "van-chuyen", "Xe chạy chưa đầy tải",
+		"Tải trung bình mỗi chuyến chỉ {{van-chuyen.overview.chuyen.tai_tb|pct}} sức chứa, có {{van-chuyen.overview.chuyen.thieu_cap|so}} chuyến thiếu cấp và {{van-chuyen.overview.chuyen.qua_tai|so}} chuyến quá tải.",
+		["Vận chuyển: xem lại cách chia đơn theo sức chứa của xe."]),
+	("g", "van-chuyen", "Xe quá hạn đăng kiểm",
+		"Xe {{van-chuyen.overview.xe.can_xu_ly[0].xe|chu}} quá hạn {{van-chuyen.overview.xe.can_xu_ly[0].viec[0].viec|chu}} từ {{van-chuyen.overview.xe.can_xu_ly[0].viec[0].han|ngay}}; công ty đang dùng {{van-chuyen.overview.xe.dang_dung|so}} xe.",
+		["Vận chuyển: đưa xe đi đăng kiểm ngay, không cho chạy đường dài."]),
+	("g", "nhan-su", "BHXH mới phủ một phần người lao động",
+		"Mới có {{nhan-su.overview.bhxh.dong|so}} người đóng BHXH, trong số {{nhan-su.overview.bhxh.dang_lam|so}} người đang làm, tỷ lệ {{nhan-su.overview.bhxh.ty_le|pct}}.",
+		["Nhân sự: lập danh sách người cần đăng ký BHXH trong 30 ngày."]),
+	("g", "nhan-su", "Người chưa đóng BHXH chưa ghi lý do",
+		"Có {{nhan-su.overview.bhxh.rui_ro|so}} người quá một tháng chưa đóng BHXH và chưa ghi lý do; cần kiểm tra: hợp đồng thời vụ đã đúng hay chưa.",
+		["Nhân sự: ghi rõ lý do hoặc đăng ký BHXH cho từng người."]),
+	("g", "nhan-su", "Nhân sự tạm nghỉ ở bộ phận khoán",
+		"Đang làm {{nhan-su.overview.nhan_su.dang_lam|so}} người, tạm nghỉ {{nhan-su.overview.nhan_su.tam_nghi|so}} người; riêng bộ phận {{nhan-su.overview.nhan_su.by_dept[0].bo_phan|chu}} có {{nhan-su.overview.nhan_su.by_dept[0].tam_nghi|so}} người tạm nghỉ.",
+		["Nhân sự: hỏi lý do tạm nghỉ và kế hoạch đi làm lại."]),
+	("g", "nhan-su", "Hợp đồng lao động hết hạn",
+		"Có {{nhan-su.overview.giay_to.hd.do|so}} người đã hết hạn hợp đồng, {{nhan-su.overview.giay_to.hd.vang|so}} người sắp hết trong {{nhan-su.overview.giay_to.so_ngay|so}} ngày tới.",
+		["Nhân sự: ký lại hợp đồng trước khi hết hạn."]),
+	("g", "attp", "Vòng kiểm hằng ngày báo đỏ",
+		"{{attp.overview.linh_vuc[0].ten|chu}} còn {{attp._ai.attp_den_do_vong_kiem.viec|so}} việc treo, trong đó {{attp._ai.attp_den_do_vong_kiem.cao|so}} việc mức cao; tỷ lệ lượt đủ {{attp.overview.linh_vuc[0].so|chu}}.",
+		["Chất lượng: bổ sung lượt kiểm còn thiếu ngay trong ca."]),
+	("g", "attp", "Nhiều lĩnh vực ATTP đang báo đỏ",
+		"Có {{attp.overview.dem.do|so}} lĩnh vực báo đỏ, {{attp.overview.dem.vang|so}} lĩnh vực báo vàng và {{attp.overview.dem.xanh|so}} lĩnh vực đạt.",
+		["Chất lượng: họp Ban ATTP chốt người xử lý từng lĩnh vực đỏ."]),
+	("g", "attp", "Sự cố ATTP mức cao chưa đóng",
+		"{{attp.overview.linh_vuc[1].ten|chu}}: còn {{attp._ai.attp_den_do_su_co.viec|so}} việc treo, {{attp._ai.attp_den_do_su_co.cao|so}} việc mức cao.",
+		["Chất lượng: đóng sự cố mức cao trong 3 ngày."]),
+	("g", "he-thong", "Ổ đĩa máy chủ cần theo dõi",
+		"Ổ đĩa đã dùng {{he-thong.dia_day.pct|pct}}, chỉ còn {{he-thong.dia_day.con_trong_gb|so}} GB trống.",
+		["Quản trị: dọn tệp tạm và bản sao lưu cũ trong 7 ngày."]),
+	("g", "he-thong", "Chưa có bản sao lưu nào",
+		"Không tìm thấy bản sao lưu dữ liệu, mất dữ liệu sẽ không khôi phục được; ổ đĩa đang dùng {{he-thong.dia_day.pct|pct}}.",
+		["Quản trị: bật sao lưu tự động và kiểm tra bản đầu tiên hôm nay."]),
+	("k", "kho-sx", "Tồn âm làm sai giá vốn",
+		"{{han-dung.overview.am.items|so}} mã hàng đang âm ở {{han-dung.overview.am.warehouses|so}} kho, giá trị {{han-dung.overview.am.value_abs|tien}}; mã {{han-dung.overview.am.ds[0].item_code|chu}} âm với đơn giá sổ {{han-dung.overview.am.ds[0].rate|tien}}.",
+		["Kho: nhập bù chứng từ còn thiếu trong 7 ngày."]),
+	("k", "kho-sx", "Tồn chết chiếm tỷ trọng đáng kể",
+		"Tồn chết chiếm {{ton-kho.overview.slow.total.dead_pct|pct}} giá trị hàng bán được, tương đương {{ton-kho.overview.slow.total.dead_value|tien}} của {{ton-kho.overview.slow.total.dead_items|so}} mã.",
+		["Kinh doanh: lên chương trình xả hàng tồn lâu.", "Kho: dừng nhập thêm các mã tồn chết."]),
+	("k", "kho-sx", "Độ khớp kiểm kê thấp",
+		"Phiếu {{kiem-ke.overview.ira.rows[0].phieu|chu}} chỉ {{kiem-ke.overview.ira.rows[0].so_ma_khop|so}} mã khớp sổ, trong tổng số {{kiem-ke.overview.ira.rows[0].so_ma|so}} mã, đạt {{kiem-ke.overview.ira.rows[0].ty_le|pct}}; còn {{kiem-ke.overview.kho.tong.chua_kiem|so}} kho chưa kiểm lần nào.",
+		["Kho: kiểm kê lại các kho chưa kiểm trong tháng này."]),
+	("k", "kho-sx", "Nguyên liệu treo chưa trừ kho",
+		"Có {{nhap-tp.overview.nvl_treo.n_rm|so}} nguyên liệu treo, giá trị {{nhap-tp.overview.nvl_treo.value|tien}}; {{nhap-tp.overview.nvl_treo.list[0].short_name|chu}} có đơn giá {{nhap-tp.overview.nvl_treo.list[0].rate|tien}}.",
+		["Sản xuất: hoàn tất định mức để trừ nguyên liệu khỏi kho."]),
+	("k", "kho-sx", "Tồn bánh truyền thống cao hơn sản xuất",
+		"Mã {{sx-tet.items.rows[0].short_name|chu}} tồn {{sx-tet.items.rows[0].stock|so}} hộp, sản xuất {{sx-tet.items.rows[0].produced|so}} hộp và xuất {{sx-tet.items.rows[0].outgoing|so}} hộp trong kỳ.",
+		["Sản xuất: giảm sản lượng mã này cho tới khi tồn về mức bình thường."]),
+]
 _CON = r"""
-import json, os, sys, decimal, tempfile, importlib
+import json, os, re, sys, decimal, tempfile, importlib
 sys.dont_write_bytecode = True
 importlib.import_module(sys.argv[1])
 import frappe
@@ -1153,18 +1459,33 @@ if "han-dung" in pack:
 		g = registry.group_of(p.split(".")[0])
 		gia[p] = {k: render.render_insight({"title": "Kho", "body": "Đơn giá sổ {{" + p + "|" + k + "}} mỗi đơn vị.",
 			"advice": []}, pack, set(registry.GROUPS[g]["sections"]), None, kinds=kinds)["ok"] for k in ("tien", "pct", "so")}
+# G4: nhận định đúng (stdin) → như pipeline: che gói của nhóm, dựng đề bài, restrict, chép mã giả, render_insight
+from bc.ai import prompt, redact
+mask = redact.build()
+dung = []
+for i, nhom, title, body, advice in json.loads(sys.stdin.read() or "[]"):
+	secs = list(registry.GROUPS[nhom]["sections"])
+	getattr(mask, "begin", lambda: None)()
+	goi = mask.mask({x: pack[x] for x in secs if x in pack})
+	user, _ = prompt.build_user(nhom, goi, [], kinds=kinds)
+	getattr(mask, "restrict", lambda t: None)(user)
+	chep = lambda t: re.sub(r"§([^§]+)§", lambda m: str(registry.resolve(goi, m.group(1))), t)
+	r = render.render_insight({"title": chep(title), "body": chep(body), "advice": [chep(a) for a in advice]}, pack,
+		set(secs), mask, kinds=kinds)
+	dung.append([i, r["ok"], r["errors"]])
 print("@@KQ@@" + json.dumps({"la": {k: sorted(v) for k, v in la.items()}, "quy_tac": quy_tac, "gia": gia,
-	"not_run": rr.not_run}, ensure_ascii=False))
+	"not_run": rr.not_run, "dung": dung}, ensure_ascii=False))
 """
 THAT = {}
 for ten, seed in (("chung", "seed_ui2"), ("kho", "seed_ui_kho")):
 	env = dict(os.environ, BC_TEST_DB=os.environ.get("BC_TEST_DB", "bc_test_ai_render") + ("_g" if ten == "chung" else "_k"))
+	vao = json.dumps([[i, x[1], x[2], x[3], x[4]] for i, x in enumerate(DUNG) if x[0] == {"chung": "g", "kho": "k"}[ten]], ensure_ascii=False)
 	pr = subprocess.run([sys.executable, "-B", "-c", _CON, seed], cwd=os.path.dirname(os.path.abspath(__file__)),
-		env=env, capture_output=True, text=True, timeout=900)
+		env=env, capture_output=True, text=True, timeout=900, input=vao)
 	kq = [x for x in pr.stdout.splitlines() if x.startswith("@@KQ@@")]
 	c(f"E2: dựng gói số thật ({seed}) trong tiến trình riêng", pr.returncode == 0 and len(kq) == 1,
 		(pr.stderr or pr.stdout)[-800:])
-	THAT[ten] = json.loads(kq[0][6:]) if kq else {"la": {}, "quy_tac": [], "gia": {}}
+	THAT[ten] = json.loads(kq[0][6:]) if kq else {"la": {}, "quy_tac": [], "gia": {}, "dung": []}
 la_that = {}
 for ten, kq in THAT.items():
 	for p, ks in kq["la"].items():
@@ -1193,6 +1514,14 @@ c("E5: có lời quy tắc để soát (≥ 30 tín hiệu trên hai seed)", sum
 	{t: len(k["quy_tac"]) for t, k in THAT.items()})
 eq("E5: mọi lời quy tắc của seed chung + seed kho qua được luật của chính nó",
 	[f"{t}:{k}: {e}" for t, kq in THAT.items() for k, ok, e in kq["quy_tac"] if not ok], [])
+
+print("\n— G4: bộ nhận định ĐÚNG (≥ 60, đủ 7 nhóm, hai seed) — mọi câu phải được nhận —")
+c("G4: bộ lời đúng ≥ 60 câu, đủ 7 nhóm, cả hai seed", len(DUNG) >= 60 and {x[1] for x in DUNG} == set(registry.GROUPS)
+	and {x[0] for x in DUNG} == {"g", "k"}, (len(DUNG), sorted({x[1] for x in DUNG})))
+c("G4: mọi câu đã chạy qua render_insight trên gói số thật", sum(len(k.get("dung", [])) for k in THAT.values())
+	== len(DUNG), sum(len(k.get("dung", [])) for k in THAT.values()))
+eq("G4: mọi nhận định đúng được nhận (không lỗi)", [f"#{i} [{DUNG[i][1]}] {DUNG[i][2]}: {e}" for kq in THAT.values()
+	for i, ok, e in kq.get("dung", []) if not ok], [])
 
 print("\n— E3: số / từ chỉ số / dấu quanh placeholder số —")
 PS["attp"] = {"overview": {"du_lieu_mau": "", "gach": "–", "trang": "   ", "nhan": "Xanh"}}
@@ -1233,7 +1562,8 @@ c("E3: '-' dính chữ ngay trước placeholder pct → loại", r["ok"] is Fal
 	r["errors"]), f"{r['ok']} {r['errors']}")
 r = render.render_insight({"title": "Nợ", "body": "Mã KK-{{cong-no.receivables.kpis.overdue|tien}} vẫn là nối.",
 	"advice": []}, PP, {"cong-no"}, None, kinds={})
-c("E3: '-' dính chữ trước placeholder tien (nối mã) vẫn giữ như cũ", r["ok"] is True, f"{r['errors']}")
+c("G2: '-' dính chữ trước placeholder tien (nối mã) nay cũng bị loại (trước placeholder chỉ chữ / ( , : ;)",
+	r["ok"] is False and "so-tran:KK-{{cong-no.receivables.kpis.overdue|tien}}" in r["errors"], f"{r['errors']}")
 r = r3(f"Nhãn {{{{attp.overview.nhan|chu}}}} đạt {{{{{P1}|so}}}} việc.")
 c("E3: chu có chữ (không rỗng) bên cạnh vẫn nhận", r["ok"] is True, f"{r['errors']}")
 for text, want in (("Nợ quá hạn (12) tỷ", "12) tỷ"), ("Tổng 12 x tỷ", "12 x tỷ"), ("Còn 12: tỷ", "12: tỷ"),
@@ -1242,7 +1572,7 @@ for text, want in (("Nợ quá hạn (12) tỷ", "12) tỷ"), ("Tổng 12 x tỷ
 		("tức ba lăm % phải thu", "ba lăm %"), ("thêm 2 củ", "2 củ"), ("chín mươi%", "chín mươi%")):
 	got = render.lint(text)
 	c(f"E3: lint bắt — {text!r} → {want!r}", want in got, str(got))
-for text in ("DSO 62 ngày, 99 khách quá hạn", "quý 3, đồng thời kho tăng", "Bước 5: kiểm kho", "5 khách, 12 đơn",
+for text in ("DSO 62 ngày, chín mươi chín khách quá hạn", "quý 3, đồng thời kho tăng", "Bước 5: kiểm kho", "trong 5 ngày",
 		"trong 7 ngày (gấp)", "củ hành", "Ông Ba tới"):
 	c(f"E3: lint giữ — {text!r}", render.lint(text) == [], str(render.lint(text)))
 
@@ -1257,6 +1587,118 @@ t0 = time.monotonic()
 r = rs(f"Có {{{{{P0}.boxes|so}}}} " + "1" * 20000)
 dt = time.monotonic() - t0
 c(f"E4: render_insight placeholder + 20.000 chữ số < 2 s ({dt:.2f} s), loại", dt < 2 and r["ok"] is False, f"{dt:.2f} s")
+
+# ══ 7e. Vòng sửa 3: G1 (chữ số viết tay — danh sách CHO PHÉP), G2 (láng giềng placeholder — danh sách CHO PHÉP) ══
+print("\n— G1 / G2: các lời sai W1–W6 của lần soát lại (verify2) và họ hàng của chúng —")
+PW = {"cong-no": {"receivables": {"kpis": {"overdue": 120e6, "receivable": 220e6, "overdue_pct": 54.5,
+		"overdue_customers": 4, "over_limit": 1}}},
+	"van-chuyen": {"overview": {"giao": {"cho": 18}}},
+	"nhan-su": {"overview": {"bhxh": {"dang_lam": 21, "ty_le": 38.1}}},
+	"attp": {"overview": {"tieu_de": "1 phiếu sự cố quá hạn", "uom": "Thùng", "kho": "Kho 2", "nhan": "Xanh",
+		"ma": "TET1", "qty": 120}, "_ai": {"viec": 2}},
+	"ngay": {"daily": {"rows": [{"date": "2026-10-27", "orders": 5}]}}}
+K3 = "cong-no.receivables.kpis"
+Z, RC, Y, X, X2 = (f"{{{{{K3}.overdue|tien}}}}", f"{{{{{K3}.receivable|tien}}}}", f"{{{{{K3}.overdue_pct|pct}}}}",
+	f"{{{{{K3}.overdue_customers|so}}}}", f"{{{{{K3}.over_limit|so}}}}")
+VCG, NSD, NSY = "{{van-chuyen.overview.giao.cho|so}}", "{{nhan-su.overview.bhxh.dang_lam|so}}", "{{nhan-su.overview.bhxh.ty_le|pct}}"
+CT, AV, UOM, KHO = ("{{attp.overview.tieu_de|chu}}", "{{attp._ai.viec|so}}", "{{attp.overview.uom|chu}}",
+	"{{attp.overview.kho|chu}}")
+NHAN, MA, QTY = "{{attp.overview.nhan|chu}}", "{{attp.overview.ma|chu}}", "{{attp.overview.qty|so}}"
+DN, DO = "{{ngay.daily.rows[0].date|ngay}}", "{{ngay.daily.rows[0].orders|so}}"
+
+
+def rw(body, mask=None):
+	return render.render_insight({"title": "Tiêu đề", "body": body, "advice": []}, PW, None, mask, kinds={})
+
+
+W_SAI = [
+	("W1", "Nợ quá hạn " + Z + ", riêng nhóm lớn còn 12 ; tỷ chưa thu."), ("W1", "Nợ dồn khoảng 12 × tỷ."),
+	("W1", "Nợ nhà cung cấp khoảng 3 ⋅ tỷ."), ("W1", "Nhóm lớn nợ 12‐tỷ chưa đối chiếu."),
+	("W1", "Riêng kênh NPP 12 / tỷ."), ("W1", "Mục tiêu 12<!-- -->tỷ."), ("W1", "Khoảng 3 • tỷ là hàng Tết."),
+	("W1", "Nợ 12 | tỷ."), ("W1", "Nợ 12 … tỷ."), ("W1", "Nợ 12 → tỷ."),
+	("W2", "Ước còn 5 tỏi nợ chưa rõ hạn."), ("W2", "Nợ cũ khoảng XII tỷ chưa thu."), ("W2", "Tăng XXXV phần trăm."),
+	("W2", "Còn năm tỏi nợ."),
+	("W3", f"Có {VCG} lăm đơn đang chờ giao."), ("W3", f"Có {VCG} mốt đơn chưa xếp chuyến."),
+	("W3", f"Chờ giao {VCG} x 10 đơn."), ("W3", f"Đơn chờ {VCG} trên 10 đơn mỗi xe."),
+	("W3", f"Đang làm {NSD}÷10 tổ."), ("W3", f"Cứ 1⁄{NSD} người hết hạn hợp đồng."),
+	("W3", f"Đang làm {NSD} - 5 người chưa khám."), ("W3", f"Cứ 1 trên {NSD} người bị trùng lương."),
+	("W3", f"Đang làm {NSD} phần 10 chưa đóng BHXH."), ("W3", f"Đang làm {NSD}\\10 tổ."),
+	("W3", f"Có muoi {X} khách."), ("W3", f"Có mười, {X} khách."), ("W3", f"Có mười ({X}) khách."),
+	("W3", f"Có tư {X} khách."), ("W3", f"Có nghìn {X} khách."), ("W3", f"Có vài {X} khách."),
+	("W3", f"Có {X} tư khách."), ("W3", f"Có bẩy {X} khách."),
+	("W4", f"Còn {AV}{CT}."), ("W4", f"Ghi nhận 1{CT}."), ("W4", f"Ghi nhận -{CT}."), ("W4", f"Còn {AV} {CT}."),
+	("W4", f"Đơn ngày {DO}{DN} cao bất thường."), ("W4", f"Ngày {DN}{DO} đơn."),
+	("W5", f"Nợ quá hạn (−){Z} so với tháng trước."), ("W5", f"Nợ trong kỳ ({Z})0 cần thu."),
+	("W5", f"Tăng trưởng thu nợ—{Y} so với kỳ trước."),
+]
+for w, body in W_SAI:
+	r = rw(body)
+	c(f"{w}: loại — {body!r}", r["ok"] is False and any(e.startswith("so-tran:") for e in r["errors"]),
+		f"{r['ok']} {r['errors']} {r['body']!r}")
+for body, want in ((f"Kho còn {X} linh kiện thay thế.", "Kho còn 4 linh kiện thay thế."),
+		(f"Có {X} đồng hồ đo nhiệt chưa hiệu chuẩn.", "Có 4 đồng hồ đo nhiệt chưa hiệu chuẩn."),
+		(f"Còn {X} đồng hồ nước, {X2} linh kiện.", "Còn 4 đồng hồ nước, 1 linh kiện.")):
+	r = rw(body)
+	eq(f"W6: nhận — {body!r}", (r["ok"], r["errors"], r["body"]), (True, [], want))
+
+print("\n— G2: láng giềng của placeholder — dạng được phép / bị loại (mọi kiểu) —")
+G2_NHAN = [
+	(f"Nợ quá hạn {Z}, chiếm {Y} phải thu.", "Nợ quá hạn 120 triệu, chiếm 54,5% phải thu."),
+	(f"Phải thu ({RC}) tăng; gồm: {Z} quá hạn.", "Phải thu (220 triệu) tăng; gồm: 120 triệu quá hạn."),
+	(f"{X} khách trễ hạn; {X2} khách vượt hạn mức!", "4 khách trễ hạn; 1 khách vượt hạn mức!"),
+	(f"Tổng cộng {Z}, đầu tư thêm {RC}.", "Tổng cộng 120 triệu, đầu tư thêm 220 triệu."),
+	(f"Nợ quá hạn “{Z}”. Năm nay cần thu gấp.", "Nợ quá hạn “120 triệu”. Năm nay cần thu gấp."),
+	(f"Mã {MA} còn {QTY} {UOM}.", "Mã TET1 còn 120 Thùng."),
+	(f"Nhãn {NHAN}: {X} việc.", "Nhãn Xanh: 4 việc."),
+	(f"Ngày {DN} có {DO} đơn, quý 4 đạt {Z}, trong 7 ngày.", "Ngày 27/10/2026 có 5 đơn, quý 4 đạt 120 triệu, trong 7 ngày."),
+	(f"{Z} là nợ quá hạn", "120 triệu là nợ quá hạn"),
+	(f"Có {X} khách. 7 ngày qua chưa thu.", "Có 4 khách. 7 ngày qua chưa thu."),
+	(f"Đạt {Z}, năm ngoái chỉ {RC}.", "Đạt 120 triệu, năm ngoái chỉ 220 triệu."),
+	(f"Từ đầu năm: {Z}.", "Từ đầu năm: 120 triệu."),
+]
+for body, want in G2_NHAN:
+	r = rw(body)
+	eq(f"G2: nhận — {body[:70]!r}", (r["ok"], r["errors"], r["body"]), (True, [], want))
+G2_LOAI = [
+	(f"Nợ {Z} ({Y}).", "ngoặc mở sau placeholder; hai placeholder chỉ cách dấu"), (f"Nợ {Z}: {Y}.", "{a}: {b}"),
+	(f"Nợ {Z}–{Y}.", "{a}–{b}"), (f"Nợ {Z}/{RC}.", "{a}/{b}"), (f"Nợ {Z}. {RC} là phải thu.", "{a}. {b}"),
+	(f"Có {X}, {X2} khách.", "{a}, {b}"), (f"Tuần 2, {X} khách.", "chữ số trước dấu phẩy rồi placeholder"),
+	(f"Nợ 4,{Z}.", "4,{x} (thành phần lẻ)"), (f"Nợ 4.{Z}.", "4.{x}"), (f"Nợ quá hạn,{Z}.", "dấu phẩy dính placeholder"),
+	(f"Có {X},5 khách.", "{x},5"), (f"Có {X}, 5 khách.", "{x}, 5"), (f"Có {X}.5 khách.", "{x}.5"),
+	(f"Có {X}: 4 khách.", "{x}: 4"), (f"Có {X} năm liền.", "'năm' sau placeholder"), (f"Cả năm {Z}.", "'năm' trước"),
+	(f"Bán lẻ {Z}.", "'lẻ' trước"), (f"Có {X} lần.", "'lần' sau"), (f"Có {X} lẻ.", "'lẻ' sau"),
+	(f"Có {X} (cao).", "ngoặc mở sau placeholder"), (f"Nợ ({Z}) triệu.", "đơn vị sau dấu đóng"),
+	(f"Nợ {Z}, triệu khách.", "đơn vị sau dấu phẩy"), (f"Nợ {Z}\ntriệu.", "đơn vị đầu dòng sau"),
+	(f"12\n{Z}", "chữ số cuối dòng trên"), (f"Có XII {X} khách.", "số La Mã trước"), (f"Có {X} XII khách.", "số La Mã sau"),
+	(f"Kho {KHO}{X} đơn.", "chu (giá trị tận cùng bằng chữ số) dính placeholder"),
+	(f"Kho {KHO} {X} đơn.", "chu tận cùng bằng chữ số cách placeholder số một dấu cách"),
+	(f"Nợ #{Z}.", "'#' trước"), (f"Nợ ~{Z}.", "'~' trước"), (f"Nợ ≈ {Z}.", "'≈' trước"), (f"Nợ {Z}*2.", "'*' sau"),
+	(f"Nợ \"-{Z}\".", "dấu trừ trong nháy"), (f"Nợ -({Z}).", "dấu trừ trước ngoặc mở"),
+	(f"Nợ {Z} tr.", "'tr' sau"), (f"Nợ {Z} x 2.", "'x' sau"), (f"Tăng {Y} pt.", "'pt' sau"),
+	(f"Tăng {Y} điểm.", "'điểm' sau pct"),
+	(f"Có {X}, 7 ngày qua chưa thu.", "chữ số (dạng G1 được phép) sau dấu phẩy, không có ngắt câu thật"),
+	(f"Có {X}: 2 tuần chưa thu.", "chữ số sau dấu hai chấm"), (f"Có {X}, mười khách.", "từ chỉ số sau dấu phẩy"),
+	(f"Có {X}) tá khách.", "từ chỉ số sau dấu đóng"),
+]
+for body, nhan in G2_LOAI:
+	r = rw(body)
+	c(f"G2: loại — {nhan}: {body!r}", r["ok"] is False and any(e.startswith("so-tran:") for e in r["errors"]),
+		f"{r['ok']} {r['errors']} {r['body']!r}")
+
+print("\n— G1 / G2: tốc độ trên lời 80 KB (tuyến tính) —")
+for nhan, fn in (
+		("lint 80 KB số đếm viết tay", lambda: render.lint(("có 5 khách, 12 đơn, tuần 3 ; tỷ, XII tỷ. " * 2500)[:80000])),
+		("lint 80 KB mã / năm / ngày", lambda: render.lint(("mã KK-2026-002 ngày 5/11/2026 năm 2026 quý 4 " * 2000)[:80000])),
+		("lint 80 KB dấu và chữ số xen kẽ", lambda: render.lint(("1;" * 40000)[:80000])),
+		("render 80 KB placeholder + ngoặc", lambda: rw((f"Nợ {Z} ({Y}) " * 3000)[:80000])),
+		("render placeholder + 80 KB khoảng trắng + tỷ", lambda: rw(f"Nợ {Z}" + " " * 80000 + "tỷ")),
+		("render 80 KB chữ liền rồi placeholder", lambda: rw("a" * 80000 + Z)),
+		("render 80 KB dấu phẩy giữa placeholder", lambda: rw((f"{X}, " * 4000)[:80000])),
+		("render 80 KB từ chỉ số trước placeholder", lambda: rw((f"mười {X} " * 3000)[:80000]))):
+	t0 = time.monotonic()
+	got = fn()
+	dt = time.monotonic() - t0
+	c(f"G1/G2: {nhan} < 2 s ({dt:.2f} s)", dt < 2, f"{dt:.2f} s")
 
 # ══ 8. Luật tĩnh ══════════════════════════════════════════════════════════════
 print("\n— luật tĩnh: render thuần (không DB), không module nào đụng mạng / khoá —")

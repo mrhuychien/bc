@@ -16,38 +16,52 @@ Kiểu và định dạng (fmt):
 Giá trị không khớp kiểu (tien/so/pct cần int/float không phải bool — Decimal của MariaDB cũng nhận; ngay cần ngày;
 chu cần str) → ValueError. NaN / vô cực / số quá lớn cũng là ValueError.
 
-Lint (lời của MÔ HÌNH, sau khi đã bỏ placeholder và mã giả hợp lệ) — bắt:
-- số có dấu nhóm nghìn / phần lẻ ("1.250.000", "1,5", "1 250 000") và dãy ≥ 3 chữ số ("1250");
-- số đứng trước đơn vị: % ‰ đ ₫ đồng VND USD k tr triệu tỷ (tỉ) nghìn (ngàn) vạn trăm "phần trăm" — kể cả 1–2 chữ
-  số, dính liền hay cách ("35%", "35 %", "2tỷ", "50k", "5 trăm triệu", "5 trăm khách"), viết không dấu ("2 ty dong",
-  "35 phan tram", "4 trieu"), tiếng Anh ("35 percent", "per cent", "bps", "pct", "million", "bn", "35M", "2B"),
-  "phần nghìn / phần mười", tiếng lóng "2 củ", cách bằng ngoặc (mở / đóng) / gạch / nháy / , : = · / "x" / thẻ hay thực
-  thể HTML ("12 (tỷ)", "(12) tỷ", "12 x tỷ", "12: tỷ", "12-tỷ", "<b>12</b> tỷ", "12&nbsp;tỷ"); chữ số hệ khác trước đơn
-  vị ("三十五%"); ký hiệu tiền đứng trước ("$50"); chữ trong NGOẶC NHỌN vẫn được soát ("<khoảng 350 triệu>" — E1);
-- chữ số sau chữ thường / MỘT chữ cái ("đ350000000", "x1250", "A100"), "10^9", "4E3", dãy số rời ("1 2 5 0");
-- số viết bằng CHỮ / ước lượng quanh đơn vị lớn ("hai tỷ", "vài trăm triệu", "ba trăm", "mười phần trăm", "tỷ rưỡi",
-  "tỷ hai", "tiền tỷ", "gần tỷ", "hơn trăm khách", "khoản đầu tư tỷ đồng"), "gấp đôi / gấp 3", "một nửa", "nửa số
-  khách", "một phần ba", "hàng chục", từ chỉ số trước % ("ba lăm %");
-- phân số / tỷ số: "45/60", "chiếm 2/3", "đạt 3/5", "giảm 1/3", "1/3 số khách", "½";
-- mã giả lạ (KH#… / NCC#… không có trong bảng của lượt chạy — mô hình bịa) và mã giả chép hỏng ("KH #0001", "KH0001");
-- (render_insight, trên lời còn placeholder — xem _so_tran) số GHÉP quanh placeholder số (tien / so / pct, và chu mà
-  giá trị trông như số): "1{{a|so}}", "{{a|so}}.000", "1 {{a|tien}}", "{{a|so}}{{b|so}}", "{{a|so}} {{b|tien}}"; mọi
-  đơn vị / "lần" / chữ dính sau ("{{a|so}}%", "{{a|so}} đ", "{{a|so}} triệu", "{{a|so}}M"); dấu / phép toán trước
-  ("-{{a|tien}}", "±{{a|so}}"; "-" dính chữ trước pct: "nợ-{{a|pct}}"); từ chỉ số sát bên ("mười {{a|so}}", "{{a|so}}
-  rưỡi" — E3); nửa phân số viết tay ("1/{{a|so}}", "{{a|so}}/10", "3:{{a|so}}", "{{a|so}}-5") — sau khi bỏ ký tự vô
-  hình. Placeholder chu ra chuỗi rỗng → "chu-rong:<p>"; chu chỉ là dấu ("–") được soát như chính dấu đó.
+Lint (lời của MÔ HÌNH) — hai danh sách CHO PHÉP (vòng sửa 3, G1 / G2) cộng các lớp chặn cũ (D7, E1, E3):
+
+G1 — chữ số viết tay (trên lời đã bỏ placeholder và mã giả đã gửi; sau giải thực thể HTML, NFKC, bỏ ký tự vô hình;
+nội dung trong ngoặc nhọn vẫn được soát — E1). MỌI dãy chữ số phải thuộc MỘT trong bốn dạng, còn lại là số trần:
+  1. năm 20xx đứng riêng (không dính chữ / số / phần lẻ), cặp năm "2026/27", "2026-2027";
+  2. ngày d/m, d/m/yy, d/m/yyyy, m/yyyy (ngày 1–31, tháng 1–12; "chiếm 2/3", "2/3 số khách" là phân số), ngày đủ viết
+     bằng "." hoặc "-" ("5.11.2026", "5-11-2026", "2026-11-05"), "24/7";
+  3. thuộc một mã: mẩu không dấu cách (chữ, số, - / . _) mở đầu bằng chữ cái, ≤ 40 ký tự, có ≥ 2 chữ HOA hoặc một chữ
+     HOA đứng liền trước ≤ 2 chữ số ("SR900", "KK-2026-002", "T10", "Q3/2026"; "A100", "x1250", "Top5" thì không); số
+     hiệu tiêu chuẩn / văn bản sau đúng ISO | HACCP | TCVN | QCVN | TK | QĐ | NĐ | TT + một dấu cách ("ISO 22000:2018");
+  4. thời hạn / thứ tự ≤ 2 chữ số: ngay sau quý | tháng | tuần | ngày | mùng | mồng | thứ | ca | đợt | bước | kỳ | Tết |
+     T (một dấu cách hoặc liền: "quý 4", "T10", "lần thứ 2"), hoặc ngay trước (một dấu cách) ngày | tuần | tháng | giờ |
+     phút | hôm | năm | quý ("trong 7 ngày").
+  Chữ số hệ khác không bao giờ được phép. Vì vậy "99 khách", "tăng 5 lần", "top 10", "18 x 10", "1 2 5 0", "10^9",
+  "đ350000000", "lúc 5:30" đều bị loại. Lớp hai (giữ từ trước): dạng 1–4 mà kèm đơn vị vẫn bị loại ("2026 tỷ", "quý 4
+  %"); giữa số và đơn vị cho phép tối đa 6 dấu / ký hiệu bất kỳ ("12 ; tỷ", "3 • tỷ", "12<!-- -->tỷ" — W1); đơn vị:
+  % ‰ đ ₫ đồng VND USD k tr triệu tỷ (tỉ) nghìn (ngàn) vạn trăm "phần trăm", viết không dấu, tiếng Anh, "4M", "2B",
+  "2 củ"; "$50", "VND 50"; mã giả lạ / chép hỏng ("KH#0099", "KH0001"); phân số "45/60", "½".
+  Số viết bằng CHỮ chỉ bị loại khi kèm đơn vị / bội số (cách tối đa 6 dấu: "hai tỷ", "hai ; tỷ", "năm tỏi", "ba lăm %",
+  "tỷ rưỡi", "gần tỷ", "non tỷ", "tỷ bạc", "gấp đôi", "một nửa", "một phần ba") hoặc khi đứng cạnh placeholder (G2);
+  số La Mã viết HOA + đơn vị ("XII tỷ", "XXXV phần trăm"; "quý IV" thì giữ — W2).
+
+G2 — láng giềng của placeholder (MỌI kiểu: tien, so, pct, ngay, chu; xét trên lời còn placeholder, mỗi placeholder là một
+ký tự mốc; mã giả đã gửi là một mốc khác — không phải chữ; chu chỉ gồm dấu ("–") thay bằng chính dấu đó — E3):
+- TRƯỚC (bỏ khoảng trắng): đầu lời / đầu dòng; một CHỮ mà từ nó kết thúc không phải từ chỉ số (một … mười, mươi, lăm,
+  mốt, tư, chục, trăm, nghìn, vạn, triệu, tỷ, rưỡi, tá, lẻ, linh, nửa, vài, dăm, mấy, đôi, cặp, dạng không dấu), số La
+  Mã, trên | phần | nhân | chia | cộng | trừ | gấp | x | âm (từ ghép đã biết thì được: "đầu tư", "tổng cộng", "khấu
+  trừ", "thứ hai"); hoặc dấu ( [ " “ ' ‘ , : ; . ! ? … — với , . : ; phải có khoảng trắng tới placeholder, và thứ đứng
+  trước dấu không được là chữ số, từ chỉ số (trừ "năm": "đầu năm: {{…}}"), dấu / phép tính, mã giả.
+- SAU (bỏ khoảng trắng): hết lời / hết dòng; một CHỮ mà từ nó mở đầu không phải đơn vị / bội số / từ chỉ số (kể cả
+  "năm", "lẻ"; "linh", "tư", "đồng", "triệu", "tỷ" trong từ ghép đã biết thì được: "linh kiện", "đồng hồ", "tỷ lệ"),
+  "lần", trên | phần | nhân | chia | cộng | trừ | x (và "điểm" sau pct); hoặc dấu ) ] " ” ' ’ , ; : . ! ? … — sau , .
+  phải là khoảng trắng / hết lời; qua các dấu và khoảng trắng, thứ kế tiếp không được là chữ số (trừ khi có ngắt câu
+  thật . ! ? … ; + khoảng trắng ở giữa), đơn vị, từ chỉ số (trừ "năm"), mã giả (trừ sau ngắt câu thật).
+- GIỮA hai placeholder liền nhau: ít nhất một từ thường (không phải từ chỉ số / đơn vị); dấu và khoảng trắng không đủ
+  ("{{a}} ({{b}})", "{{a}}: {{b}}", "{{a}}–{{b}}", "{{a}}/{{b}}" bị loại) — trừ khi khoảng giữa không có chữ số và
+  giá trị chu kề bên mở / kết bằng một từ như thế ("{{số lượng|so}} {{đơn vị tính|chu}}" → "120 Thùng").
+Còn lại (chữ số, - – — − + ± × * / \\ ^ = < > ~ ≈ % # sát placeholder, ngoặc đóng trước / ngoặc mở sau …) → số trần.
+Các lớp cũ quanh placeholder số (đơn vị / "lần" / chữ số dính sau, dấu trước, từ chỉ số sát bên, nửa phân số — D7, E3)
+vẫn chạy cùng.
 - (render_insight với kinds) kiểu số sai kiểu thật của giá trị ("{{số khách|pct}}", "{{tiền|so}}") → "kieu:<p>"; khoá
-  không xếp được kiểu thì pct cũng bị loại (E2).
+  không xếp được kiểu thì pct cũng bị loại (E2). Placeholder chu ra chuỗi rỗng → "chu-rong:<p>".
 - (render_insight) tiêu đề dài quá 200 ký tự sau khi thay số → "dai" (lời quy tắc thì cắt, không cắt giữa số).
-Giữ: năm 20xx; ngày d/m, d/m/yyyy, m/yyyy, năm/năm; mã có ≥ 2 chữ HOA đứng liền trước ("SR900") hoặc nối vào mã viết
-hoa ("KK-2026-002", "PNTP-X120"); số ≤ 2 chữ số không kèm đơn vị ("trong 7 ngày", "quý 3", "top 5", "5:30", "12 khách"); "3 tỷ lệ …"
-(tỷ lệ / tỷ trọng / tỷ giá / tỉ mỉ / triệu tập / triệu hồi không phải đơn vị); tên riêng viết hoa ("đến Triệu Sơn",
-"hàng Vạn Phúc" — đơn vị không có chữ số đứng trước chỉ nhận khi viết thường). Chữ số toàn chiều rộng, dấu tổ hợp,
-ký tự vô hình được chuẩn hoá (NFKC) trước khi soát; dấu nhấn markdown * _ ` ~ bị bỏ. Không phân biệt được thì nghiêng
-về GIỮ đúng ngoại lệ của đặc tả ("24/7", "2/3" trơ trọi). Số ≤ 2 chữ số không kèm đơn vị luôn lọt (đặc tả cho phép)
-— kể cả khi là số liệu ("DSO 62 ngày", "tăng 5 lần"): phần này do đề bài (bc.ai.prompt) răn, lint không phân biệt được.
-Tên riêng có chữ số ("Bánh quy 300g", "ISO 22000") viết thẳng trong lời sẽ bị bắt — mô hình phải trích qua
-`{{path|chu}}` (hoặc mã giả với khách / NCC).
+GIỚI HẠN đã biết (G4): dạng được phép của G1 lọt dù dùng sai ("DSO 62 ngày" là số liệu thật viết tay) và số bằng chữ
+không kèm đơn vị, không sát placeholder lọt ("chín mươi chín hoá đơn") — lint không biết thật / giả; đề bài
+(bc.ai.prompt) răn. Loại nhầm thì chấp nhận (thẻ giữ lời quy tắc); lời quy tắc (render_rule) không lint.
 """
 
 from __future__ import annotations
@@ -324,11 +338,18 @@ _TIEN_TE = r"(?:đồng|vnđ|vnd|usd|đ)"
 _TY_KD = rf"(?:ty|ti)(?!\s+(?:le|trong|suat|gia(?!\s+tri)){_HET})"
 _TRIEU_KD = rf"trieu(?!\s+(?:chung|tap|hoi){_HET})"
 # "đồng thời", "đồng bộ" … không phải tiền
-_DONG = r"đồng(?!\s+(?:thời|bộ|ý|loạt|đều|nghĩa|hành|phục|nghiệp|tình|lòng|minh|tâm|thuận)(?!\w))"
+_DONG_GHEP = ("thời|bộ|ý|loạt|đều|nghĩa|hành|phục|nghiệp|tình|lòng|minh|tâm|thuận|hồ|nhất|dạng|bằng|ruộng|cỏ|chí|cấp"
+	"|bào|hương|khởi|phạm|hoá|hóa|ca|loại")
+_DONG = rf"đồng(?!\s+(?:{_DONG_GHEP})(?!\w))"        # "đồng hồ", "đồng thời" … không phải tiền
 _TIEN_TE_KD = rf"(?:{_DONG}|vnđ|vnd|usd|đ|dong)"
-# Giữa số và đơn vị: khoảng trắng, ngoặc (mở / đóng), gạch, nháy, , : = · và "x" đứng riêng ("12 (tỷ)", "(12) tỷ",
-# "12-tỷ", "12: tỷ", "12 x tỷ").
-_GIUA = r"(?:[\s()\[\]\-–—\"'“”‘’«»,:=·]|x(?![^\W\d_]))*"
+# Mốc riêng (vùng dùng riêng của BMP): mã giả ĐÃ GỬI đứng sát placeholder (G2) — không phải chữ, số, khoảng trắng.
+_MA_MOC = ""
+# Giữa số và đơn vị (W1): khoảng trắng và tối đa 6 ký tự KHÔNG phải chữ / chữ số (dấu câu, ký hiệu: ; . × ⋅ • / | !
+# … + & @ # → \ ‐ ngoặc, nháy …), trừ chính các đơn vị ký hiệu (% ‰ ₫ $ €), chỗ đã soát (\x00) và mốc placeholder / mã;
+# cùng "x" đứng riêng ("12 (tỷ)", "(12) tỷ", "12-tỷ", "12 ; tỷ", "12 • tỷ", "12 x tỷ"). Mỗi khoảng trắng chỉ khớp một
+# cách (\s* xen giữa các ký tự dấu) nên không chạy bậc cao.
+_DAU_GIUA = "[^\\w\\s%‰٪₫$€\\x00-\\x1f\U000F0000-\U000FFFFD]"
+_GIUA = rf"\s*(?:(?:{_DAU_GIUA}|x(?![^\W\d_]))\s*){{0,6}}"
 # Đơn vị đứng SAU số (so từ ngay sau số; chữ phải hết từ: "5 khách", "7 trường hợp", "5 đơn" không dính).
 _DON_VI = re.compile(
 	_GIUA + r"(?:[%‰٪₫$€]"
@@ -374,6 +395,13 @@ _BANG_CHU = (
 	re.compile(r"×\s?\d+(?:[.,]\d+)?"),
 	# tối đa 8 từ số trước đơn vị ("hai trăm ba mươi lăm nghìn tỷ" là 6) — không chặn thì lời dài toàn chữ số chạy bậc hai
 	re.compile(rf"(?<!\w)(?:{_CHU_SO}\s+){{1,8}}(?:{_LON}|(?-i:vạn|trăm)|phần\s+trăm)(?!\w)", re.I),
+	# G1: từ chỉ số + dấu chen giữa + đơn vị / tiếng lóng ("hai ; tỷ", "năm tỏi", "ba • triệu", "hai chai") (W1, W2)
+	re.compile(rf"(?<!\w)(?:{_CHU_SO}\s+){{0,7}}{_CHU_SO}(?![^\W\d_])\s*(?:{_DAU_GIUA}\s*){{0,6}}"
+		rf"(?:{_LON}|(?-i:vạn|trăm)|phần\s+trăm|tỏi|củ|chai|lít|[%‰])(?!\w)", re.I),
+	# G1: số La Mã (chữ HOA đứng riêng) trước đơn vị / bội số / % ("XII tỷ", "XXXV phần trăm"; "quý IV" thì giữ) (W2)
+	re.compile(rf"(?<![^\W\d_])(?-i:[IVXLCDM]+)(?![^\W\d_])(?={_GIUA}(?:[%‰]|(?:phần|phan)\s+(?:trăm|tram)"
+		rf"|(?:{_TY}|{_TRIEU}|nghìn|ngàn|vạn|trăm|chục|tr|k|triệu|tỷ|tỏi|củ|{_TIEN_TE_KD}|percent|pct|million|billion|bn)"
+		rf"(?![^\W\d_])))", re.I),
 	re.compile(rf"(?<!\w)(?:{_CHU_SO}\s+){{0,7}}{_CHU_SO}\s*[%‰]", re.I),                  # "ba lăm %"
 	re.compile(rf"(?<!\w){_LON}\s+(?:rưỡi|mốt|hai|ba|tư|bốn|lăm|sáu|bảy|tám|chín)(?!\w)", re.I),   # "tỷ rưỡi", "tỷ hai"
 	re.compile(rf"(?<!\w)(?:tiền|bạc)\s+(?-i:{_TY}|{_TRIEU})(?!\w)", re.I),            # "tiền tỷ", "bạc triệu"
@@ -382,9 +410,9 @@ _BANG_CHU = (
 	# "một nửa", "nửa số khách" là tỷ phần; "nửa đầu tháng", "nửa năm" là thời gian (giữ)
 	re.compile(r"(?<!\w)(?:(?:một|phân|quá|hơn|gần)\s+)?nửa"
 		r"(?!\s+(?:đầu|cuối|sau|trước|năm|tháng|tuần|ngày|quý|kỳ|giờ|buổi|đêm|mùa|chừng|vời))(?!\w)", re.I),
-	re.compile(r"(?<!\w)(?:hơn|gần|trên|dưới|ngót|khoảng|cỡ|tầm|chừng|tới|đến|quá|vượt)\s+"     # "gần tỷ", "hơn trăm"
+	re.compile(r"(?<!\w)(?:hơn|gần|trên|dưới|ngót|nghét|non|khoảng|cỡ|tầm|chừng|tới|đến|quá|vượt)\s+"   # "gần tỷ", "non tỷ"
 		rf"(?:{_LON}|(?-i:vạn|trăm))(?!\w)", re.I),
-	re.compile(rf"(?<!\w){_LON}\s+{_TIEN_TE}(?!\w)", re.I),                            # "khoản đầu tư tỷ đồng"
+	re.compile(rf"(?<!\w){_LON}\s+(?:{_TIEN_TE}|bạc)(?!\w)", re.I),                    # "… tỷ đồng", "tỷ bạc"
 )
 
 
@@ -393,22 +421,24 @@ _BANG_CHU = (
 _THE_TRON = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9]*\s*/?\s*>")
 
 
-def _chuan(text: str, bo_the: bool = True) -> str:
+def _chuan(text: str, bo_the: bool = True, giu_dau: bool = False) -> str:
 	"""Giải thực thể HTML ("&nbsp;", "&#37;", "&lt;") + NFKC (chữ số / % toàn chiều rộng, dấu cách đặc biệt, dấu tổ
 	hợp → dạng thường) + bỏ ký tự vô hình (Cf) và dấu nhấn markdown * _ ` ~ (để "**2** tỷ", "__35__%" vẫn là "2 tỷ",
 	"35%") + bo_the: bỏ thẻ HTML trơn ("<b>12</b> tỷ" → "12 tỷ"); rồi mọi "<" ">" còn lại thành dấu cách (nội dung
 	trong ngoặc vẫn được soát). Nơi gọi soát CẢ HAI dạng (bo_the True / False) khi lời có ngoặc nhọn: "Nợ 12 <tr>"."""
 	s = unicodedata.normalize("NFKC", html.unescape(text))
-	s = "".join(ch for ch in s if unicodedata.category(ch) != "Cf" and ch not in "*_`~")
+	s = s.replace("<!--", " ").replace("-->", " ")     # "12<!-- -->tỷ" → "12 tỷ" (W1); nội dung vẫn được soát
+	bo = "" if giu_dau else "*_`~"           # giu_dau (G2): dấu nhấn markdown cũng là "dấu" sát placeholder
+	s = "".join(ch for ch in s if unicodedata.category(ch) != "Cf" and ch not in bo)
 	if bo_the:
 		s = _THE_TRON.sub("", s)
 	return s.replace("<", " ").replace(">", " ")
 
 
-def _cac_dang(text: str) -> list:
+def _cac_dang(text: str, giu_dau: bool = False) -> list:
 	"""Các dạng chuẩn hoá để soát: một dạng; thêm dạng giữ tên thẻ khi lời có ngoặc nhọn (E1)."""
-	a = _chuan(text)
-	b = _chuan(text, bo_the=False)
+	a = _chuan(text, giu_dau=giu_dau)
+	b = _chuan(text, bo_the=False, giu_dau=giu_dau)
 	return [a] if a == b else [a, b]
 
 
@@ -464,6 +494,101 @@ def _la_ma(s: str, a: int) -> bool:
 _SO_ROI = re.compile(r"(?<![\w.,])\d{1,3}(?:[ \t]+\d{1,3})+(?![\w.,])")
 # Chỉ bắt đầu ở ĐẦU một dãy chữ số (không thì dãy dài chạy bậc hai — E4).
 _LUY_THUA = re.compile(r"(?<!\d)\d+\s*\^\s*\d+|(?<![\w])\d+[eE][+-]?\d+(?![^\W\d_])")        # "10^9", "4E3"
+
+
+# ─── G1: chữ số viết tay — danh sách CHO PHÉP ────────────────────────────────
+# Ngày đủ viết bằng "-" / "." (d-m-yyyy, d.m.yyyy, yyyy-mm-dd; năm 20xx): chỉ dạng đủ — "12.5" không phải ngày.
+_NGAY_DU = re.compile(r"(?<![\w.,/\-])(?:(\d{1,2})([.\-])(\d{1,2})\2(20\d\d)|(20\d\d)-(\d{2})-(\d{2}))"
+	r"(?![\w/])(?![.,\-]\d)")
+# Số hiệu tiêu chuẩn / văn bản: đúng các chữ viết HOA này + MỘT dấu cách + phần số (có thể nối - / . : và chữ).
+_MA_CHUAN = re.compile(r"(?<![^\W\d_])(?:ISO|HACCP|TCVN|QCVN|TK|QĐ|NĐ|TT) \d(?:[^\W_]|[\-/:](?=[^\W_])|\.(?=[^\W_]))*")
+_TU_TRUOC_SO = {"quý", "tháng", "tuần", "ngày", "mùng", "mồng", "thứ", "ca", "đợt", "bước", "kỳ", "tết"}
+_TU_SAU_SO = {"ngày", "tuần", "tháng", "giờ", "phút", "hôm", "năm", "quý"}
+_NOI_MA = "-/._"
+
+
+def _ngay_that(m) -> bool:
+	try:
+		if m.group(1):
+			datetime.date(int(m.group(4)), int(m.group(3)), int(m.group(1)))
+		else:
+			datetime.date(int(m.group(5)), int(m.group(6)), int(m.group(7)))
+	except ValueError:
+		return False
+	return True
+
+
+def _tu_ket_thuc(s: str, k: int) -> str:
+	"""Từ (chỉ chữ cái, ≤ 20) kết thúc ngay trước s[k]; dài hơn / không có → ""."""
+	j = k
+	while j > 0 and k - j <= 20 and s[j - 1].isalpha():
+		j -= 1
+	return "" if k - j > 20 or (j > 0 and s[j - 1].isalpha()) else s[j:k]
+
+
+def _tu_bat_dau(s: str, k: int) -> str:
+	"""Từ (chỉ chữ cái, ≤ 20) bắt đầu tại s[k]."""
+	j = k
+	while j < len(s) and j - k <= 20 and s[j].isalpha():
+		j += 1
+	return "" if j - k > 20 or (j < len(s) and s[j].isalpha()) else s[k:j]
+
+
+def _la_ma_g1(s: str, a: int, b: int) -> bool:
+	"""G1.3: dãy chữ số s[a:b] thuộc một MÃ — mẩu không dấu cách (chữ, số, - / . _) bắt đầu bằng chữ cái, ≤ 40 ký tự,
+	có ≥ 2 chữ HOA, hoặc đúng một chữ HOA đứng liền trước ≤ 2 chữ số ("T10", "Q3/2026"; "A100" thì không — giữ luật D7)."""
+	i = a
+	while i > 0 and a - i <= 41 and (s[i - 1].isalnum() or s[i - 1] in _NOI_MA):
+		i -= 1
+	j = b
+	while j < len(s) and j - b <= 41 and (s[j].isalnum() or s[j] in _NOI_MA):
+		j += 1
+	while i < a and s[i] in _NOI_MA:
+		i += 1
+	while j > b and s[j - 1] in _NOI_MA:
+		j -= 1
+	tok = s[i:j]
+	if not tok or not tok[0].isalpha() or len(tok) > 40 or (i > 0 and (s[i - 1].isalnum() or s[i - 1] in _NOI_MA)):
+		return False
+	hoa = sum(1 for ch in tok if ch.isupper())
+	return hoa >= 2 or (hoa == 1 and bool(re.search(r"[A-ZĐ]\d{1,2}(?!\d)", tok)))
+
+
+def _g1_duoc(s: str, a: int, b: int) -> bool:
+	"""G1: dãy chữ số s[a:b] (đã qua các lượt trên: ngày, phân số, đơn vị đã bị xoá) là một dạng ĐƯỢC PHÉP:
+	1. năm 20xx đứng riêng (không dính chữ / số / phần lẻ), cả cặp 2026/27, 2026-2027;
+	3. thuộc một mã viết HOA (_la_ma_g1);
+	4. ≤ 2 chữ số chỉ thời hạn / thứ tự: ngay sau quý | tháng | tuần | ngày | mùng | mồng | thứ | ca | đợt | bước | kỳ |
+	   Tết | T (một dấu cách hoặc liền), hoặc ngay trước (một dấu cách) ngày | tuần | tháng | giờ | phút | hôm | năm | quý.
+	(2. ngày d/m, d/m/yyyy, m/yyyy, 24/7 đã được lượt ngày giữ lại; chữ số hệ khác không bao giờ được phép.)"""
+	run = s[a:b]
+	if not run.isascii():
+		return False
+	n = len(s)
+	truoc = s[a - 1] if a else ""
+	sau = s[b] if b < n else ""
+	dinh_trai = truoc.isalnum() or (truoc in ".," and a >= 2 and s[a - 2].isdigit())
+	dinh_phai = sau.isalnum() or (sau in ".," and b + 1 < n and s[b + 1].isdigit())
+	if _la_ma_g1(s, a, b):
+		return True
+	nam = len(run) == 4 and run.startswith("20")
+	if nam and not dinh_trai and not dinh_phai:
+		return True
+	if (len(run) == 2 or nam) and truoc in "/-–" and a >= 5 and re.fullmatch(r"20\d\d", s[a - 5:a - 1]) \
+			and not (a >= 6 and s[a - 6].isalnum()) and not dinh_phai:          # "2025-26", "2026/27"
+		return True
+	if len(run) > 2:
+		return False
+	if not dinh_phai:                                   # sau một từ chỉ thời gian / thứ tự
+		k = a - 1 if truoc in " \t" else a
+		tu = _tu_ket_thuc(s, k)
+		if tu and (tu.lower() in _TU_TRUOC_SO or tu == "T"):
+			return True
+	if sau in " \t" and not dinh_trai:                 # trước một từ chỉ thời gian
+		tu = _tu_bat_dau(s, b + 1)
+		if tu and tu.lower() in _TU_SAU_SO:
+			return True
+	return False
 
 
 def _chu_so_khac(ch: str) -> bool:
@@ -527,6 +652,14 @@ def _lint_mot(s: str) -> list:
 	for m in _THANG_NAM.finditer(s):
 		xoa(m.start(), m.end(), None if 1 <= int(m.group(1)) <= 12 else m.group(0))
 	s = "".join(buf)
+	for m in _NGAY_DU.finditer(s):          # G1: ngày đủ viết bằng - hoặc . ("5.11.2026", "2026-11-05")
+		if _ngay_that(m):
+			xoa(m.start(), m.end())
+	s = "".join(buf)
+	for m in _MA_CHUAN.finditer(s):         # G1: số hiệu tiêu chuẩn / văn bản ("ISO 22000", "TT 200/2014/TT-BTC")
+		dv = _DON_VI.match(s, m.end())
+		xoa(m.start(), dv.end() if dv else m.end(), s[m.start():dv.end()] if dv else None)
+	s = "".join(buf)
 	for m in (_PHAN_SO.finditer(s) if "/" in s else ()):
 		xoa(m.start(), m.end(), None if _NAM_NAM.fullmatch(m.group(0)) else m.group(0))
 	s = "".join(buf)
@@ -562,6 +695,18 @@ def _lint_mot(s: str) -> list:
 		for m in rx.finditer(s):
 			xoa(m.start(), m.end(), m.group(0))
 		s = "".join(buf)
+	# 5. G1 — danh sách CHO PHÉP: mọi dãy chữ số còn lại phải là năm, mã, hoặc thời hạn / thứ tự ≤ 2 chữ số.
+	i, n = 0, len(s)
+	while i < n:
+		if not s[i].isdigit():
+			i += 1
+			continue
+		j = i
+		while j < n and s[j].isdigit():
+			j += 1
+		if not _g1_duoc(s, i, j):
+			xoa(i, j, s[i:j])
+		i = j
 	out: list = []
 	for _vt, mau in sorted(bat, key=lambda x: x[0]):
 		_them(out, mau)
@@ -590,7 +735,10 @@ _KE = re.compile(r"\s+|[.,]?")                                 # giữa hai plac
 # Từ chỉ số sát placeholder số ("mười {{so}}", "{{so}} mươi", "{{so}} rưỡi", "{{so}} tá") — E3.
 _TU_SO = r"(?:một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười|mươi|chục|trăm|rưỡi|tá|lẻ|linh)"
 _TRUOC_TU_SO = re.compile(rf"(?<!\w){_TU_SO}\s*$", re.I)
-_SAU_TU_SO = re.compile(rf"\s*{_TU_SO}(?!\w)", re.I)
+# "linh kiện", "linh hoạt" sau placeholder không phải từ chỉ số (W6)
+_SAU_TU_SO = re.compile(r"\s*" + _TU_SO.replace("|linh)", r"|linh(?!\s+(?:kiện|hoạt|động|tinh)(?!\w)))") + r"(?!\w)", re.I)
+# "{{a|pct}} điểm" ("55,6% điểm" — điểm phần trăm tự đặt); "{{a|so}} điểm bán" thì giữ.
+_SAU_PCT = re.compile(r"\s*điểm(?!\w)", re.I)
 # Nửa phân số viết tay: "1/{{so}}", "{{so}}/10", "3:{{so}}".
 # Cũng vậy với gạch DÍNH một chữ số viết tay: "{{so}}-5", "5–{{so}}" ("{{a}}-{{b}}" hai số thật thì giữ).
 _TRUOC_PHAN = re.compile(r"\d\s*[/:]\s*$|\d[-–−]$")
@@ -599,15 +747,19 @@ _SAU_PHAN = re.compile(r"\s*[/:]\s*\d|[-–−]\d")
 
 def _so_tran(text: str, mask=None, pack=None) -> list:
 	"""Số trần trong một đoạn lời của mô hình (còn placeholder, còn mã giả). Mã giả ĐÃ GỬI được bỏ trước (chữ số
-	trong mã không phải số liệu; tên thật có thể chứa chữ số nên không bao giờ lint sau khi hoàn nguyên). `pack` (gốc)
-	để biết placeholder chu nào trông như số (→ xét như số) hay chỉ là dấu / ký hiệu ("–", "-": thay bằng đúng ký tự
-	đó để soát trước / sau — E3)."""
+	trong mã không phải số liệu; tên thật có thể chứa chữ số nên không bao giờ lint sau khi hoàn nguyên) — với luật
+	láng giềng (G2) mã đó thành một mốc riêng (không phải chữ: đứng sát placeholder là bị loại). `pack` (gốc) để biết
+	placeholder chu nào trông như số (→ xét như số), chỉ là dấu / ký hiệu ("–", "-": thay bằng đúng ký tự đó để soát
+	trước / sau — E3), hay mở / kết bằng một từ (G2: từ đó được tính là chữ ngăn giữa hai placeholder)."""
+	text = "" if text is None else str(text)
 	goc = mask.strip(text) if mask is not None else text
-	goc = "" if goc is None else str(goc)
-	ph, kieu = [], []
+	thay_ma = getattr(mask, "_thay", None)
+	co_ma = thay_ma(text, lambda _ma: _MA_MOC) if callable(thay_ma) else text
+	ph, kieu, gia = [], [], []
 
 	def moc(m):
 		k = m.group(2)
+		vc = None
 		if k == "chu" and pack is not None:
 			v = registry.resolve(pack, m.group(1).strip(), None)
 			if isinstance(v, str):
@@ -618,16 +770,213 @@ def _so_tran(text: str, mask=None, pack=None) -> list:
 					k = "pct" if "%" in vc or "‰" in vc else "so"
 		ph.append(m.group(0))
 		kieu.append(k)
+		gia.append(vc)
 		return chr(_MOC + len(ph) - 1)
 
-	tho = registry.PLACEHOLDER.sub(moc, goc)
+	tho = registry.PLACEHOLDER.sub(moc, co_ma)
 	if not ph:
 		return lint(strip_placeholders(goc))
 	out: list = []
 	for s in _cac_dang(tho):                       # có ngoặc nhọn: soát cả hai dạng (E1)
 		_them(out, *_quanh(s, ph, kieu))
+	for s in _cac_dang(tho, giu_dau=True):         # G2: "~", "*", "_", "`" sát placeholder cũng là dấu
+		_them(out, *_lang_gieng(s, ph, gia))
 	_them(out, *lint(strip_placeholders(goc)))
 	return out
+
+
+# ─── G2: láng giềng của placeholder — danh sách CHO PHÉP (mọi kiểu) ──────────
+# Từ chỉ số (cả dạng không dấu không trùng chữ thường gặp), số La Mã xét riêng.
+_G2_TU_SO = {"một", "mốt", "hai", "ba", "bốn", "tư", "năm", "lăm", "nhăm", "sáu", "bảy", "bẩy", "tám", "chín", "mười",
+	"mươi", "chục", "trăm", "nghìn", "ngàn", "vạn", "muôn", "ức", "triệu", "tỷ", "tỉ", "rưỡi", "rưởi", "tá", "lẻ", "linh",
+	"nửa", "vài", "dăm", "mấy", "đôi", "cặp", "mot", "bon", "chin", "muoi", "tram", "nghin", "trieu"}
+# Đơn vị / bội số / phép tính (đứng SAU placeholder).
+_G2_DON_VI = {"đ", "đồng", "vnđ", "vnd", "usd", "k", "m", "b", "t", "x", "tr", "trđ", "ty", "ti", "dong", "chuc", "ngan",
+	"percent", "pct", "pc", "pt", "per", "bps", "million", "billion", "bn", "mio", "củ", "tỏi", "lần", "lan", "phần", "phan",
+	"trên", "nhân", "chia", "cộng", "trừ", "mũ"}
+# Đứng TRƯỚC placeholder.
+_G2_TRUOC = _G2_TU_SO | {"trên", "phần", "phan", "nhân", "chia", "cộng", "trừ", "gấp", "x", "âm", "lần", "mũ", "k", "m",
+	"b", "đ", "tr"}
+_G2_SAU = _G2_TU_SO | _G2_DON_VI
+# Sau dấu đóng / ngắt (rồi khoảng trắng): đơn vị / từ chỉ số; "năm" ở đây là năm tháng ("{{…}}, năm ngoái …").
+_G2_SAU_DAU = (_G2_TU_SO - {"năm"}) | (_G2_DON_VI - {"trên", "phần", "phan", "nhân", "chia", "cộng", "trừ"})
+# Từ ghép: chữ đầu trùng đơn vị / từ chỉ số nhưng không phải số ("đồng hồ", "linh kiện", "triệu tập", "tỷ lệ", "tư nhân").
+_G2_GHEP = {"đồng": set(_DONG_GHEP.split("|")), "triệu": {"tập", "chứng", "hồi"},
+	"tỷ": {"lệ", "trọng", "suất", "mỉ", "giá", "phú"}, "tỉ": {"lệ", "trọng", "suất", "mỉ", "giá", "phú"},
+	"linh": {"kiện", "hoạt", "động", "tinh"}, "tư": {"nhân", "vấn", "liệu", "cách", "duy", "thế", "pháp"},
+	"cộng": {"đồng", "tác"}, "nhân": {"viên", "sự", "lực", "công", "dịp", "tố"}, "phần": {"mềm", "lớn", "nào", "việc"},
+	"chia": {"sẻ"}, "trừ": {"khi"}}
+# Từ ghép theo từ ĐỨNG TRƯỚC (xét khi từ cấm đứng ngay trước placeholder): "đầu tư", "tổng cộng", "khấu trừ", "thứ hai".
+_G2_GHEP_TRUOC = {"tư": {"đầu", "riêng", "thứ"}, "cộng": {"tổng"}, "nhân": {"công", "cá", "nhà", "bệnh"},
+	"trừ": {"khấu", "loại", "ngoại"}, "phần": {"thành", "cổ", "bộ"}, "chia": {"phân"}, "hai": {"thứ"}, "ba": {"thứ"},
+	"năm": {"thứ"}, "sáu": {"thứ"}, "bảy": {"thứ"}}
+_G2_ROMAN = re.compile(r"[IVXLCDM]+")
+_CHU_CAI = re.compile(r"[^\W\d_]+")
+_G2_MO = "([\"“'‘«"                       # được đứng ngay trước placeholder
+_G2_NGHI = ",:;.!?…"                        # dấu ngắt: , . : ; phải cách placeholder ít nhất một khoảng trắng
+_G2_DONG = ")]\"”'’»"                       # được đứng ngay sau placeholder
+_G2_DAU = "-–—−‐‑‒―+±×*/\\^=<>~≈%‰#÷⁄∕"     # dấu / phép tính: không bao giờ đứng sát dấu mở trước placeholder
+
+
+def _cam(tu: str, ds: set, sau: str = "", truoc: str = "") -> bool:
+	"""Từ `tu` (chỉ chữ) thuộc danh sách cấm `ds` (so chữ thường; số La Mã viết HOA luôn cấm), trừ khi là một từ ghép
+	đã biết: từ kế SAU nó (`sau`: "đồng hồ", "linh kiện") hoặc từ ĐỨNG TRƯỚC nó (`truoc`: "đầu tư", "tổng cộng")."""
+	if not tu:
+		return False
+	if _G2_ROMAN.fullmatch(tu):
+		return True
+	t = tu.lower()
+	if t not in ds:
+		return False
+	return not ((sau and sau in _G2_GHEP.get(t, ())) or (truoc and truoc in _G2_GHEP_TRUOC.get(t, ())))
+
+
+def _lang_gieng(s: str, ph: list, gia: list) -> list:
+	"""G2 trên s (placeholder đã thành ký tự mốc, mã giả đã gửi thành _MA_MOC). Mỗi placeholder (MỌI kiểu):
+	- trước (bỏ khoảng trắng): đầu lời / đầu dòng; một CHỮ mà từ nó kết thúc không phải từ chỉ số / bội số / số La Mã /
+	  trên | phần | nhân | chia | cộng | trừ | gấp | x; hoặc dấu mở / ngắt ( [ " “ ' ‘ , : ; . ! ? … — với , . : ; phải
+	  có khoảng trắng giữa dấu và placeholder, và thứ đứng trước dấu không được là chữ số / từ chỉ số / dấu phép tính;
+	- sau (bỏ khoảng trắng): hết lời / hết dòng; một CHỮ mà từ nó mở đầu không phải đơn vị / bội số / từ chỉ số / "lần"
+	  / trên | phần | nhân | chia | cộng | trừ | x (từ ghép đã biết thì được: "đồng hồ", "linh kiện"); hoặc dấu đóng /
+	  ngắt ) ] " ” ' ’ , ; : . ! ? … — sau , . phải là khoảng trắng / hết lời; qua các dấu và khoảng trắng, thứ kế tiếp
+	  không được là chữ số (trừ khi có ngắt câu thật . ! ? … ; + khoảng trắng ở giữa), đơn vị, từ chỉ số;
+	- giữa hai placeholder liền nhau phải có ít nhất một từ thường (không phải từ chỉ số / đơn vị) — hoặc giá trị chu
+	  kề bên mở / kết bằng một từ như thế ("{{số lượng|so}} {{đơn vị tính|chu}}" → "120 Thùng").
+	Còn lại (chữ số, dấu - – + × / % …, ngoặc đóng trước / ngoặc mở sau, mã giả, placeholder khác) → số trần."""
+	def tra(a: int, b: int) -> str:
+		return _LA_MOC.sub(lambda m: ph[ord(m.group(0)) - _MOC], s[a:b]).replace(_MA_MOC, "KH#…")
+
+	def la_moc(ch: str) -> bool:
+		return bool(ch) and _MOC <= ord(ch) <= _MOC + len(ph) - 1
+
+	n = len(s)
+	out: list = []
+
+	def khong_trang(k: int, buoc: int) -> int:
+		"""Vị trí ký tự đầu tiên không phải khoảng trắng (trừ xuống dòng) từ k theo hướng buoc."""
+		while 0 <= k < n and s[k].isspace() and s[k] != "\n":
+			k += buoc
+		return k
+
+	def tu_truoc(k: int) -> tuple:
+		"""(từ kết thúc tại s[k] (chữ), từ liền trước nó (chữ thường))."""
+		tu = _tu_ket_thuc(s, k + 1)
+		j = khong_trang(k - len(tu), -1)
+		return tu, _tu_ket_thuc(s, j + 1).lower() if j >= 0 and s[j].isalpha() else ""
+
+	def tu_sau(k: int) -> tuple:
+		tu = _tu_bat_dau(s, k)
+		j = khong_trang(k + len(tu), 1)
+		return tu, _tu_bat_dau(s, j).lower() if j < n and s[j].isalpha() else ""
+
+	def tu_truoc_cam(k: int) -> bool:
+		tu, truoc = tu_truoc(k)
+		return _cam(tu, _G2_TRUOC, truoc=truoc)
+
+	def truoc_dau_mo(k: int) -> bool:
+		"""Thứ đứng trước dấu mở / ngắt tại s[k] (bỏ khoảng trắng, xuống dòng và các dấu mở / ngắt khác) có hợp lệ."""
+		while k >= 0 and (s[k].isspace() or s[k] in _G2_MO or s[k] in _G2_NGHI):
+			k -= 1
+		if k < 0:
+			return True
+		ch = s[k]
+		if ch.isdigit() or ch in _G2_DAU or ch == _MA_MOC:
+			return False
+		if ch.isalpha():                    # từ chỉ số trước dấu ("mười, {{…}}"); "năm" ở đây là năm tháng ("đầu năm: {{…}}")
+			tu, truoc = tu_truoc(k)
+			return not _cam(tu, _G2_TU_SO - {"năm"}, truoc=truoc)
+		return True
+
+	def bad_sau(k: int, ngat: bool) -> bool:
+		"""Thứ kế tiếp tại s[k] (sau dấu đóng / ngắt và khoảng trắng) là chữ số (không có ngắt câu thật) / đơn vị / từ
+		chỉ số."""
+		if k >= n:
+			return False
+		ch = s[k]
+		if ch.isdigit():
+			return not ngat
+		if ch == _MA_MOC:                 # mã giả: chỉ được mở câu mới
+			return not ngat
+		if ch in "%‰₫$€":
+			return True
+		if ch.isalpha():
+			tu, ke = tu_sau(k)
+			if ngat and tu[:1].isupper() and not _G2_ROMAN.fullmatch(tu):
+				return False
+			return _cam(tu, _G2_SAU_DAU, ke)
+		return False
+
+	vi_tri = [m.start() for m in _LA_MOC.finditer(s)]
+	for so_thu, j in enumerate(vi_tri):
+		# ── trước
+		i = khong_trang(j - 1, -1)
+		loi = False
+		if i >= 0 and not la_moc(s[i]):
+			ch = s[i]
+			if ch == "\n":
+				loi = not truoc_dau_mo(i - 1)
+			elif ch.isalpha():
+				loi = tu_truoc_cam(i)
+			elif ch in _G2_MO or ch in _G2_NGHI:
+				loi = (ch in ",.:;" and i == j - 1) or not truoc_dau_mo(i - 1)
+			else:
+				loi = True
+		if loi:
+			a = max(0, i)
+			while a > 0 and i - a < 20 and (s[a - 1].isalnum() or (s[a - 1] in "/.,:-" and s[a].isalnum())):
+				a -= 1                      # cả mẩu đứng trước: "5/11", "SR900", "nợ"
+			out.append(tra(a, j + 1).strip())
+		# ── sau
+		i = khong_trang(j + 1, 1)
+		loi = False
+		if i < n and not la_moc(s[i]):
+			ch = s[i]
+			if ch == "\n":
+				k = i
+				while k < n and (s[k].isspace() or s[k] in _G2_DONG):
+					k += 1
+				if bad_sau(k, True):
+					loi, i = True, k
+			elif ch.isalpha():
+				tu, ke = tu_sau(i)
+				loi = _cam(tu, _G2_SAU, ke)
+			elif ch in _G2_DONG or ch in _G2_NGHI:
+				k, ngat = i, False
+				while k < n and (s[k].isspace() or s[k] in _G2_DONG or s[k] in _G2_NGHI):
+					if s[k] in ",." and k + 1 < n and not (s[k + 1].isspace() or s[k + 1] in _G2_DONG
+							or s[k + 1] in _G2_NGHI):
+						loi = True
+					if s[k] in ".!?…;" and (k + 1 >= n or s[k + 1].isspace()):
+						ngat = True
+					if s[k] == "\n":
+						ngat = True
+					k += 1
+				if not loi and bad_sau(k, ngat):
+					loi, i = True, k
+			else:
+				loi = True
+		if loi:
+			b = i + max(1, len(_tu_bat_dau(s, i))) if i < n else n
+			out.append(tra(j, b).strip())
+		# ── giữa placeholder này và placeholder kế tiếp
+		if so_thu + 1 < len(vi_tri):
+			k2 = vi_tri[so_thu + 1]
+			giua = s[j + 1:k2]
+			co_tu = any(not _cam(t, _G2_SAU) for t in _CHU_CAI.findall(giua))
+			if not co_tu and giua and not any(ch.isdigit() or ch == _MA_MOC for ch in giua):   # nhờ từ của giá trị chu
+				co_tu = _bien_chu(gia[ord(s[j]) - _MOC], cuoi=True) or _bien_chu(gia[ord(s[k2]) - _MOC], cuoi=False)
+			if not co_tu:
+				out.append(tra(j, k2 + 1))
+	return out
+
+
+def _bien_chu(v, cuoi: bool) -> bool:
+	"""Giá trị chu `v` (đã chuẩn hoá) kết thúc (cuoi) / mở đầu bằng một từ thường (không phải từ chỉ số / đơn vị / số
+	La Mã) — từ đó ngăn giữa hai placeholder đặt cạnh nhau ("120 Thùng")."""
+	if not isinstance(v, str) or not v:
+		return False
+	tu = _tu_ket_thuc(v, len(v)) if cuoi else _tu_bat_dau(v, 0)
+	return bool(tu) and not _cam(tu, _G2_SAU)
 
 
 def _quanh(s: str, ph: list, kieu: list) -> list:
@@ -647,7 +996,7 @@ def _quanh(s: str, ph: list, kieu: list) -> list:
 			continue
 		# sau
 		sau = [x for x in (_SAU_DINH.match(s, j + 1), _DON_VI.match(s, j + 1), _SAU_KHAC.match(s, j + 1),
-			_SAU_TU_SO.match(s, j + 1), _SAU_PHAN.match(s, j + 1)) if x]
+			_SAU_TU_SO.match(s, j + 1), _SAU_PHAN.match(s, j + 1), k == "pct" and _SAU_PCT.match(s, j + 1)) if x]
 		if sau:
 			out.append(tra(j, max(x.end() for x in sau)))
 		ke = _KE.match(s, j + 1)

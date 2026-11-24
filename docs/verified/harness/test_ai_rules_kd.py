@@ -283,7 +283,7 @@ eq("npp_tut: hụt 100 + 50 + 21 = 171 tr; năm nay 279 tr; cùng kỳ 450 tr", 
 	tinh(s, p2, "nam_truoc")), (171 * TR, 279 * TR, 450 * TR))
 eq("npp_tut: lời", s.title, f"{P(A(s.key, 'so_npp'), 'so')} NPP lớn giảm mua hàng Tết hơn "
 	f"{P(A(s.key, 'nguong_giam'), 'pct')} so cùng kỳ")
-neu = ", ".join(f"{P(f'{T}.rows[{i}].customer', 'chu')} ({P(f'{T}.rows[{i}].growth_pct', 'pct')})" for i in (iA, iB, iC))
+neu = ", ".join(f"NPP {P(f'{T}.rows[{i}].customer', 'chu')} tăng trưởng {P(f'{T}.rows[{i}].growth_pct', 'pct')}" for i in (iA, iB, iC))
 eq("npp_tut: thân nêu A, B, C theo số tiền hụt giảm dần — tên chỉ qua placeholder", s.detail,
 	f"Các NPP này mua ít hơn cùng kỳ năm trước tổng cộng {P(A(s.key, 'hut'), 'tien')}; hụt nhiều nhất: {neu}.")
 eq("npp_tut: tên trên path là tên khách thật", [registry.resolve(p2, f"{T}.rows[{i}].customer") for i in (iA, iB, iC)],
@@ -300,8 +300,8 @@ eq("cham_muc_tieu: năm nay 959 tr, cùng kỳ 900 tr", (tinh(s, p2, "nam_nay"),
 eq("cham_muc_tieu: lời", s.title, f"Hàng Tết kênh NPP tăng trưởng {P(A(s.key, 'tang_truong'), 'pct')}, mục tiêu "
 	f"{P(T + '.meta.target_pct', 'pct')}")
 eq("cham_muc_tieu: thân", s.detail, f"Thấp hơn mục tiêu {P(A(s.key, 'thieu'), 'so')} điểm: mùa này NPP mua "
-	f"{P(A(s.key, 'nam_nay'), 'tien')}, cùng kỳ năm trước {P(A(s.key, 'nam_truoc'), 'tien')} (tính đến "
-	f"{P(T + '.meta.asof', 'ngay')}).")
+	f"{P(A(s.key, 'nam_nay'), 'tien')}, cùng kỳ năm trước {P(A(s.key, 'nam_truoc'), 'tien')}, số tính đến "
+	f"{P(T + '.meta.asof', 'ngay')}.")      # G2: không mở ngoặc ngay sau placeholder
 # Kênh MT ở mốc 15/12: năm nay 225 + 100 (TET-M2) = 325; cùng kỳ (đến 15/12/2025) 300 + 500 (TET-M1) = 800
 #   → (325 − 800) / 800 = −59,375% → −59,4
 eq("kenh_sut mt ở mốc 15/12: giảm 59,4", tinh(s2["kd.kenh_sut:mt"], p2, "giam") if "kd.kenh_sut:mt" in s2 else None, 59.4)
@@ -581,7 +581,7 @@ eq("một tín hiệu gộp, vàng", (sorted(sig), s.severity), ([K], "vang"))
 eq("3 NPP; hụt 100 + 150 + 20,1 = 270,1 tr; năm nay 300 + 150 + 79,9 = 529,9 tr; cùng kỳ 800 tr; mốc giảm 20",
 	(tinh(s, pk, "so_npp"), tinh(s, pk, "hut"), tinh(s, pk, "nam_nay"), tinh(s, pk, "nam_truoc"),
 	tinh(s, pk, "nguong_giam")), (3, 270.1 * TR, 529.9 * TR, 800 * TR, 20.0))
-neu = ", ".join(f"{P(f'{T}.rows[{i}].customer', 'chu')} ({P(f'{T}.rows[{i}].growth_pct', 'pct')})" for i in (2, 1, 3))
+neu = ", ".join(f"NPP {P(f'{T}.rows[{i}].customer', 'chu')} tăng trưởng {P(f'{T}.rows[{i}].growth_pct', 'pct')}" for i in (2, 1, 3))
 eq("thân: nêu theo tiền hụt giảm dần (Ba 150, Hai 100, Bốn 20,1)", s.detail,
 	f"Các NPP này mua ít hơn cùng kỳ năm trước tổng cộng {P(A(K, 'hut'), 'tien')}; hụt nhiều nhất: {neu}.")
 eq("lời dựng được", ai_testlib.kiem_loi(s, pk), [])

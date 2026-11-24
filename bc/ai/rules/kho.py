@@ -97,7 +97,7 @@ def ton_am(pack, cfg):
 		return []
 	so, tien = ph(f"{AM}.items", "so"), ph(f"{AM}.value_abs", "tien")
 	if items is None:
-		title = f"Kho đang tồn âm, giá trị phần âm {tien}"
+		title = f"Kho đang tồn âm, phần âm có giá trị {tien}"      # G2: "âm" không đứng sát trước placeholder
 	elif val is None:
 		title = f"{so} mã hàng đang tồn âm"
 	else:
@@ -275,8 +275,8 @@ def kk_lech(pack, cfg):
 		detail = ("Số đếm thực tế lệch sổ ở nhiều mã; cần tìm nguyên nhân (xuất không chứng từ, nhầm mã, "
 			"nhầm lô).")
 		if _n(pack, f"{IRA}.so_ma_khop") is not None and _n(pack, f"{IRA}.so_ma") is not None:
-			detail = (f"Chỉ {ph(f'{IRA}.so_ma_khop', 'so')} trên {ph(f'{IRA}.so_ma', 'so')} mã đếm khớp sổ; "
-				"cần tìm nguyên nhân (xuất không chứng từ, nhầm mã, nhầm lô).")
+			detail = (f"Chỉ {ph(f'{IRA}.so_ma_khop', 'so')} mã đếm khớp sổ, trong tổng số {ph(f'{IRA}.so_ma', 'so')} "
+				"mã đã đếm; cần tìm nguyên nhân (xuất không chứng từ, nhầm mã, nhầm lô).")
 		out.append(cfg.signal(muc, f"Kiểm kê gần nhất chỉ {ph(f'{IRA}.ty_le', 'pct')} mã khớp sổ",
 			detail=detail, obj="ira"))
 	return out

@@ -393,7 +393,7 @@ a = R("cn.qua_han_ty_le")
 # 120 tr / 220 tr = 54,545…% → "54,5%"; 120.000.000 ≥ 1e8 → "120 triệu"; 220.000.000 → "220 triệu"
 eq("lời quy tắc thay số kiểu VN (54,5% · 120 triệu · 220 triệu)", (a.source, a.title, a.severity),
 	("quy-tac", "Nợ quá hạn chiếm 54,5% tổng phải thu", "do"))
-c("thân: 120 triệu trên 220 triệu", "120 triệu" in a.body and "220 triệu" in a.body, a.body)
+c("thân: quá hạn 120 triệu, tổng phải thu 220 triệu", "120 triệu" in a.body and "220 triệu" in a.body, a.body)
 eq("vc.cho_qua_han: 28 đơn chờ giao quá 3 ngày (seed test_vc)", R("vc.cho_qua_han").title, "28 đơn chờ giao quá 3 ngày")
 eq("cn.phai_tra_qua_han: 30.000.000 ≥ 1e6 → '30 triệu'", R("cn.phai_tra_qua_han").title,
 	"30 triệu tiền hàng nhà cung cấp đã quá hạn chưa trả")
@@ -422,7 +422,7 @@ def tai_chinh(obj):
 	s1 = S(obj, "cn.qua_han_ty_le")
 	return [
 		ins(s1, "Nợ quá hạn {{cong-no.receivables.kpis.overdue_pct|pct}}",
-			"Quá hạn {{cong-no.receivables.kpis.overdue|tien}} trên {{cong-no.receivables.kpis.receivable|tien}}, "
+			"Quá hạn {{cong-no.receivables.kpis.overdue|tien}}, tổng phải thu {{cong-no.receivables.kpis.receivable|tien}}, "
 			"phải trả quá hạn {{phai-tra.payables.ap.due.overdue_total|tien}}.",
 			["Kế toán: thúc thu trong 7 ngày."], severity="vang", priority=9),                 # hạ đỏ → vàng, prio 9
 		ins(s1, "Lời thứ hai", "Bị bỏ vì trùng {{cong-no.receivables.kpis.net|tien}}."),         # trùng S → bỏ
@@ -474,7 +474,7 @@ tt = tong(run2)
 eq("run_type tay lưu ở dòng tổng và mọi dòng con", {r.run_type for r in rows_of(run2)}, {"tay"})
 a = R("cn.qua_han_ty_le")
 eq("S1: lời AI, số thật (54,5% · 120 triệu · 220 triệu · 30 triệu)", (a.source, a.title, a.body),
-	("ai", "Nợ quá hạn 54,5%", "Quá hạn 120 triệu trên 220 triệu, phải trả quá hạn 30 triệu."))
+	("ai", "Nợ quá hạn 54,5%", "Quá hạn 120 triệu, tổng phải thu 220 triệu, phải trả quá hạn 30 triệu."))
 eq("S1: mô hình hạ đỏ → vàng: vẫn đỏ", a.severity, "do")
 eq("S1: priority 9 → kẹp 5", a.priority, 5)
 eq("S1: advice 'trong 7 ngày' được giữ", a.advice, "Kế toán: thúc thu trong 7 ngày.")

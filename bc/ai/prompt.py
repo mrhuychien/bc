@@ -107,16 +107,29 @@ thu, khoản lớn nhất {{cong-no.receivables.top_overdue[0].overdue|tien}}."
 - Tên khách hàng, nhà cung cấp trong pack đã được thay bằng mã giả: chữ KH# hoặc NCC# rồi một dãy chữ số (dưới \
 đây viết tắt là KH#… và NCC#…). Cần nhắc tới thì chép nguyên mã có trong pack của lượt này (máy chủ đổi lại thành \
 tên) hoặc dùng placeholder kiểu chu; không bịa mã, không đoán tên thật — mã không có trong pack sẽ bị loại.
-- Tên riêng có chữ số (tên mặt hàng ghi khối lượng, mã chứng từ, tên tiêu chuẩn) cũng phải đưa vào bằng \
-placeholder kiểu chu — viết tay sẽ bị loại.
+- Tên riêng có chữ số (tên mặt hàng ghi khối lượng, tên khách, tên kho) cũng phải đưa vào bằng placeholder kiểu \
+chu — viết tay sẽ bị loại.
 - Không viết con số bằng chữ, không tự suy ra tỷ lệ hay bội số ("hai tỷ", "gấp đôi", "một nửa", "hai phần ba số \
-khách"). Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số ("trong 7 ngày", "quý 4").
-- Không đặt con số viết tay sát một placeholder số, không đặt hai placeholder số liền nhau, không viết từ chỉ \
-bậc ("trăm", "nghìn", "triệu") ngay sau placeholder — giữa chúng luôn có ít nhất một từ thường.
-- Ngay trước một placeholder số không đặt dấu "-", "–" hay "+" (dùng dấu phẩy, dấu hai chấm hoặc một từ). Ngay sau \
-placeholder số không viết "lần" hay bất kỳ đơn vị nào ("lượt", "khách", "ngày" thì được).
+khách"), không dùng số La Mã cho số lượng.
+- Chữ số viết tay CHỈ được dùng ở bốn dạng, ngoài ra đều bị loại (kể cả "5 khách", "top 5", "tăng 5 lần"):
+  • Số viết thường chỉ dùng cho thời hạn hoặc thứ tự, tối đa hai chữ số, đứng ngay sau quý / tháng / tuần / ngày / \
+mùng / thứ / ca / đợt / bước / kỳ / Tết hoặc ngay trước ngày / tuần / tháng / giờ / phút / năm / quý: được viết \
+"trong 7 ngày", "quý 4", "tuần 2"; không viết "7, {{…}}" hay "top 5".
+  • năm viết đủ bốn chữ số: "năm 2026";
+  • ngày chép đúng dạng: "5/11", "5/11/2026";
+  • mã chứng từ viết HOA chép nguyên: "KK-2026-002".
+- Ngay TRƯỚC một placeholder (bất kỳ kiểu nào) chỉ được là đầu câu, một từ thường (mã KH#… / NCC#… không tính là \
+từ), hoặc một trong các dấu ( , : ; có dấu cách trước placeholder. Được viết "Nợ quá hạn {{…}}", "gồm: {{…}}", \
+"KH#… nợ {{…}}"; không viết "tháng 5 {{…}}", "cả năm {{…}}", "x{{…}}", "trên {{…}}", "1/{{…}}"; không đặt dấu "-", \
+"–" hay "+" ngay trước placeholder (dùng dấu phẩy, dấu hai chấm hoặc một từ).
+- Ngay SAU một placeholder chỉ được là hết câu, một từ thường hoặc một dấu đóng / ngắt ) , ; : . (sau dấu phẩy, dấu \
+chấm luôn có dấu cách). Từ đó không được là đơn vị, từ chỉ số, "năm", "trên", "phần": được viết "{{…}} khách", \
+"{{…}} lượt", "{{…}}, tăng"; không viết "lần" hay bất kỳ đơn vị nào ("{{…}} lần", "{{…}} triệu", "{{…}}%", \
+"{{…}} năm", "{{…}} trên tổng {{…}}"), không mở ngoặc "{{…}} (".
+- Giữa hai placeholder luôn có ít nhất một từ thường, kể cả khi cách nhau bằng dấu câu: viết "{{…}}, tổng là {{…}}"; \
+không viết "{{…}} ({{…}})", "{{…}}: {{…}}", "{{…}}/{{…}}".
 - Giữa một số viết tay (kể cả số tháng, số quý) hoặc một từ chỉ số (một … mười, mươi, chục, trăm, rưỡi, tá, lẻ, \
-linh — cả khi "năm", "lẻ" mang nghĩa khác) và một placeholder số luôn có ít nhất một từ thường: viết "tháng 5 đạt \
+linh — cả khi "năm", "lẻ" mang nghĩa khác) và một placeholder luôn có ít nhất một từ thường: viết "tháng 5 đạt \
 {{…}}", "cả năm đạt {{…}}", "bán lẻ đạt {{…}}"; không viết "tháng 5 {{…}}", "cả năm {{…}}".
 - Lời còn con số viết tay, placeholder sai path hoặc sai kiểu sẽ bị máy chủ loại bỏ cả nhận định."""
 

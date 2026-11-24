@@ -229,7 +229,7 @@ eq("ghi đè vàng = 5 mã: 5 mã → không; 6 mã → vàng", (muc(am(5, TR), 
 eq("ghi đè đỏ = 30 tr: 25 tr → vàng; 30 tr → đỏ", (muc(am(3, 25 * TR), T, {"do": 30 * TR}),
 	muc(am(3, 30 * TR), T, {"do": 30 * TR})), ("vang", "do"))
 eq("số mã None, giá trị 25 tr → đỏ (lời chỉ nêu giá trị)", (muc(am(None, 25 * TR), T),
-	mot(am(None, 25 * TR), T)[1][T].title), ("do", f"Kho đang tồn âm, giá trị phần âm {P(AM + '.value_abs', 'tien')}"))
+	mot(am(None, 25 * TR), T)[1][T].title), ("do", f"Kho đang tồn âm, phần âm có giá trị {P(AM + '.value_abs', 'tien')}"))
 eq("None / rác → không báo", [muc(am(None, None), T), muc(am("3", "x"), T), muc(am(True, None), T)], [None] * 3)
 _, sg, pp = mot(am(4, 21 * TR), T)
 eq("lời đỏ: số mã + giá trị + số kho", (sg[T].title, sg[T].detail.startswith(f"Âm ở {P(AM + '.warehouses', 'so')} kho")),

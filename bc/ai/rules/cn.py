@@ -59,7 +59,7 @@ def qua_han_ty_le(pack, cfg):
 		return []
 	od, rc = f"{R}.kpis.overdue", f"{R}.kpis.receivable"
 	if _num(pack, od) is not None and _num(pack, rc) is not None:
-		detail = (f"Đã quá hạn {ph(od, 'tien')} trên tổng phải thu {ph(rc, 'tien')}, "
+		detail = (f"Đã quá hạn {ph(od, 'tien')}, tổng phải thu là {ph(rc, 'tien')}; "
 			"cần thúc thu các khách nợ lâu trước khi thành nợ khó đòi.")
 	else:
 		detail = "Cần thúc thu các khách nợ lâu trước khi thành nợ khó đòi."
@@ -91,13 +91,13 @@ def qua_han_lon(pack, cfg):
 		return []
 	hit.sort(key=lambda x: (-x[0], x[1]))
 	muc = "do" if any(m == "do" for _o, _i, m in hit) else "vang"
-	ten = [f"{ph(f'{R}.top_overdue[{i}].customer', 'chu')} {ph(f'{R}.top_overdue[{i}].overdue', 'tien')}"
+	ten = [f"khách {ph(f'{R}.top_overdue[{i}].customer', 'chu')} nợ {ph(f'{R}.top_overdue[{i}].overdue', 'tien')}"
 		for _o, i, _m in hit if _chu(rows[i].get("customer"))][:NEU_KHACH]
 	detail = "Tổng nợ quá hạn ở mọi tuổi nợ của các khách này là {{@tong|tien}}"
 	if ten:
 		detail += f", nhiều nhất {', '.join(ten)}"
 	detail += "; cần thu hồi gấp trước khi thành nợ khó đòi."
-	return [cfg.signal(muc, "{{@so_khach|so}} khách có hoá đơn quá hạn trên {{@so_ngay|so}} ngày",
+	return [cfg.signal(muc, "{{@so_khach|so}} khách có hoá đơn quá hạn hơn {{@so_ngay|so}} ngày",
 		detail=detail, paths=[f"{R}.top_overdue[{i}].max_days" for _o, i, _m in hit[:NEU_KHACH]],
 		tinh={"so_khach": len(hit), "so_ngay": QUA_NGAY, "tong": round(sum(o for o, _i, _m in hit), 2)})]
 
@@ -169,15 +169,15 @@ def thieu_tien_14_ngay(pack, cfg):
 	if phai <= 0:
 		return []
 	ngay = f"{P}.meta.due_ahead"
-	toi = f"{ph(ngay, 'so')} ngày tới" if _num(pack, ngay) is not None else "sắp tới"
+	toi = f"trong {ph(ngay, 'so')} ngày tới" if _num(pack, ngay) is not None else "sắp tới"
 	if quy <= 0:
 		return [cfg.signal("do", "Quỹ tiền đã hết trong khi còn {{@phai|tien}} phải trả",
-			detail=(f"Quá hạn {ph(od, 'tien')} cộng đến hạn {toi} {ph(up, 'tien')} mà quỹ tiền mặt và ngân hàng còn "
-				f"{ph(q, 'tien')}, cần lên kế hoạch dòng tiền ngay."), tinh={"phai": phai})]
+			detail=(f"Quá hạn {ph(od, 'tien')}, thêm khoản đến hạn {toi} là {ph(up, 'tien')}, mà quỹ tiền mặt và "
+				f"ngân hàng còn {ph(q, 'tien')}, cần lên kế hoạch dòng tiền ngay."), tinh={"phai": phai})]
 	ty_le = _tron(phai / quy * 100)
 	muc = cfg.muc(ty_le)
 	if not muc:
 		return []
 	return [cfg.signal(muc, "Tiền phải trả sắp tới bằng {{@ty_le|pct}} quỹ tiền hiện có",
-		detail=(f"Quá hạn {ph(od, 'tien')} cộng đến hạn {toi} {ph(up, 'tien')} trong khi quỹ tiền mặt và ngân hàng "
-			f"còn {ph(q, 'tien')}, cần lên kế hoạch dòng tiền."), tinh={"phai": phai, "ty_le": ty_le})]
+		detail=(f"Quá hạn {ph(od, 'tien')}, thêm khoản đến hạn {toi} là {ph(up, 'tien')}, trong khi quỹ tiền mặt "
+			f"và ngân hàng còn {ph(q, 'tien')}, cần lên kế hoạch dòng tiền."), tinh={"phai": phai, "ty_le": ty_le})]

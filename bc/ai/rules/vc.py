@@ -178,7 +178,9 @@ def xe_qua_han(pack, cfg):
 	else:
 		return []
 	# Biển số của nhóm đang báo: có xe quá hạn → chỉ nêu xe quá hạn; không thì xe sắp đến hạn (thứ tự gốc).
-	bien = [ph(f"{XE}.can_xu_ly[{i}].xe", "chu") for i, q in xe if q == (qua > 0) and _chu(rows[i].get("xe"))][:NEU_XE]
+	# G2: mỗi biển số có chữ "xe" đứng trước (biển số tận cùng bằng chữ số — hai placeholder không chỉ cách dấu phẩy)
+	bien = ["xe " + ph(f"{XE}.can_xu_ly[{i}].xe", "chu") for i, q in xe if q == (qua > 0)
+		and _chu(rows[i].get("xe"))][:NEU_XE]
 	if qua:
 		title = "{{@qua_han|so}} xe quá hạn đăng kiểm, thay dầu hoặc bảo dưỡng"
 		them = "thêm {{@sap_den|so}} xe sắp đến hạn" if sap else ""

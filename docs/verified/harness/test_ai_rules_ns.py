@@ -109,7 +109,7 @@ rows = THAT["nhan-su"]["overview"]["canh_bao"]["rows"]
 i = [r["ma"] for r in rows].index("luong_trung")
 eq("viec_ton: trỏ đúng dòng luong_trung (tìm theo mã), 1 người",
 	(sig["ns.viec_ton:luong_trung"].title, rows[i]["so_nguoi"]),
-	(f"{P(f'{CB}.rows[{i}].ten', 'chu')}: {P(f'{CB}.rows[{i}].so_nguoi', 'so')} người", 1))
+	(f"{P(f'{CB}.rows[{i}].ten', 'chu')}: còn {P(f'{CB}.rows[{i}].so_nguoi', 'so')} người", 1))
 lv = THAT["attp"]["overview"]["linh_vuc"]
 j = [t["ma"] for t in lv].index("vong_kiem")
 s = sig["attp.den_do:vong_kiem"]
@@ -123,9 +123,9 @@ s = sig["attp.chi_tieu:ty_le_luot"]
 eq("chi_tieu:ty_le_luot: luỹ kế 55,6% (5/9 lượt), mục tiêu ≥ 95 — kiểu pct",
 	(s.detail, ct[k]["nam_luy_ke"], float(ct[k]["muc_tieu"])),
 	(f"Luỹ kế năm đạt {P(f'{RP}.chi_tieu[{k}].nam_luy_ke', 'pct')}, mục tiêu {P(f'{RP}.chi_tieu[{k}].so_sanh', 'chu')} "
-	f"{P(f'{RP}.chi_tieu[{k}].muc_tieu', 'pct')}, cần rà nguyên nhân với Ban ATTP.", 55.6, 95.0))
+	f"mức {P(f'{RP}.chi_tieu[{k}].muc_tieu', 'pct')}, cần rà nguyên nhân với Ban ATTP.", 55.6, 95.0))
 eq("chi_tieu:ty_le_luot dựng lời thật", render.fill(s.detail, p1).text,
-	"Luỹ kế năm đạt 55,6%, mục tiêu ≥ 95,0%, cần rà nguyên nhân với Ban ATTP.")
+	"Luỹ kế năm đạt 55,6%, mục tiêu ≥ mức 95,0%, cần rà nguyên nhân với Ban ATTP.")
 eq("mọi tín hiệu payload thật dựng được lời", {k2: loi(s2, p1) for k2, s2 in sig.items() if loi(s2, p1)}, {})
 eq("audience lãnh đạo, route theo mảng", {(s2.audience, s2.route) for s2 in sig.values()},
 	{("lanh-dao", "#/nhan-su"), ("lanh-dao", "#/attp")})
@@ -246,7 +246,7 @@ _, sg, pk = mot(AT(chi_tieu=[CT("ty_le_luot", False, 80.0, 95.0, "%"), CT("su_co
 eq("đơn vị % → kiểu pct; khác → so; Decimal dựng được", ([k2 for p, k2 in registry.placeholders(
 	sg["attp.chi_tieu:ty_le_luot"].detail) if p.endswith("nam_luy_ke")], [k2 for p, k2 in registry.placeholders(
 	sg["attp.chi_tieu:su_co"].detail) if p.endswith("muc_tieu")], render.fill(sg["attp.chi_tieu:su_co"].detail, pk).text),
-	(["pct"], ["so"], "Luỹ kế năm đạt 3, mục tiêu ≤ 0, cần rà nguyên nhân với Ban ATTP."))
+	(["pct"], ["so"], "Luỹ kế năm đạt 3, mục tiêu ≤ mức 0, cần rà nguyên nhân với Ban ATTP."))
 _, sg, pk = mot(AT(chi_tieu=[CT("su_co", False, None)]), K)
 eq("luỹ kế None → lời không số (chỉ path tên)", (sg["attp.chi_tieu:su_co"].paths, loi(sg["attp.chi_tieu:su_co"], pk)),
 	([f"{RP}.chi_tieu[0].ten"], []))

@@ -92,7 +92,8 @@ def chi_tieu(pack, cfg):
 		title = f"Chỉ tiêu {ten} luỹ kế năm chưa đạt"
 		paths = []
 		if _so(c.get("nam_luy_ke")) is not None and _so(c.get("muc_tieu")) is not None:
-			so_sanh = f" {ph(f'{p}.so_sanh', 'chu')}" if _chu(c.get("so_sanh")) else ""
+			# G2: dấu so sánh (chu "≤" / "≥") không đứng sát placeholder số — "mục tiêu ≤ mức 5"
+			so_sanh = f" {ph(f'{p}.so_sanh', 'chu')} mức" if _chu(c.get("so_sanh")) else ""
 			detail = (f"Luỹ kế năm đạt {ph(f'{p}.nam_luy_ke', kieu)}, mục tiêu{so_sanh} "
 				f"{ph(f'{p}.muc_tieu', kieu)}, cần rà nguyên nhân với Ban ATTP.")
 			paths = [f"{p}.nam_luy_ke", f"{p}.muc_tieu"]

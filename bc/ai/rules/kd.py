@@ -220,7 +220,7 @@ def npp_tut(pack, cfg):
 		if _chu(resolve(pack, f"{p}.customer", None)):
 			paths.append(f"{p}.customer")
 			if len(neu) < NPP_NEU:
-				neu.append(f"{ph(p + '.customer', 'chu')} ({ph(p + '.growth_pct', 'pct')})")
+				neu.append(f"NPP {ph(p + '.customer', 'chu')} tăng trưởng {ph(p + '.growth_pct', 'pct')}")
 	detail = "Các NPP này mua ít hơn cùng kỳ năm trước tổng cộng {{@hut|tien}}"
 	if neu:
 		detail += "; hụt nhiều nhất: " + ", ".join(neu)
@@ -257,7 +257,7 @@ def cham_muc_tieu(pack, cfg):
 		"{{@nam_truoc|tien}}")
 	if _ngay(resolve(pack, p_asof, None)):
 		paths.append(p_asof)
-		detail += f" (tính đến {ph(p_asof, 'ngay')})"
+		detail += f", số tính đến {ph(p_asof, 'ngay')}"          # G2: không mở ngoặc ngay sau placeholder
 	title = "Hàng Tết kênh NPP tăng trưởng {{@tang_truong|pct}}, mục tiêu " + ph(p_mt, "pct")
 	return [cfg.signal(muc, title, detail=detail + ".", paths=paths,
 		tinh={"tang_truong": tang, "thieu": thieu, "nam_nay": nay, "nam_truoc": truoc})]

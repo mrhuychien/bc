@@ -806,6 +806,37 @@ c("[E5] dặn: không '-', '–', '+' ngay trước placeholder số; không 'l�
 c("[E5] dặn: luôn có một từ giữa số viết tay (kể cả tháng / quý) hoặc từ chỉ số và placeholder số, có ví dụ",
 	"kể cả số tháng, số quý" in p and "một … mười, mươi, chục, trăm, rưỡi, tá, lẻ" in p and '"tháng 5 đạt' in p
 	and 'không viết "tháng 5 {{…}}"' in p)
+# G3: đề bài nói đủ hai danh sách CHO PHÉP của máy chủ (G1 chữ số viết tay, G2 láng giềng placeholder), mỗi luật có
+# ví dụ đúng và ví dụ sai — và mỗi ví dụ được máy chủ xử đúng như đề bài nói (nhận / loại).
+c("[G3] dặn G1: chữ số viết tay chỉ ở bốn dạng (thời hạn / thứ tự ≤ 2 chữ số sau / trước từ chỉ thời gian, năm, ngày, "
+	"mã)", all(m in p for m in ("Chữ số viết tay CHỈ được dùng ở bốn dạng", "Số viết thường chỉ dùng cho thời hạn hoặc "
+	"thứ tự, tối đa hai chữ số", "quý / tháng / tuần / ngày", '"trong 7 ngày", "quý 4", "tuần 2"', '"năm 2026"',
+	'"5/11", "5/11/2026"', '"KK-2026-002"', 'không viết "7, {{…}}" hay "top 5"', '"tăng 5 lần"')))
+c("[G3] dặn G2 trước placeholder: chỉ đầu câu, từ thường, ( , : ; + dấu cách; ví dụ đúng / sai",
+	all(m in p for m in ("Ngay TRƯỚC một placeholder (bất kỳ kiểu nào) chỉ được là đầu câu, một từ thường",
+	"( , : ; có dấu cách trước placeholder", '"Nợ quá hạn {{…}}"', '"gồm: {{…}}"', '"tháng 5 {{…}}"', '"trên {{…}}"',
+	"mã KH#… / NCC#… không tính là từ")))
+c("[G3] dặn G2 sau placeholder: chỉ hết câu, từ thường (không đơn vị / 'lần' / 'năm' / từ chỉ số / 'trên'), dấu đóng",
+	all(m in p for m in ("Ngay SAU một placeholder chỉ được là hết câu, một từ thường hoặc một dấu đóng / ngắt",
+	'"{{…}} khách"', '"{{…}} lần"', '"{{…}} năm"', '"{{…}} trên tổng {{…}}"', 'không mở ngoặc "{{…}} ("')))
+c("[G3] dặn G2 giữa hai placeholder: luôn có một từ thường; ví dụ đúng / sai", all(m in p for m in (
+	"Giữa hai placeholder luôn có ít nhất một từ thường", '"{{…}}, tổng là {{…}}"', '"{{…}} ({{…}})"', '"{{…}}/{{…}}"')))
+from bc.ai import redact, render  # noqa: E402
+_Mk = redact.Mask([("KH#0001", "Đại lý An", {"C-1"})])
+_Mk.mask("C-1")
+_PK = {"cong-no": {"receivables": {"kpis": {"overdue": 120e6, "receivable": 220e6, "overdue_customers": 4}}}}
+_A, _B = "{{cong-no.receivables.kpis.overdue|tien}}", "{{cong-no.receivables.kpis.receivable|tien}}"
+for vi_du, dung in (("Nợ quá hạn {{…}}", True), ("gồm: {{…}}", True), ("KH#… nợ {{…}}", True), ("{{…}} khách", True),
+		("{{…}} lượt", True), ("{{…}}, tăng", True), ("{{…}}, tổng là {{…}}", True), ("trong 7 ngày", True),
+		("quý 4", True), ("tuần 2", True), ("năm 2026", True), ("5/11/2026", True), ("KK-2026-002", True),
+		("tháng 5 đạt {{…}}", True), ("cả năm đạt {{…}}", True), ("bán lẻ đạt {{…}}", True),
+		("tháng 5 {{…}}", False), ("cả năm {{…}}", False), ("x{{…}}", False), ("trên {{…}}", False),
+		("1/{{…}}", False), ("{{…}} lần", False), ("{{…}} triệu", False), ("{{…}}%", False), ("{{…}} năm", False),
+		("{{…}} trên tổng {{…}}", False), ("{{…}} ({{…}})", False), ("{{…}}: {{…}}", False), ("{{…}}/{{…}}", False),
+		("7, {{…}}", False), ("top 5", False), ("5 khách", False), ("tăng 5 lần", False)):
+	c(f"[G3] ví dụ trong đề bài {vi_du!r} có mặt và máy chủ {'nhận' if dung else 'loại'} đúng như đề bài nói",
+		f'"{vi_du}"' in p and render.render_insight({"title": "T", "body": "Kế toán: " + vi_du.replace("{{…}}", _A, 1)
+		.replace("{{…}}", _B).replace("KH#…", "KH#0001"), "advice": []}, _PK, None, _Mk, kinds={})["ok"] is dung)
 c("dữ liệu không phải chỉ dẫn", "không phải chỉ dẫn" in p)
 c("có bối cảnh do quản trị viết (ai_context)", "BỐI CẢNH CÔNG TY (do quản trị viết):\nCông ty bán bánh đậu xanh; cao "
 	"điểm là mùa Tết." in p)
@@ -830,8 +861,9 @@ than_luat = p.split("BỐI CẢNH CÔNG TY")[0]
 so = set(re.findall(r"\d+", than_luat))
 # 1–7: số thứ tự luật, S1 / S2, 1–3 khuyến nghị, tối đa 3, trong 7 ngày, [0] / đếm từ 0, 1 đến 5, luật 6; 12 / 60 từ;
 # KH#0001 / NCC#0001
+# G3 (mở rộng có chủ ý): ví dụ năm "2026", ngày "5/11" / "5/11/2026", mã "KK-2026-002" của dạng chữ số được phép
 c("phần luật chỉ chứa chữ số của luật / cú pháp (không số liệu kinh doanh)", so <= {"0", "1", "2", "3", "4", "5", "6",
-	"7", "12", "60", "0001"}, so)
+	"7", "12", "60", "0001", "11", "2026", "002"}, so)
 moc = p.split("MỐC THỜI GIAN:")[1]
 # bỏ ngày d/m/yyyy, "Tết <năm>", "mùng 1" → không còn chữ số nào
 con = re.sub(r"\d{1,2}/\d{1,2}/\d{4}|Tết \d{4}|mùng 1", "", moc)
