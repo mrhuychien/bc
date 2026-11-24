@@ -28,7 +28,13 @@ Chi tiết đã chốt ở đây (nơi khác dựa vào):
   xoá lời; gọi được cho lượt gọi mô hình hỏng kèm tokens / model, status loi | het-credit). Nơi đọc muốn biết
   "đang chạy / dở dang" thì xét finished trống.
 - Dọn theo NGÀY LỊCH: xoá dòng có ngày đóng (Insight) / ngày bắt đầu (Run) TRƯỚC ngày (hôm nay − 180). Đúng 180 ngày
-  trước (bất kể giờ) → còn giữ; 181 ngày → xoá.
+  trước (bất kể giờ) → còn giữ; 181 ngày → xoá. Ngoại lệ (P2): dòng tổng mang ảnh chụp KPI giữ KEEP_KPI_DAYS (400) ngày
+  — bản tin tháng cần 12 tháng; BC AI Brief giữ 400 ngày theo brief_date.
+- Phản biện (P2): review_verdict / review_note thuộc về MỘT lời AI. Lời mới (apply_ai, nhận định tự do được ghi lại) hoặc
+  lời quy tắc đặt lại (sync_signals, source quy-tac) → xoá cả hai; chỉ set_review ghi chúng.
+- Dòng Run của phản biện: step "review:<nhóm>", provider openai, run_id = dòng tổng của lượt ngày. Dòng Run của bản tin:
+  step "ban-tin:tuan" | "ban-tin:thang", run_type "tuan" | "thang", KHÔNG có dòng tổng (run_id trống) — meta.last_ok /
+  stale / ht.ai_loi vẫn chỉ nói về lượt ngày.
 """
 
 from __future__ import annotations
@@ -44,13 +50,19 @@ RUN = "BC AI Run"
 OPEN = ("mo", "dang-xu-ly")
 KEEP_CLOSED_DAYS = 180
 KEEP_RUN_DAYS = 180
+KEEP_KPI_DAYS = 400      # dòng tổng có ảnh chụp KPI + BC AI Brief (bản tin tháng so 12 tháng trước)
+BRIEF = "BC AI Brief"
+BRIEF_TYPES = ("ngay", "tuan", "thang")
+BRIEF_SOURCES = ("ai", "quy-tac")
+VERDICTS = ("dong-y", "nghi-ngo")
+NOTE_LEN = 300           # review_note
 
 KEY_LEN = 140            # signal_key: Data(140), unique
 TITLE_LEN = 200          # title, rule_title: Data(200)
 DATA_LEN = 140           # các field Data còn lại
 ERROR_LEN = 300          # BC AI Run.error
 DOCS_MAX = 20            # chứng từ kèm một tín hiệu
-RUN_TYPES = ("ngay", "tuan", "tay", "hoi-dap")
+RUN_TYPES = ("ngay", "tuan", "tay", "hoi-dap", "thang")
 RUN_STATUSES = ("ok", "loi", "het-credit", "vuot-tran", "tat", "khong-khoa")
 DANG_CHAY = "chưa hoàn tất"      # dòng Run chưa chốt (đang chạy / job chết giữa chừng)
 _MUC = {"vang": 1, "do": 2}          # đỏ nặng hơn vàng
@@ -219,6 +231,7 @@ def sync_signals(items: list, ran, now) -> dict:
 			"audience": it.get("audience") if it.get("audience") in _AUDIENCES else "lanh-dao",
 			"severity": _muc(it.get("severity")), "source": "quy-tac", "title": title, "rule_title": title,
 			"body": cstr(it.get("body")), "advice": "", "priority": 0, "needs_check": 0, "text_at": now,
+			"review_verdict": "", "review_note": "",   # lời quy tắc đặt lại → phản biện của lời cũ hết nghĩa
 			"paths": _dump(_uniq(it.get("paths"))), "documents": _dump(list(it.get("documents") or [])[:DOCS_MAX]),
 			"sections_used": _sections(it, section)}
 
@@ -285,7 +298,7 @@ def blocked_paths(sections, now) -> dict:
 # ─── Lời AI ──────────────────────────────────────────────────────────────────
 def apply_ai(name: str, *, title: str, body: str, advice: list, severity: str, priority: int, paths: list,
 		sections_used: list, now) -> None:
-	"""Gắn lời AI vào Insight của một tín hiệu: source ai, text_at now, needs_check 0. severity = max(mức đang có, mức
+	"""Gắn lời AI vào Insight của một tín hiệu: source ai, text_at now, needs_check 0, xoá phản biện của lời cũ. severity = max(mức đang có, mức
 	mô hình) — mô hình không hạ được mức đỏ. paths / sections_used = HỢP của quy tắc và lời AI."""
 	r = _rows("name = %(name)s", {"name": name})
 	if not r:
@@ -295,7 +308,7 @@ def apply_ai(name: str, *, title: str, body: str, advice: list, severity: str, p
 	moi = _muc(severity, cu)   # mức lạ từ mô hình → giữ mức đang có
 	frappe.db.set_value(INSIGHT, name, {
 		"title": _cat(title, TITLE_LEN).strip() or row.title, "body": cstr(body), "advice": _dong(advice),
-		"source": "ai", "text_at": get_datetime(now), "needs_check": 0,
+		"source": "ai", "text_at": get_datetime(now), "needs_check": 0, "review_verdict": "", "review_note": "",
 		"severity": moi if _MUC[moi] > _MUC[cu] else cu, "priority": cint(priority),
 		"paths": _dump(_uniq([*_load(row.paths), *(paths or [])])),
 		"sections_used": "\n".join(_uniq([*_tach(row.sections_used), *(sections_used or [])])),
@@ -305,6 +318,24 @@ def apply_ai(name: str, *, title: str, body: str, advice: list, severity: str, p
 def mark_rejected(name: str) -> None:
 	"""Lời AI lượt này cho Insight bị loại: needs_check 1, giữ lời quy tắc."""
 	frappe.db.set_value(INSIGHT, name, {"needs_check": 1})
+
+
+def set_review(signal_key: str, verdict: str, note: str = "") -> bool:
+	"""Ghi kết quả phản biện cho Insight có signal_key (khớp ĐÚNG chuỗi, đã cắt KEY_LEN): verdict ∈ VERDICTS (khác →
+	ValueError), note = lời ĐÃ qua render.render_text (nơi gọi lo; rỗng được), gộp một dòng, cắt ≤ NOTE_LEN ký tự không
+	cắt giữa số. Chỉ ghi review_verdict / review_note — không đụng lời, mức, trạng thái. Trả False khi không có Insight
+	đó."""
+	from bc.ai.render import _cat as cat_an_toan
+
+	if verdict not in VERDICTS:
+		raise ValueError(f"bc.ai: kết quả phản biện không hợp lệ: {verdict}")
+	k = cstr(signal_key).strip()[:KEY_LEN]
+	row = _tim([k]).get(k) if k else None
+	if row is None:
+		return False
+	frappe.db.set_value(INSIGHT, row.name, {"review_verdict": verdict,
+		"review_note": cat_an_toan(" ".join(cstr(note).split()), NOTE_LEN)})
+	return True
 
 
 def sync_ai_free(sections, items: list, now) -> dict:
@@ -321,7 +352,7 @@ def sync_ai_free(sections, items: list, now) -> dict:
 		return {"rule": "ai", "section": section, "route": _cat(it.get("route"), DATA_LEN), "audience": "lanh-dao",
 			"severity": _muc(it.get("severity")), "source": "ai", "title": _cat(it.get("title"), TITLE_LEN),
 			"rule_title": "", "body": cstr(it.get("body")), "advice": _dong(it.get("advice")),
-			"priority": cint(it.get("priority")), "needs_check": 0, "text_at": now,
+			"priority": cint(it.get("priority")), "needs_check": 0, "text_at": now, "review_verdict": "", "review_note": "",
 			"paths": _dump(_uniq(it.get("paths"))), "documents": _dump([]), "sections_used": _sections(it, section)}
 
 	dem, _names, cham = _upsert(items, loi, now)
@@ -397,11 +428,100 @@ def _xoa(doctype: str, where: str, params: dict) -> int:
 	return len(names)
 
 
+_CO_KPI = "step = 'tong' AND IFNULL(kpis, '') NOT IN ('', '{}', 'null')"   # dòng tổng mang ảnh chụp KPI
+
+
 def cleanup(now) -> dict:
-	"""Xoá Insight dong quá KEEP_CLOSED_DAYS ngày (theo closed_on) và Run quá KEEP_RUN_DAYS ngày (theo started). Trả số
-	dòng đã xoá."""
-	return {
+	"""Xoá Insight dong quá KEEP_CLOSED_DAYS ngày (theo closed_on), Run quá KEEP_RUN_DAYS ngày (theo started) — trừ dòng
+	tổng có ảnh chụp KPI: giữ KEEP_KPI_DAYS ngày — và BC AI Brief có brief_date quá KEEP_KPI_DAYS ngày (cùng cách đếm
+	ngày lịch). Trả số dòng đã xoá {"insights", "runs"} (+ "briefs" khi có bản tin bị xoá)."""
+	moc, moc_kpi = _moc(now, KEEP_RUN_DAYS), _moc(now, KEEP_KPI_DAYS)
+	out = {
 		"insights": _xoa(INSIGHT, "status = 'dong' AND IFNULL(closed_on, modified) < %(moc)s",
 			{"moc": _moc(now, KEEP_CLOSED_DAYS)}),
-		"runs": _xoa(RUN, "IFNULL(started, creation) < %(moc)s", {"moc": _moc(now, KEEP_RUN_DAYS)}),
+		"runs": _xoa(RUN, f"IFNULL(started, creation) < %(moc)s AND NOT ({_CO_KPI} AND IFNULL(started, creation) >= "
+			"%(moc_kpi)s)", {"moc": moc, "moc_kpi": moc_kpi}),
 	}
+	briefs = _xoa(BRIEF, "IFNULL(brief_date, creation) < %(moc_kpi)s", {"moc_kpi": moc_kpi}) \
+		if frappe.db.table_exists(BRIEF) else 0   # site chưa migrate DocType mới: bỏ qua
+	if briefs:
+		out["briefs"] = briefs
+	return out
+
+
+# ─── Bản tin tuần / tháng (BC AI Brief) ──────────────────────────────────────
+def brief_key(brief_type: str, brief_date) -> str:
+	"""Khoá duy nhất của một bản tin: "<loại>:<yyyy-mm-dd>"."""
+	return f"{brief_type}:{getdate(brief_date).isoformat()}"
+
+
+def _parts(parts) -> list:
+	"""Chuẩn hoá phần thân: [{"key", "title", "items": [{"text", "sections": [..]}]}] — bỏ mục chữ rỗng."""
+	out = []
+	for p in parts or []:
+		if not isinstance(p, dict):
+			continue
+		items = []
+		for it in p.get("items") or []:
+			if not isinstance(it, dict):
+				continue
+			text = cstr(it.get("text")).strip()
+			if text:
+				items.append({"text": text, "sections": _uniq(it.get("sections") or [])})
+		out.append({"key": cstr(p.get("key")), "title": cstr(p.get("title")), "items": items})
+	return out
+
+
+def upsert_brief(brief_type: str, brief_date, *, title: str, parts: list, sections_used, source: str,
+		model: str | None = None, period_from=None, period_to=None) -> str:
+	"""Ghi một bản tin — MỘT dòng / (loại, ngày) theo brief_key: có rồi → ghi đè mọi field; chưa có → tạo. Trả name.
+
+	brief_type ∈ BRIEF_TYPES, source ∈ BRIEF_SOURCES (sai → ValueError). parts = [{"key", "title", "items": [{"text":
+	lời ĐÃ thay số và kiểm, "sections": [mảng mà lời đó dựa vào]}]}] → body JSON {"parts": …} (mục chữ rỗng bị bỏ).
+	sections_used: hợp mọi mảng (mỗi dòng một mã). title gộp một dòng, cắt TITLE_LEN không cắt giữa số. model: mô hình
+	thực trả lời (quy-tac: None). Không lưu đề bài, không lưu gói số."""
+	from bc.ai.render import _cat as cat_an_toan
+
+	if brief_type not in BRIEF_TYPES:
+		raise ValueError(f"bc.ai: loại bản tin không hợp lệ: {brief_type}")
+	if source not in BRIEF_SOURCES:
+		raise ValueError(f"bc.ai: nguồn bản tin không hợp lệ: {source}")
+	key = brief_key(brief_type, brief_date)
+	f = {"brief_type": brief_type, "brief_date": getdate(brief_date),
+		"period_from": getdate(period_from) if period_from else None,
+		"period_to": getdate(period_to) if period_to else None,
+		"title": cat_an_toan(" ".join(cstr(title).split()), TITLE_LEN),
+		"body": json.dumps({"parts": _parts(parts)}, ensure_ascii=False, default=str),
+		"sections_used": "\n".join(_tach(sections_used) if isinstance(sections_used, str) else _uniq(sections_used)),
+		"source": source, "model": _cat(model, DATA_LEN) or None}
+	have = frappe.db.sql(f"SELECT name FROM `tab{BRIEF}` WHERE brief_key = %s ORDER BY creation LIMIT 1", (key,))
+	if have:
+		frappe.db.set_value(BRIEF, have[0][0], f)
+		return have[0][0]
+	doc = frappe.get_doc({"doctype": BRIEF, "brief_key": key, **f})
+	doc.insert(ignore_permissions=True)
+	return doc.name
+
+
+def latest_briefs(types=("tuan", "thang"), limit: int = 1) -> list:
+	"""Bản tin mới nhất: tối đa `limit` dòng / loại, theo thứ tự `types` rồi brief_date mới trước. Mỗi dòng: {"name",
+	"brief_type", "brief_date" (date), "period_from", "period_to" (date | None), "title", "parts": [{"key", "title",
+	"items": [{"text", "sections": [..]}]}], "sections_used": [..], "source", "model"}. KHÔNG lọc mảng ẩn — nơi gọi (API)
+	lọc theo người xem."""
+	out = []
+	for t in _uniq(types):
+		rows = frappe.db.sql(f"""SELECT name, brief_type, brief_date, period_from, period_to, title, body, sections_used,
+			source, model FROM `tab{BRIEF}` WHERE brief_type = %s ORDER BY brief_date DESC, modified DESC LIMIT %s""",
+			(t, max(0, cint(limit))), as_dict=True)
+		for r in rows:
+			try:
+				body = json.loads(r.body or "{}")
+			except (TypeError, ValueError):
+				body = {}
+			out.append({"name": r.name, "brief_type": r.brief_type,
+				"brief_date": getdate(r.brief_date) if r.brief_date else None,
+				"period_from": getdate(r.period_from) if r.period_from else None,
+				"period_to": getdate(r.period_to) if r.period_to else None, "title": cstr(r.title),
+				"parts": _parts(body.get("parts") if isinstance(body, dict) else []),
+				"sections_used": _tach(r.sections_used), "source": cstr(r.source), "model": cstr(r.model)})
+	return out

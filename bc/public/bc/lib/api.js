@@ -99,6 +99,7 @@ export const ai = {
     badge:     ()                                    => call('bc.api.ai.get_badge'),
     admin:     ()                                    => call('bc.api.ai.get_admin'),
     runNow:    ()                                    => call('bc.api.ai.run_now'),
+    runBrief:  (kind)                                => call('bc.api.ai.run_brief', { kind }),
     setStatus: (insight, status, mute_days, note)    => call('bc.api.ai.set_status', { insight, status, mute_days, note }),
     setRule:   (rule_key, disabled, threshold, threshold_red) => call('bc.api.ai.set_rule', { rule_key, disabled, threshold, threshold_red }),
     test:      (provider)                            => call('bc.api.ai.test_connection', { provider }),

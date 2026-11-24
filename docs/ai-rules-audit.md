@@ -120,3 +120,117 @@ Bỏ / không làm:
 - Số ngày ngưỡng BHXH (30) và ngưỡng giấy tờ: chỉ `giay_to.so_ngay` có trên payload; BHXH_NGAY không có → lời không nêu số ngày.
 - attp.den_do: không nêu `so` / `nhan_so` (chuỗi định dạng, không phải số) và không nêu tiêu đề việc treo (chữ tự do).
 - "Bộ lập lịch chết" — đặc tả xử lý ở get_feed, không phải detector.
+
+## Kiểm soát (P2) — `bc/ai/rules/ks.py`, detector `bc/ai/detectors/chung_tu.py`, `gia.py`, `kpi.py` (đối chiếu DocType JSON v16 của Sales / Purchase Invoice (+ Item), Payment Entry, Journal Entry, Stock Entry, `bc_ai_run.json`, `bc/api/_common.py`)
+
+Mảng `tro-ly`, nhóm `kiem-soat`, audience `lanh-dao`, route rỗng (không có màn nguồn) — riêng `kpi.lech_chuan` mang mảng
+và route của KPI. Cửa sổ "7 ngày" = hôm nay và 6 ngày trước ([today − 6, today], ngày lịch, hai đầu đều tính); cột
+datetime so bằng [00:00 của today − 6, 00:00 của today + 1). Mọi mốc ngày là tham số SQL (không `NOW()` / `CURDATE()`),
+SQL chỉ `SELECT`, trung vị tính ở Python. Chứng từ đầu kỳ (`IFNULL(is_opening, 'No') = 'Yes'`) bị loại ở mọi khối (Stock
+Entry để `is_opening` trống mặc định → `IFNULL`). "Bút toán nhập tay" = Journal Entry không đầu kỳ, `is_system_generated
+= 0`, `process_deferred_accounting` trống, `voucher_type` ∉ {Opening Entry, Depreciation Entry, Asset Disposal, Exchange
+Rate Revaluation, Exchange Gain Or Loss, Deferred Revenue, Deferred Expense} (do chứng từ / tác vụ khác sinh); bộ lọc này
+dùng cho Journal Entry ở cả ba khối chứng từ (huỷ chứng từ gốc kéo theo huỷ bút toán hệ thống → đếm hai lần; bút toán hệ
+thống hạch toán lùi không phải người ghi lùi). Gói số chỉ có số đếm, số tiền, ngày, mã / loại chứng từ, mã + tên hàng và
+tên khách / NCC dưới khoá `customer` / `supplier` (mã giả); KHÔNG `owner` / `modified_by`, không `party_name` /
+`customer_name` / `supplier_name`, không diễn giải (`user_remark`, `title`, `remarks`); Payment Entry trả cho nhân viên
+(party_type Employee) không nêu đối tượng. Mỗi khối con tính riêng: lỗi → `{"_error": True}` (chỉ quy tắc đọc khối đó
+"không chạy được"). Khối lọc theo ngưỡng (`but_toan`, `ban_lech`, `chiet_khau`, `mua_tang`) mang `nguong` = ngưỡng vàng
+ĐANG ÁP (mặc định + ghi đè BC Settings, đọc lúc detector chạy); quy tắc thấy `nguong` khác ngưỡng của nó → không chạy
+được. Mức vàng mặc định; đỏ chỉ khi quản trị đặt ngưỡng đỏ. `documents` (≤ 20, chỉ quản trị thấy) = chứng từ bằng chứng.
+
+| quy tắc | path đã dùng | ghi chú |
+|---|---|---|
+| `ct.huy_nhieu` | `tro-ly.chung_tu.huy.{so, so_nen, so_tuan_nen, so_tb_tuan, theo_loai[0].{loai, so}, rows[].{doctype, name}}`, `tro-ly.chung_tu.so_ngay` | Huỷ = `docstatus = 2` với `modified` (lúc huỷ; chứng từ đã huỷ không sửa được nữa) trong cửa sổ, 5 loại: Sales Invoice, Purchase Invoice, Payment Entry, Journal Entry (nhập tay), Stock Entry. Nền = cùng cách đếm cho 8 tuần ngay trước cửa sổ ([today − 62, today − 7]; một truy vấn / loại, nhóm theo `FLOOR(DATEDIFF(today, DATE(modified)) / 7)`). Báo khi `so ≥ 5` (hằng số `SAN_HUY`) VÀ `so > ngưỡng × nền / 8` (so bằng số nguyên `so × 8 > ngưỡng × nền`, ngặt; mặc định ngưỡng 2); nền 0 → chỉ cần `so ≥ 5`. `so_tb_tuan` (1 số lẻ) chỉ để đọc. Hiệu năng: v16 KHÔNG đánh chỉ mục `modified` cho 5 loại này (sort_field `creation`) → mỗi bảng quét một lượt / ngày lúc 05:30 (chỉ đọc `docstatus`, `modified`, `is_opening`) — ngoại lệ duy nhất của luật "dải ngày trên cột có chỉ mục"; site nâng cấp từ bản cũ có thể còn chỉ mục `modified`. |
+| `ct.ghi_lui` | `tro-ly.chung_tu.ghi_lui.{phan_bo[].{so_ngay_lui, so}, rows[0].{so_ngay_lui, loai, name}, rows[].{doctype, name}}` | Chứng từ `docstatus = 1` của 5 loại TẠO trong cửa sổ (`creation`, có chỉ mục ở v16) có `posting_date < DATE(creation)`; `so_ngay_lui = DATEDIFF(DATE(creation), posting_date)`. Detector trả phân bố số ngày lùi (mọi giá trị ≥ 1) → quy tắc tự đếm phần lùi QUÁ ngưỡng ngày (ngặt, mặc định 10) — không phụ thuộc ngưỡng lúc dựng gói. Mức theo chứng từ lùi xa nhất. `sua_lai` = chứng từ sửa từ bản đã huỷ (`amended_from`; bản sửa giữ ngày hạch toán cũ) — để mô hình đọc, quy tắc không loại. Số tự tính: `so`, `nguong`. |
+| `ct.but_toan_tay_lon` | `tro-ly.chung_tu.but_toan.{nguong, so, gia_tri_tong, rows[0].{gia_tri, name}}`, `tro-ly.chung_tu.so_ngay` | Journal Entry `docstatus = 1`, `posting_date` trong cửa sổ (có chỉ mục), nhập tay (trên), `total_debit ≥ nguong` (có dấu bằng; mặc định 100 triệu). Đỏ khi bút toán lớn nhất `≥` ngưỡng đỏ (chỉ khi đặt). Lời nói "trong tuần qua" (tiêu đề ≤ 12 từ). |
+| `gia.ban_lech` | `tro-ly.gia.ban_lech.{nguong, so_dong, so_ngay_nen, rows[0].{item_name, customer, rate, trung_vi}, rows[].{doctype, name}}` | Dòng Sales Invoice Item của hoá đơn `docstatus = 1`, `is_return = 0`, không đầu kỳ, `posting_date` trong cửa sổ, `net_rate > 0`. Đơn giá theo ĐƠN VỊ KHO = `net_rate / conversion_factor` (dòng hệ số ≤ 0 bỏ; `net_rate` là tiền của hoá đơn như `SII_AMOUNT` = `sii.net_amount` của mọi màn doanh số). Kênh = `_common.channel_of(si.customer_group)`. Nền = dòng cùng mã × kênh, cùng điều kiện, 90 ngày TRƯỚC cửa sổ ([today − 96, today − 7]), cần ≥ 5 dòng (không đủ → dòng không được xét). `lech_pct = (trung vị − đơn giá) / trung vị × 100` (1 số lẻ, làm tròn kiểu Math.round); báo dòng `lech_pct > nguong` (ngặt, mặc định 15). Mức theo dòng lệch nhiều nhất. |
+| `gia.chiet_khau_cao` | `tro-ly.gia.chiet_khau.{nguong, so_dong, gia_tri, rows[0].{ck_pct, item_name, customer}, rows[].{doctype, name}}` | Cùng tập dòng bán; `discount_percentage > nguong` (ngặt, mặc định 15). `gia_tri` = Σ `net_amount` các dòng đó. Chiết khấu cấp hoá đơn (`additional_discount_percentage`) không xét — đặc tả nói dòng. |
+| `gia.mua_tang` | `tro-ly.gia.mua_tang.{nguong, so_ma, rows[0].{item_name, tang_pct, gia_cu, gia_moi, supplier}, rows[].{doctype, name}}` | Purchase Invoice Item của hoá đơn mua `docstatus = 1`, `is_return = 0`, không đầu kỳ. Giá mua bình quân / đơn vị kho = Σ `base_net_amount` / Σ `stock_qty` (tiền công ty — hoá đơn ngoại tệ đã quy đổi). Kỳ mới 30 ngày [today − 29, today], nền 90 ngày trước đó [today − 119, today − 30]. Chỉ mã có giá trị mua kỳ mới ≥ 20 triệu (hằng số `GIA_TRI_SAN`) và có mua trong nền. `tang_pct` (1 số lẻ) `> nguong` (ngặt, mặc định 10). `supplier` = NCC có giá trị mua kỳ mới lớn nhất của mã; `name` = hoá đơn mua mới nhất của mã trong kỳ mới (bằng chứng). |
+| `kpi.lech_chuan` | `tro-ly.kpi.{cua_so, rows[].{path, trung_vi, mad, n}}`; lời: path THẬT của KPI + số tự tính `<mảng KPI>._ai.<khoá>.{nhan, so_ngay, trung_vi}` | Detector: lịch sử = ảnh chụp `kpis` muộn nhất mỗi ngày lịch của dòng tổng (`step = 'tong'`, `status = 'ok'`, `run_type ∈ {ngay, tay}`) có `started` trong 28 ngày TRƯỚC hôm nay ([today − 28, today − 1]); hôm nay = `registry.snapshot_kpis(pack)`; chỉ KPI có ≥ 14 ngày lịch sử, bỏ `KPI_TICH_LUY` và `KPI_THEO_KY` (bảng dưới). Khối nằm trong `NO_SEND`. Quy tắc: `d = |hôm nay − trung vị|`, MAD = trung vị `|x − trung vị|` (không nhân hệ số); báo khi `d > ngưỡng × max(MAD, 1% |trung vị|)` (ngặt, ngưỡng 3) VÀ `d ≥ max(5% |trung vị|, sàn)`, sàn: tiền 1.000.000, số 1, % 0,5 — chuỗi phẳng / gần phẳng không báo vì nhiễu. Một tín hiệu / KPI, khoá `kpi.lech_chuan:<path>`, MẢNG CỦA KPI (`Cfg.signal(section=…)`): nằm ở nhóm của mảng đó, ẩn theo mảng đó, gửi trong lượt gọi của nhóm đó; route `#/<mảng>`. Lời: nhãn + giá trị hôm nay + trung vị 28 ngày, "khác thường so với 28 ngày qua", không nêu nguyên nhân. Đỏ chỉ khi đặt (cùng phép so với ngưỡng đỏ). |
+
+### Phân loại 70 KPI (`registry.KPIS`) cho `kpi.lech_chuan` và bản tin
+
+- **Cộng dồn** (`registry.KPI_TICH_LUY`): tổng / số đếm cộng từ đầu kỳ tới hôm nay — tự tăng theo ngày trong kỳ, rơi về 0
+  (hoặc rơi một tháng) ở đầu kỳ. `kpi.lech_chuan` bỏ qua; bản tin chỉ giữ phép so có nghĩa.
+- **Tỷ lệ theo kỳ** (`bc.ai.detectors.kpi.KPI_THEO_KY`): tỷ lệ tính trên kỳ tới hôm nay — KHÔNG cộng dồn (không thuộc
+  `KPI_TICH_LUY`, bản tin so tuần / tháng được) nhưng đầu kỳ chỉ có vài ngày số nên dao động mạnh và đổi kỳ là đổi nền:
+  so với trung vị 28 ngày sẽ báo động giả mỗi đầu tháng / đầu năm tài chính → `kpi.lech_chuan` bỏ qua.
+- **Ảnh chụp**: số dư / tồn / số đang mở tại hôm nay, hoặc cửa sổ trượt cố định — so trung vị 28 ngày được.
+
+| path | loại | method gốc · vì sao |
+|---|---|---|
+| `tong-quan.summary.rows[0].sales` | cộng dồn | `kd.get_summary`: dòng `current` = năm tài chính tới hôm nay |
+| `tong-quan.summary.rows[0].returns` | cộng dồn | như trên |
+| `tong-quan.summary.rows[0].net` | cộng dồn | như trên |
+| `tong-quan.summary.rows[0].return_rate` | tỷ lệ theo kỳ | trả về / bán ra của năm tài chính tới hôm nay |
+| `tong-quan.summary.meta.growth.sales` | tỷ lệ theo kỳ | năm tài chính tới hôm nay so cùng kỳ |
+| `tong-quan.summary.meta.growth.net` | tỷ lệ theo kỳ | như trên |
+| `tong-quan.channels.rows[0].sales` | cộng dồn | `kd.get_channels`: dòng `current` × kênh, năm tài chính tới hôm nay |
+| `tong-quan.channels.rows[1].sales` | cộng dồn | như trên |
+| `tinh-thanh.provinces.rows[0].pct` | tỷ lệ theo kỳ | `kd.get_provinces`: tỷ trọng tỉnh trong doanh số năm tài chính tới hôm nay |
+| `ton-kho.overview.value.totals.value` | ảnh chụp | `kho_ton.get_overview`: giá trị tồn "bây giờ" |
+| `ton-kho.overview.value.totals.value_sellable` | ảnh chụp | như trên |
+| `ton-kho.overview.value.totals.value_unsellable` | ảnh chụp | như trên |
+| `ton-kho.overview.value.tp.value` | ảnh chụp | như trên |
+| `ton-kho.overview.doi.traditional.days` | ảnh chụp | số ngày tồn trên cửa sổ trượt `window_days` |
+| `ton-kho.overview.slow.total.slow_pct` | ảnh chụp | tồn hiện tại theo tuổi xuất gần nhất |
+| `ton-kho.overview.slow.total.dead_pct` | ảnh chụp | như trên |
+| `ton-kho.overview.tet_stock.value` | ảnh chụp | `_tet_stock`: Bin hàng Tết ở kho bán được hiện tại |
+| `han-dung.overview.khong_ban.het_han.value` | ảnh chụp | `kho_han.get_overview`: lô / Bin hôm nay |
+| `han-dung.overview.han.can_date.value` | ảnh chụp | như trên |
+| `han-dung.overview.han.can_date.pct` | ảnh chụp | như trên (tỷ lệ trên tồn thành phẩm hiện tại) |
+| `han-dung.overview.khong_ban.tong` | ảnh chụp | như trên |
+| `han-dung.overview.am.value_abs` | ảnh chụp | Bin âm hiện tại |
+| `han-dung.overview.am.items` | ảnh chụp | như trên |
+| `han-dung.overview.khong_ban.thu_hoi.value` | ảnh chụp | lô đang thu hồi |
+| `kiem-ke.overview.ira.ty_le` | ảnh chụp | `kho_kk`: lần kiểm sx MỚI NHẤT mỗi (kho, loại) có ngày hiệu lực ≤ cuối tháng — không cộng |
+| `kiem-ke.overview.kho.tong.chua_kiem` | ảnh chụp | K9: lần kiểm gần nhất từng kho, ảnh chụp hôm nay |
+| `kiem-ke.overview.kho.tong.qua_30` | ảnh chụp | như trên |
+| `kiem-ke.overview.kho.tong.qua_90` | ảnh chụp | như trên |
+| `kiem-ke.overview.tong.gia_tri` | cộng dồn | K10: Σ chênh lệch có dấu, tháng này tới hôm nay |
+| `kiem-ke.overview.xuat_khac.gia_tri` | cộng dồn | K10.4: xuất khác tháng này tới hôm nay |
+| `kiem-ke.overview.dang_dem.so_phieu` | ảnh chụp | phiếu kiểm kê nháp đang có |
+| `nhap-tp.overview.nhap.total.value` | cộng dồn | `kho_nhap` K11: nhập thành phẩm tháng chọn (tháng này) tới hôm nay |
+| `nhap-tp.overview.cho_duyet.count` | ảnh chụp | phiếu nháp đang có |
+| `nhap-tp.overview.no_bom.items` | ảnh chụp | nợ BOM đang mở |
+| `nhap-tp.overview.no_bom.age_days` | ảnh chụp | như trên |
+| `nhap-tp.overview.no_bom.value_tam` | ảnh chụp | như trên |
+| `nhap-tp.overview.nvl_treo.value` | ảnh chụp | nguyên liệu treo của nợ đang mở |
+| `nhap-tp.overview.gia_von_0.ton.items` | ảnh chụp | Bin thành phẩm giá vốn ≤ 0 hiện tại |
+| `cong-no.receivables.kpis.receivable` | ảnh chụp | `cn.get_receivables`: số dư phải thu tới hôm nay |
+| `cong-no.receivables.kpis.overdue` | ảnh chụp | như trên |
+| `cong-no.receivables.kpis.overdue_pct` | ảnh chụp | như trên |
+| `cong-no.receivables.kpis.overdue_customers` | ảnh chụp | như trên |
+| `cong-no.receivables.kpis.dso.dso` | ảnh chụp | nợ hiện tại / doanh thu cửa sổ trượt `window_days` |
+| `cong-no.receivables.kpis.unallocated` | ảnh chụp | số dư chưa gắn hoá đơn |
+| `cong-no.receivables.kpis.over_limit` | ảnh chụp | khách đang vượt hạn mức |
+| `cong-no.receivables.kpis.net` | ảnh chụp | số dư ròng |
+| `phai-tra.payables.ap.total` | ảnh chụp | `cn.get_payables`: số dư phải trả |
+| `phai-tra.payables.ap.overdue` | ảnh chụp | như trên |
+| `phai-tra.payables.ap.due.overdue_total` | ảnh chụp | hoá đơn mua quá hạn đang mở |
+| `phai-tra.payables.ap.due.overdue_count` | ảnh chụp | như trên |
+| `phai-tra.payables.ap.due.upcoming_total` | ảnh chụp | đến hạn trong 14 ngày tới (cửa sổ trượt) |
+| `phai-tra.payables.cash.total` | ảnh chụp | số dư tiền |
+| `van-chuyen.overview.giao.total` | cộng dồn | `vc.get_overview`: số đơn tháng này tới hôm nay |
+| `van-chuyen.overview.giao.ty_le_giao` | tỷ lệ theo kỳ | đã giao / số đơn tháng này tới hôm nay |
+| `van-chuyen.overview.giao.cho_qua_han.qua_n` | ảnh chụp | đơn chờ giao hôm nay (mọi tháng) |
+| `van-chuyen.overview.giao.xep.chua_xep` | ảnh chụp | như trên |
+| `van-chuyen.overview.giao.lan_dau.ty_le` | tỷ lệ theo kỳ | đơn giao lần đầu trong tháng này tới hôm nay |
+| `van-chuyen.overview.su_co.dang_mo` | ảnh chụp | sự cố chưa đóng (mọi tháng) |
+| `van-chuyen.overview.su_co.mo_qua_n` | ảnh chụp | như trên |
+| `van-chuyen.overview.cuoc.ty_le_doanh_thu` | tỷ lệ theo kỳ | cước / doanh thu chuyến hoàn thành tháng này tới hôm nay |
+| `nhan-su.overview.nhan_su.dang_lam` | ảnh chụp | `ns.get_overview`: quân số hiện tại |
+| `nhan-su.overview.nhan_su.tam_nghi` | ảnh chụp | như trên |
+| `nhan-su.overview.bien_dong.vao` | cộng dồn | `_bien_dong`: 12 tháng lịch neo đầu tháng (từ ngày 1 của tháng đầu tới hôm nay) — cộng trong tháng, rơi một tháng ở đầu tháng |
+| `nhan-su.overview.bien_dong.nghi` | cộng dồn | như trên |
+| `nhan-su.overview.bhxh.ty_le` | ảnh chụp | người đang làm hiện tại |
+| `nhan-su.overview.bhxh.rui_ro` | ảnh chụp | như trên |
+| `nhan-su.overview.giay_to.hd.do` | ảnh chụp | giấy tờ hết hạn tại hôm nay |
+| `nhan-su.overview.giay_to.ksk.do` | ảnh chụp | như trên |
+| `attp.overview.dem.do` | ảnh chụp | đèn từng lĩnh vực hiện tại |
+| `attp.overview.dem.vang` | ảnh chụp | như trên |
+
+Bỏ / không làm:
+- Chiết khấu cấp hoá đơn, giá bán theo bảng giá (`price_list_rate`) — đặc tả chỉ nói chiết khấu dòng và trung vị giá thực.
+- Tên người tạo / người duyệt / người huỷ — không bao giờ vào gói số (đặc tả §4.3).

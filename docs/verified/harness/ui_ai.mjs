@@ -7,6 +7,9 @@
 // thật (đang xử lý / bỏ qua 7 ngày / ghi chú giữ hạn bỏ qua / mở lại / xem việc đã đóng); #/ai: bảng quy tắc, lượt chạy,
 // thử kết nối, chạy ngay (chỉ xếp hàng — pipeline KHÔNG chạy), lưu quy tắc bền qua tải lại. fresh: lượt ok mới, AI bật;
 // stale: lượt ok cũ (> 26 giờ), AI tắt, trần 0, chưa khai giá, không việc đỏ.
+// P2: thẻ bản tin tuần / tháng = feed.briefs của từng vai (người xem không thấy mục dùng mảng ẩn phai-tra, không model);
+// chip "Kiểm soát" lọc đúng nhóm, thẻ không có nút "Xem ở màn"; #/ai: chi phí OpenAI, thử kết nối OpenAI, nút "Tạo bản tin
+// tuần / tháng" gọi run_brief, bảng bản tin, nhãn bước "Phản biện · <nhóm>" / "Bản tin tuần".
 // Chạy lại phải seed lại (bộ thử đổi dữ liệu): BC_TEST_DB=bc_test_ai_ui python3 -B seed_ui_ai.py fresh
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -18,7 +21,7 @@ const PASS = process.argv[4] || 'fresh';
 const FRESH = PASS === 'fresh';
 const FAKE_KEY = 'sk-ant-api03-GIA-chi-de-thu-ui-0a1b2c3d4e5f';   // = seed_ui_ai.FAKE_KEY
 const XSS = '<img src=x onerror=window.__xss=1>';
-const GROUP_ORDER = ['kinh-doanh', 'kho-sx', 'van-chuyen', 'tai-chinh', 'nhan-su', 'attp', 'he-thong'];  // registry.GROUPS
+const GROUP_ORDER = ['kinh-doanh', 'kho-sx', 'van-chuyen', 'tai-chinh', 'nhan-su', 'attp', 'kiem-soat', 'he-thong'];  // registry.GROUPS
 const NOTE = 'ⓘ Tín hiệu do quy tắc tính trên cùng số liệu với các màn báo cáo. Phần lời có nhãn AI do mô hình ngôn ngữ '
     + 'viết; mọi con số trong lời do máy chủ chèn từ số liệu gốc. Cập nhật 5:30 mỗi sáng.';
 let n = 0, bad = 0;
@@ -89,6 +92,44 @@ function expectChips(ins) {
     return [{ key: 'all', label: 'Tất cả', count: ins.length }, ...[...m.values()].sort((a, b) => rk(a.key) - rk(b.key))];
 }
 
+const BRIEF_KIND = { tuan: 'Bản tin tuần', thang: 'Bản tin tháng' };
+function periodText(b) {
+    const p = (x) => String(x || '').slice(0, 10).split('-');
+    const [y1, m1, d1] = p(b.period_from), [y2, m2, d2] = p(b.period_to);
+    if (b.type === 'thang' && y2) return `Tháng ${Number(m2)}/${y2}`;
+    return y1 && y2 ? `${d1}/${m1} – ${d2}/${m2}/${y2}` : '';
+}
+
+/** Thẻ bản tin tuần / tháng = feed.briefs của vai đó (chữ thuần, phần rỗng không vẽ). */
+async function pbriefCheck(page, feed, admin, tag) {
+    const bs = feed.briefs || [];
+    const dom = await page.$$eval('[data-pbrief]', (els) => els.map((e) => ({ type: e.dataset.pbrief,
+        kind: e.querySelector('.bc-ai-pbrief-kind')?.textContent.replace(/\s+/g, ' ').trim(),
+        src: e.querySelector('[data-src]')?.dataset.src, badge: e.querySelector('[data-src]')?.textContent.trim(),
+        title: e.querySelector('.bc-ai-title')?.textContent,
+        parts: [...e.querySelectorAll('[data-part]')].map((p) => ({ key: p.dataset.part, title: p.querySelector('.bc-ai-sub')?.textContent.trim(),
+            items: [...p.querySelectorAll('li')].map((l) => l.textContent) })),
+        tech: e.querySelector('.bc-ai-tech')?.textContent || '', kids: [...e.querySelectorAll('li, .bc-ai-title')].reduce((n, l) => n + l.children.length, 0) })));
+    const ex = bs.map((b) => ({ type: b.type, kind: `${BRIEF_KIND[b.type]} · ${periodText(b)}`, src: b.source === 'ai' ? 'ai' : 'quy-tac',
+        badge: b.source === 'ai' ? 'AI' : 'Quy tắc', title: b.title, parts: b.parts.map((p) => ({ key: p.key, title: p.title, items: p.items })),
+        tech: admin && b.model ? b.model : '', kids: 0 }));
+    check(`${tag}: thẻ bản tin tuần / tháng (${bs.length}) = API (loại · kỳ, nhãn AI / Quy tắc, tiêu đề, ba phần, chữ thuần)`,
+        JSON.stringify(dom) === JSON.stringify(ex), `${JSON.stringify(dom)} ≠ ${JSON.stringify(ex)}`);
+    const keys = JSON.stringify(bs);
+    check(`${tag}: bản tin ${admin ? 'có' : 'KHÔNG có'} model / sections_used trong API`, admin
+        ? bs.every((b) => 'model' in b && Array.isArray(b.sections_used)) : !/"model"|"sections/.test(keys), keys.slice(0, 200));
+    if (FRESH) {
+        const t = flat(await page.textContent('#tl-briefs'));
+        const an = ['Phải trả nhà cung cấp tăng mạnh', 'Đối chiếu hoá đơn nhà cung cấp'];
+        check(`${tag}: bản tin tháng — mục dùng mảng ẩn phai-tra ${admin ? 'hiện với quản trị' : 'KHÔNG hiện với người xem'}; tuần AI ${admin ? '+ model' : ''}`,
+            bs.map((b) => b.type).join() === 'tuan,thang'
+            && JSON.stringify(bs[1].parts.map((p) => p.items.length)) === (admin ? '[2,1,1]' : '[1,1]')
+            && an.every((x) => t.includes(x) === admin) && (!admin || t.includes('claude-opus-5-5')), t.slice(0, 300));
+    } else {
+        check(`${tag}: bản tin tuần cũ hơn 14 ngày không hiện`, bs.length === 0 && dom.length === 0, JSON.stringify(bs));
+    }
+}
+
 /** Kiểm chung #/tro-ly cho một vai. */
 async function troLyCommon(page, admin, tag) {
     const feed = (await api(page, 'get_feed')).message;
@@ -130,6 +171,7 @@ async function troLyCommon(page, admin, tag) {
     check(`${tag}: bản tin ${exB.length} dòng (≤ 5) = API`, bi.length === exB.length && bi.length <= 5
         && bi.every((b, i) => b.id === exB[i].id && b.t === exB[i].title), JSON.stringify(bi));
     if (feed.brief) check(`${tag}: tiêu đề bản tin`, flat(await page.textContent('.bc-ai-brief .bc-card-title')).includes(feed.brief.title));
+    await pbriefCheck(page, feed, admin, tag);
     // Chân trang
     const notes = await page.$$eval('#tl-root > .bc-note', (els) => els.map((e) => e.textContent.trim()));
     check(`${tag}: chân trang đúng câu đặc tả §8.8`, notes.includes(NOTE), JSON.stringify(notes));
@@ -189,6 +231,17 @@ async function filtersAndBrief(page, feed, tag) {
         const cs = await cardsInfo(page);
         check(`${tag}: chip ${c.label} → ${c.count} thẻ đúng nhóm`, cs.length === c.count && cs.every((x) => x.group === c.key)
             && (await chipsInfo(page)).find((x) => x.key === c.key)?.active, JSON.stringify(cs.map((x) => x.group)));
+    }
+    const ks = ins.filter((x) => x.group === 'kiem-soat');
+    if (FRESH || ks.length) {
+        await page.click('[data-chip="kiem-soat"]').catch(() => {});
+        const cs = await cardsInfo(page);
+        const chip = (await chipsInfo(page)).find((x) => x.key === 'kiem-soat');
+        const go = await page.$$eval('[data-group="kiem-soat"] a.bc-ai-go', (els) => els.length);
+        check(`${tag}: chip "Kiểm soát" → ${ks.length} thẻ nhóm kiem-soat, nhãn "Kiểm soát", không nút "Xem ở màn"`, ks.length === 2
+            && chip?.label === 'Kiểm soát' && chip?.active && chip?.count === String(ks.length) && cs.length === ks.length
+            && cs.every((x) => x.group === 'kiem-soat') && go === 0 && ks.every((x) => x.section_label === 'Kiểm soát' && x.route === ''),
+            JSON.stringify({ chip, cs: cs.map((x) => x.id), go }));
     }
     const items = feed.brief?.items || [];
     if (items.length && chips.length > 1) {
@@ -265,9 +318,10 @@ async function viewer(browser) {
         const has = await page.$('.bc-ai-admin-screen, #ai-rules, #ai-run');
         check('người xem mở #/ai → không có màn cấu hình AI, bị đưa đi chỗ khác', !has && !(await page.evaluate(() => location.hash)).startsWith('#/ai'),
             await page.evaluate(() => location.hash));
-        const r = await Promise.all(['get_admin', 'run_now', 'set_rule', 'test_connection', 'set_status'].map((m) => api(page, m,
-            m === 'set_rule' ? { rule_key: 'x' } : m === 'set_status' ? { insight: 'A1', status: 'mo' } : m === 'test_connection' ? { provider: 'claude' } : {})));
-        check('người xem gọi API quản trị → 403 cả 5 method', r.every((x) => x.status === 403), JSON.stringify(r.map((x) => x.status)));
+        const r = await Promise.all(['get_admin', 'run_now', 'set_rule', 'test_connection', 'set_status', 'run_brief'].map((m) => api(page, m,
+            m === 'set_rule' ? { rule_key: 'x' } : m === 'set_status' ? { insight: 'A1', status: 'mo' } : m === 'test_connection' ? { provider: 'claude' }
+                : m === 'run_brief' ? { kind: 'tuan' } : {})));
+        check('người xem gọi API quản trị → 403 cả 6 method (kể cả run_brief)', r.every((x) => x.status === 403), JSON.stringify(r.map((x) => x.status)));
     } catch (e) { check('người xem #/ai: kịch bản chạy hết', false, e.message.split('\n')[0]); }
     await ctx.close();
 }
@@ -442,10 +496,11 @@ async function adminAi(browser) {
                 check(`${tag}: chi phí lượt có giá = ${cost} USD`, runsText.includes(`${cost} USD`));
             } else check(`${tag}: lượt chạy lỗi hiện "Lỗi"`, runsText.includes('Lỗi') && runsText.includes('lỗi đọc số'), runsText.slice(0, 200));
             const st = flat(await page.textContent('#ai-status'));
-            check(`${tag}: khoá Claude "${d.keys.claude ? 'có' : 'chưa có'}", OpenAI "${d.keys.openai ? 'có' : 'chưa có'}", ghi chú giai đoạn sau`,
+            check(`${tag}: khoá Claude "${d.keys.claude ? 'có' : 'chưa có'}", OpenAI "${d.keys.openai ? 'có' : 'chưa có'}", ghi chú phản biện OpenAI`,
                 flat(await page.textContent('#ai-key-claude')) === (d.keys.claude ? 'có' : 'chưa có')
-                && flat(await page.textContent('#ai-key-openai')) === (d.keys.openai ? 'có' : 'chưa có') && st.includes('giai đoạn sau')
-                && st.includes(d.models.claude), st);
+                && flat(await page.textContent('#ai-key-openai')) === (d.keys.openai ? 'có' : 'chưa có')
+                && flat(await page.textContent('#ai-openai-note')).includes(d.models.openai ? 'Đang bật phản biện' : 'phản biện đang tắt')
+                && st.includes(d.models.claude) && (!d.models.openai || st.includes(d.models.openai)), st);
             check(`${tag}: AI viết lời ${d.enabled ? 'Đang bật' : 'Đang tắt'}`, flat(await page.textContent('#ai-enabled')).startsWith(d.enabled ? 'Đang bật' : 'Đang tắt'));
             check(`${tag}: link BC Settings = settings_url, tab mới`, await page.$$eval(`#ai-root a[href="${d.settings_url}"][target="_blank"][rel="noopener"]`, (e) => e.length) >= 2);
             const b = d.budget.claude;
@@ -455,6 +510,28 @@ async function adminAi(browser) {
             check(`${tag}: trần 0 → "đang chặn mọi lượt gọi" ${b.cap ? 'không' : 'có'}`, (await page.$('#ai-cap0') !== null) === !b.cap);
             check(`${tag}: chưa khai giá → báo ${b.price_known ? 'không' : 'có'}`, (await page.$('#ai-noprice') !== null) === !b.price_known);
             check(`${tag}: lượt gọi hôm nay ${b.calls_today} / ${b.max_calls}`, flat(await page.textContent('#ai-calls')) === `${b.calls_today} / ${b.max_calls}`);
+            // OpenAI (phản biện): cùng khối như Claude
+            const o = d.budget.openai;
+            const fo = await page.evaluate(([s, c]) => [s, c].map((v) => `${Number(v).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} USD`), [o.spent, o.cap]);
+            check(`${tag}: chi phí OpenAI ${fo[0]} / ${fo[1]}, ${o.calls_today} lượt hôm nay, ${d.models.openai ? 'có model' : 'báo chưa đặt model'}`,
+                flat(await page.textContent('#ai-spent-openai')) === `${fo[0]} / ${fo[1]}`
+                && flat(await page.textContent('#ai-calls-openai')) === `${o.calls_today} / ${o.max_calls}`
+                && (await page.$('#ai-nomodel-openai') !== null) === !d.models.openai
+                && (await page.$('#ai-noprice-openai') !== null) === (!!d.models.openai && !o.price_known)
+                && (await page.$$('[data-budget] .bc-progress')).length === 2, flat(await page.textContent('#ai-budget')));
+            if (FRESH) check(`${tag}: lượt phản biện tính vào OpenAI (0,01 USD, 1 lượt)`, o.spent === 0.01 && o.calls_today === 1, JSON.stringify(o));
+            // Nhãn bước + bảng bản tin + nút tạo bản tin
+            const steps = await page.$$eval('#ai-runs tbody tr [data-step]', (els) => els.map((e) => e.textContent.trim()));
+            check(`${tag}: nhãn bước = step_label của máy chủ${FRESH ? ' (có "Phản biện · Công nợ", "Bản tin tuần")' : ''}`,
+                JSON.stringify(steps) === JSON.stringify(d.runs.map((r) => r.step_label))
+                && (!FRESH || (steps.includes('Phản biện · Công nợ') && steps.includes('Bản tin tuần'))), JSON.stringify(steps));
+            const brows = await page.$$eval('#ai-briefs tbody tr', (els) => els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()));
+            check(`${tag}: bảng bản tin = get_admin().briefs (${d.briefs.length})`, brows.length === d.briefs.length && d.briefs.length === (FRESH ? 2 : 1)
+                && brows.every((t, i) => t.includes(d.briefs[i].source === 'ai' ? 'AI' : 'Quy tắc') && t.includes(String(d.briefs[i].items))
+                    && (!d.briefs[i].model || t.includes(d.briefs[i].model))), JSON.stringify(brows));
+            const bb = await page.$$eval('[data-brief-kind]', (els) => els.map((e) => [e.id, e.disabled, e.textContent.trim()]));
+            check(`${tag}: nút "Tạo bản tin tuần" / "Tạo bản tin tháng" bật`, JSON.stringify(bb) === JSON.stringify([['ai-brief-tuan', false, 'Tạo bản tin tuần'],
+                ['ai-brief-thang', false, 'Tạo bản tin tháng']]), JSON.stringify(bb));
             check(`${tag}: lời AI bị loại = ${d.rejected.length}, việc bỏ qua = ${d.muted.length}`,
                 await page.$$eval('#ai-rejected .bc-ai-item', (e) => e.length) === d.rejected.length
                 && await page.$$eval('#ai-muted .bc-ai-item', (e) => e.length) === d.muted.length
@@ -488,6 +565,30 @@ async function aiActions(page, ignore, reqs, tag, d) {
         check(`${tag}: "Thử kết nối" khi trần 0 → báo đã chi tới trần (không gọi mô hình)`, outs.every((o) => o.t === 'Không được: đã chi tới trần kỳ này (claude-sonnet-5-5)'),
             JSON.stringify(outs));
     }
+    // Thử kết nối OpenAI (lượt gọi giả thứ 3 → ok); stale: chưa đặt model → báo, không gọi
+    await page.click('#ai-test-openai');
+    await page.waitForFunction(() => { const t = document.querySelector('#ai-test-openai-out')?.textContent || ''; return t && t !== 'Đang thử…'; }, null, { timeout: 10000 });
+    const oo = await page.$eval('#ai-test-openai-out', (e) => e.textContent);
+    const oreq = reqs.filter((r) => r.m === 'bc.api.ai.test_connection').pop()?.body;
+    check(`${tag}: "Thử kết nối OpenAI" gửi provider=openai → ${FRESH ? 'kết nối được (gpt-5-x)' : 'báo chưa đặt model'}`, oreq === 'provider=openai'
+        && (FRESH ? oo === 'Kết nối được (gpt-5-x)' : oo.startsWith('Không được: chưa đặt model OpenAI')) && !oo.includes('sk-'), oo);
+    // Tạo bản tin: xếp hàng job nền (hàng đợi giả — brief KHÔNG chạy), nút "Đang tạo…", máy chủ báo đang chạy
+    await page.click('#ai-brief-tuan');
+    await toastText(page, /Đã xếp bản tin tuần/);
+    const breq = reqs.filter((r) => r.m === 'bc.api.ai.run_brief');
+    const bt = await page.$eval('#ai-brief-tuan', (e) => ({ dis: e.disabled, t: e.textContent.trim() }));
+    const br = (await api(page, 'get_admin')).message.briefs_running;
+    check(`${tag}: "Tạo bản tin tuần" → 1 POST run_brief kind=tuan, nút "Đang tạo…", máy chủ briefs_running.tuan`,
+        breq.length === 1 && breq[0].body === 'kind=tuan' && bt.dis && bt.t === 'Đang tạo…' && br.tuan === true, JSON.stringify({ breq, bt, br }));
+    const again2 = await api(page, 'run_brief', { kind: 'tuan' });
+    check(`${tag}: run_brief tuan lần nữa khi đang chờ → queued false`, again2.status === 200 && again2.message?.queued === false, JSON.stringify(again2.message));
+    await page.click('#ai-brief-thang');
+    await toastText(page, /Đã xếp bản tin tháng/);
+    check(`${tag}: "Tạo bản tin tháng" → POST kind=thang`, reqs.filter((r) => r.m === 'bc.api.ai.run_brief').pop()?.body === 'kind=thang');
+    ignore.add('bc.api.ai.run_brief');
+    const badk = await api(page, 'run_brief', { kind: 'ngay' });
+    check(`${tag}: run_brief kind sai → 417`, badk.status === 417, badk.status);
+    ignore.delete('bc.api.ai.run_brief');
     // Quy tắc: tắt + lưu, đổi ngưỡng + lưu → tải lại vẫn giữ; get_admin đồng ý
     const r0 = d.rules[0], r1 = d.rules[1];
     await page.uncheck(`[data-rule="${r0.key}"] [data-f="on"]`);

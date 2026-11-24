@@ -2,11 +2,13 @@
 """bc.ai.pipeline — một lượt chạy của Trợ lý AI (đặc tả §2).
 
   1 collect   bc.ai.collect.build: payload của chính các method bc.api.* (Administrator, refresh=1)
-  2 detect    detector hệ thống → pack["he-thong"]
+  2 detect    detector hệ thống → pack["he-thong"]; detector kiểm soát (P2) → pack["tro-ly"] (đọc được gói đã dựng)
   3 signals   quy tắc đọc pack → [Signal]
   4 upsert    BC AI Insight theo signal_key: mới / còn / hết → đóng (lời quy tắc đã thay số)
   5 write     (ai_enabled, có khoá, chưa chạm trần) Claude, một lượt gọi / nhóm
   6 render    placeholder → số thật; còn số trần / path sai → bỏ lời AI, giữ lời quy tắc (needs_check)
+  7 review    (P2) ngay sau bước 6 của MỖI nhóm: bc.ai.review.run_group phản biện các lời AI vừa lưu — try / except
+              riêng, đã commit bước 5–6 trước; hỏng thì rollback phần của nó + Error Log, không đụng gì khác
   8 log       BC AI Run: dòng tổng + một dòng / lượt gọi (token, chi phí, trạng thái), ảnh chụp KPI
 
 Bước 5–6 lỗi bất kỳ chỉ ghi vào BC AI Run — KHÔNG làm hỏng bước 1–4 và 8: tắt AI / hết credit / API lỗi thì màn vẫn
@@ -14,9 +16,10 @@ hiện tín hiệu với lời theo quy tắc. Không lưu, không log đề bà
 số và kiểm (bc.ai.render).
 
 Đề bài một nhóm: KHÔNG gồm mảng đang ẩn với người xem (số lẫn tín hiệu; quy tắc vẫn chạy trên đủ gói), không gồm khối
-registry.NO_SEND; mã giả đặt lại cho từng nhóm (mask.begin — mã không có trong đề bài này thì không thành tên); kèm
+registry.NO_SEND; tín hiệu có mảng ẩn trong sections_used cũng không gửi; mã giả đặt lại cho từng nhóm (mask.begin — mã không có trong đề bài này thì không thành tên); kèm
 "kieu" (registry.kind_map). Lời AI lưu với sections_used = mảng của placeholder ∪ mọi mảng mô hình đã thấy (ẩn một mảng
-sau lượt chạy → lời đó ẩn với người xem tới lượt sau). Nhận định tự do có BẤT KỲ path nào (tiêu đề, thân, lời
+sau lượt chạy → lời đó ẩn với người xem tới lượt sau). Lời AI (gắn tín hiệu hay tự do) có path không phân giải được
+trên gói ĐÃ GỬI (khối NO_SEND như tro-ly.kpi, phần tử danh sách bị cắt) → loại như path sai. Nhận định tự do có BẤT KỲ path nào (tiêu đề, thân, lời
 khuyên) của chủ đề đang bo-qua → loại; trùng tín hiệu quy tắc đang mở (path đầu) → bỏ (store.blocked_paths). Mã giả
 "đã gửi" chỉ gồm mã có mặt trong đề bài CUỐI (mask.restrict sau prompt.build_user — dòng bị cắt không thành tên).
 
@@ -50,6 +53,9 @@ MAX_FREE = 3             # nhận định tự do tối đa / nhóm / lượt
 CALL_TIMEOUT = 300       # giây / lượt gọi
 MARGIN = 240             # giây chừa lại cuối job cho bước 8
 SO_NGAY_KEY = "so_ngay"
+# Nhóm chỉ gọi mô hình khi CÓ tín hiệu và không nhận nhận định tự do: gói số của chúng là danh sách chứng từ / tình
+# trạng máy chủ — không có tín hiệu thì không có gì đáng viết, và lời tự do trên danh sách chứng từ không kiểm được.
+KHONG_TU_DO = (registry.HE_THONG, registry.KIEM_SOAT)
 HET_GIO = "hết thời gian lượt chạy"
 QUA_LUOT = "quá số lượt gọi trong ngày"
 
@@ -125,6 +131,7 @@ def _run(run: str, run_type: str, now, t0: float) -> dict:
 	today = getdate(now)
 	pack = collect.build(today)                                   # 1
 	pack[registry.HE_THONG] = registry.run_detectors(now)         # 2
+	pack[registry.TRO_LY] = registry.run_detectors(now, registry.TRO_LY, pack)
 	rr = registry.run_rules(pack, registry.overrides_from_settings())   # 3
 	items, sigs = _rule_items(pack, rr)
 	stats = store.sync_signals(items, rr.ran, now)                # 4
@@ -224,6 +231,11 @@ def _close_all_free(now) -> None:
 		store.sync_ai_free(g["sections"], [], now)
 
 
+def _mang_dung(sig) -> set:
+	"""sections_used của lời quy tắc một tín hiệu: mảng chính + mảng của mọi path nó dùng (= store sections_used)."""
+	return {sig.section, *(registry.section_of(p) for p in sig.paths)}
+
+
 def _goi_duoc(pack: dict, sections, an: set) -> dict:
 	"""Bản gói số GỬI mô hình của một nhóm: bỏ mảng đang ẩn với người xem (an), mảng không có số dùng được và các khối
 	registry.NO_SEND (kỳ trước — chỉ quy tắc đọc). Bản sao nông: pack gốc không đổi (render vẫn phân giải trên đó)."""
@@ -249,17 +261,19 @@ def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: f
 	kinds = registry.kind_map(by_name.values())   # kiểu đúng của số (KPIS + lời quy tắc lượt này) — chỉ xét lời mô hình
 	an = hidden_sections()   # bộ quản trị đặt (đọc thẳng tabSingles, không theo người gọi)
 	dung = None    # lý do dừng gọi tiếp (hết credit / mất khoá / vượt trần / hết giờ): nhóm còn lại chỉ đóng lời cũ
+	state: dict = {}   # trạng thái dùng chung của bước phản biện qua các nhóm của lượt này (review.run_group tự quản)
 	for group, g in registry.GROUPS.items():
 		sections = g["sections"]
 		if dung:
 			store.sync_ai_free(sections, [], now)
 			continue
 		# lọc theo tín hiệu CỦA LƯỢT NÀY (tín hiệu cũ của quy tắc không chạy được không gửi) rồi mới cắt `limit`;
-		# mảng đang ẩn: không gửi số, không gửi tín hiệu (giữ lời quy tắc — chỉ quản trị thấy)
+		# mảng đang ẩn: không gửi số, không gửi tín hiệu (giữ lời quy tắc — chỉ quản trị thấy); tín hiệu có lời dùng số
+		# của một mảng ẩn (sections_used = mảng của mọi path trong lời quy tắc lượt này) cũng không gửi
 		rows = [r for r in store.open_for_llm(sections, 10 ** 6) if r["name"] in by_name
-			and r["section"] not in an][:limit]
+			and r["section"] not in an and not _mang_dung(by_name[r["name"]]) & an][:limit]
 		pack_group = _goi_duoc(pack, sections, an)
-		if not rows and (group == registry.HE_THONG or not pack_group):
+		if not rows and (group in KHONG_TU_DO or not pack_group):
 			store.sync_ai_free(sections, [], now)    # nhóm không có gì để nói → không tốn lượt gọi
 			continue
 		con = JOB_TIMEOUT - MARGIN - (time.monotonic() - t0)
@@ -276,16 +290,28 @@ def _write_groups(pack: dict, by_name: dict, run: str, run_type: str, now, t0: f
 		row = store.start_run(run_type, group, provider=PROVIDER, model=model, now=now_datetime(), run_id=run)
 		frappe.db.commit()   # dòng của lượt gọi còn lại dù phần sau bị rollback
 		st = _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
-			out, kinds)
+			out, kinds, run=run, run_type=run_type, t0=t0, state=state)
 		frappe.db.commit()
 		if st in ("het-credit", "khong-khoa"):
 			dung = st
 
 
 def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
-		out, kinds=None) -> str:
-	"""Một lượt gọi cho một nhóm + gắn lời → status của dòng Run (đã chốt). Không ném."""
-	from bc.ai import llm, prompt, render, store
+		out, kinds=None, run=None, run_type="ngay", t0=None, state=None) -> str:
+	"""Một lượt gọi cho một nhóm + gắn lời (+ bước 7 phản biện khi lượt gọi tốt) → status của dòng Run (đã chốt).
+	Không ném."""
+	from bc.ai import render
+
+	try:
+		return _goi_nhom_1(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
+			out, kinds, run, run_type, t0, state)
+	finally:
+		render.forget_source()   # đề bài (của người viết và của phản biện) không ở lại bộ nhớ sau nhóm này
+
+
+def _goi_nhom_1(group, sections, rows, by_name, pack, pack_group, mask, system, model, row, con, now, today,
+		out, kinds, run, run_type, t0, state) -> str:
+	from bc.ai import llm, prompt, store
 
 	res = None
 	try:
@@ -305,7 +331,7 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		# sau lượt chạy thì lời AI của nhóm đó ẩn với người xem tới lượt sau)
 		da_thay = [*pack_group, *(r["section"] for r in rows)]
 		# H5: mã trong lời phải có nguyên văn trong ĐỀ BÀI CUỐI đã gửi (user) — mã bịa / mã của dòng bị cắt bị loại
-		acc, rej = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now,
+		acc, rej, viet = _apply(group, sections, data if isinstance(data, dict) else {}, by_id, pack, mask, now,
 			kinds=kinds, da_thay=da_thay, nguon=user)
 	except llm.LLMError as e:
 		st = llm.run_status(e.kind)
@@ -333,14 +359,30 @@ def _goi_nhom(group, sections, rows, by_name, pack, pack_group, mask, system, mo
 		store.sync_ai_free(sections, [], now)
 		out["status"] = "loi"
 		return "loi"
-	finally:
-		render.forget_source()   # đề bài không ở lại bộ nhớ sau lượt gọi (render giữ tạm để soát mã — H5)
 	out["accepted"] += acc
 	out["rejected"] += rej
 	store.finish_run(row, status="ok", now=now_datetime(), tokens_in=ti, tokens_out=to, model=served,
 		signals=len(rows), insights_ai=acc, rejected=rej, cost_usd=_cost(served, model, ti, to),
 		error="; ".join(notes)[:300] if notes else None)
+	frappe.db.commit()   # bước 5–6 của nhóm đã chốt: phản biện hỏng không kéo theo được
+	_review(group, viet, user, mask, pack, _duoc(sections, da_thay), kinds, run, run_type, now, today, t0, con, state)
 	return "ok"
+
+
+def _review(group, viet, user, mask, pack, duoc, kinds, run, run_type, now, today, t0, con, state) -> None:
+	"""Bước 7 cho một nhóm: bc.ai.review.run_group trong try / except riêng. Hỏng → rollback phần chưa commit của nó,
+	Error Log (chỉ tên loại lỗi), lượt chạy đi tiếp."""
+	try:
+		from bc.ai import review
+		con_lai = JOB_TIMEOUT - MARGIN - (time.monotonic() - t0) if t0 is not None else con
+		review.run_group(group=group, viet=viet, user=user, mask=mask, pack=pack, sections=duoc, kinds=kinds, run=run,
+			run_type=run_type, now=now, today=today, con=con_lai, state=state if state is not None else {})
+	except Exception as e:
+		try:
+			frappe.db.rollback()
+		except Exception:
+			pass
+		_ghi_loi(f"bc.ai phản biện nhóm {group}", e)
 
 
 def _cost(served: str | None, requested: str, tokens_in: int, tokens_out: int):
@@ -380,9 +422,44 @@ def _moi_path(raw: dict, paths) -> set:
 	return out
 
 
+def _goi_da_gui(nguon) -> dict | None:
+	"""Gói số người viết THẬT SỰ nhận (khoá "pack" của đề bài cuối: đã bỏ mảng ẩn, khối NO_SEND, đã cắt danh sách);
+	None khi không có đề bài (nơi gọi không xét)."""
+	import json
+	if not isinstance(nguon, str) or not nguon:
+		return None
+	try:
+		goc = json.loads(nguon)
+	except ValueError:
+		return {}
+	return goc.get("pack") if isinstance(goc, dict) and isinstance(goc.get("pack"), dict) else {}
+
+
+def _trong_goi(pack_gui, paths) -> bool:
+	"""Mọi path của lời phân giải được trên gói đã gửi. render điền số từ gói ĐẦY ĐỦ, nên thiếu bước này lời mô hình
+	có thể trích khối NO_SEND (tro-ly.kpi: số KPI của MỌI mảng, kể cả mảng đang ẩn) hay phần tử danh sách đã bị cắt —
+	con số người viết chưa từng thấy, gắn với mảng sai. pack_gui None → không xét."""
+	if pack_gui is None:
+		return True
+	for p in paths or ():
+		if not registry.has(pack_gui, str(p).strip()):
+			return False
+	return True
+
+
+def _duoc(sections, da_thay) -> set:
+	"""Mảng lời AI được trích số: mảng của nhóm mà mô hình đã thấy (da_thay trống → mọi mảng của nhóm)."""
+	thay = list(dict.fromkeys(str(s) for s in da_thay if s))
+	return {s for s in sections if s in thay} if thay else set(sections)
+
+
 def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now, kinds=None, da_thay=(),
 		nguon=None) -> tuple:
-	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại).
+	"""Xử lý đầu ra của mô hình cho một nhóm (đặc tả §5.3 bước 4–7) → (số lời nhận, số lời loại, viet).
+
+	viet = các lời AI ĐÃ LƯU trong lần gọi này (tín hiệu được gắn lời + nhận định tự do được chọn), theo thứ tự lưu:
+	[{"key": signal_key, "severity": mức đã lưu, "title", "body", "advice": [..]}] — title / body / advice là lời ĐÃ thay
+	số nhưng CÒN mã giả (render "masked"): thứ duy nhất được gửi tiếp cho bước phản biện.
 
 	sections: mọi mảng của nhóm (nhận định tự do cũ của chúng không được nêu lại → đóng). da_thay: mảng mô hình đã
 	thấy trong lượt gọi (gói + tín hiệu gửi đi; không gồm mảng đang ẩn) → lời chỉ được trích số của các mảng này, và
@@ -395,8 +472,10 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 	acc = rej = 0
 	da_gan, free = set(), {}
 	thay = list(dict.fromkeys(str(s) for s in da_thay if s))
-	duoc = {s for s in sections if s in thay} if thay else set(sections)
+	duoc = _duoc(sections, da_thay)
 	chan = store.blocked_paths(duoc, now)
+	gui = _goi_da_gui(nguon)   # lời trích path không có trong gói đã gửi → loại như lời sai path
+	viet, che = [], {}
 	ds = data.get("insights")
 	for ins in (ds if isinstance(ds, list) else []):
 		if not isinstance(ins, dict):
@@ -412,20 +491,22 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 				continue
 			da_gan.add(sid)
 			r = render.render_insight(raw, pack, duoc, mask, kinds=kinds, nguon=nguon)
-			if r["ok"]:
+			if r["ok"] and _trong_goi(gui, r["paths"]):
 				store.apply_ai(row["name"], title=r["title"], body=r["body"], advice=r["advice"], severity=sev,
 					priority=prio, paths=r["paths"], sections_used=[*r["sections_used"], *thay], now=now)
 				acc += 1
+				viet.append({"key": row["signal_key"], "severity": "do" if "do" in (sev, row.get("severity")) else "vang",
+					**r["masked"]})
 			else:
 				store.mark_rejected(row["name"])
 				rej += 1
 			continue
-		if group == registry.HE_THONG:       # nhóm hệ thống không nhận nhận định tự do
+		if group in KHONG_TU_DO:             # nhóm hệ thống / kiểm soát không nhận nhận định tự do
 			continue
 		r = render.render_insight(raw, pack, duoc, mask, kinds=kinds, nguon=nguon)
 		body = raw["body"] if isinstance(raw["body"], str) else ""
 		dau = next((p for p, _ in registry.placeholders(body)), None) or (r["paths"][0] if r["paths"] else None)
-		if not r["ok"] or not dau:            # nhận định tự do phải trích ít nhất một số trong gói
+		if not r["ok"] or not dau or not _trong_goi(gui, r["paths"]):   # tự do: trích ≥ 1 số, mọi số trong gói đã gửi
 			rej += 1
 			continue
 		goc = registry.strip_index(dau)
@@ -442,6 +523,8 @@ def _apply(group: str, sections, data: dict, by_id: dict, pack: dict, mask, now,
 		free[key] = {"key": key, "section": sec, "route": f"#/{sec}", "severity": sev, "priority": prio,
 			"title": r["title"], "body": r["body"], "advice": r["advice"], "paths": r["paths"],
 			"sections_used": list(dict.fromkeys([*r["sections_used"], *thay]))}
+		che[key] = r["masked"]
 	chon = sorted(free.values(), key=lambda x: (x["severity"] != "do", -x["priority"]))[:MAX_FREE]
 	store.sync_ai_free(sections, chon, now)
-	return acc + len(chon), rej
+	viet += [{"key": x["key"], "severity": x["severity"], **che[x["key"]]} for x in chon]
+	return acc + len(chon), rej, viet

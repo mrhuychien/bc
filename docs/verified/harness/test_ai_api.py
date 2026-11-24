@@ -9,7 +9,10 @@ Hôm nay giả = 2026-10-27 10:30.
 Chạy: BC_TEST_DB=bc_test_ai_api python3 -B test_ai_api.py
 """
 import datetime
+import importlib.util
 import json
+import os
+import re
 import sys
 import types
 
@@ -61,6 +64,11 @@ class FakeStore(types.ModuleType):
 
 
 store = FakeStore()
+# Bản tin (P2): đọc / ghi BC AI Brief bằng store THẬT (nạp riêng từ file — bản giả vẫn giữ start_run / finish_run).
+_spec = importlib.util.spec_from_file_location("bc_ai_store_that", os.path.join(os.path.dirname(bc.ai.__file__), "store.py"))
+store_that = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(store_that)
+store.latest_briefs = store_that.latest_briefs
 sys.modules["bc.ai.store"] = store
 bc.ai.store = store
 
@@ -101,7 +109,7 @@ def _rc(pack, cfg):
 
 
 # ─── Dữ liệu ─────────────────────────────────────────────────────────────────
-reset(only={INSIGHT, RUN, "BC AI Rule", "BC AI Model Price", "BC Tet Date", "BC Hidden Item", "BC Share Link"})
+reset(only={INSIGHT, RUN, "BC AI Brief", "BC AI Rule", "BC AI Model Price", "BC Tet Date", "BC Hidden Item", "BC Share Link"})
 bc_settings(ai_enabled=1, ai_claude_model=MODEL, ai_claude_model_deep="claude-opus-5-5", ai_openai_model="",
 	ai_cap_claude_usd=50, ai_cycle_day_claude=1)
 child("BC Settings", "BC Settings", "BC AI Model Price", "ai_prices",
@@ -157,7 +165,7 @@ c("người xem: counts", f["counts"] == {"do": 2, "vang": 4}, f["counts"])
 c("người xem: badge = counts", ai.get_badge(refresh=1) == {"do": 2, "vang": 4})
 c("người xem: khoá mỗi nhận định đúng 17 trường", all(set(x) == VIEW_KEYS for x in f["insights"]),
 	[sorted(set(x) ^ VIEW_KEYS) for x in f["insights"]][:1])
-c("người xem: không có số bị lọc ở mức trên", set(f) == {"meta", "brief", "counts", "insights"}, set(f))
+c("người xem: không có số bị lọc ở mức trên", set(f) == {"meta", "brief", "briefs", "counts", "insights"}, set(f))
 c("chưa có lượt ok: không thẻ nào stale, stale_count 0", not any(x.get("stale") for x in f["insights"])
 	and f["meta"].get("stale_count") == 0, f["meta"])
 a = f["insights"][1]
@@ -314,10 +322,13 @@ c("khoá: chỉ có / không", ad["keys"] == {"claude": True, "openai": False}, 
 c("enabled + models", ad["enabled"] is True and ad["models"] == {"claude": MODEL, "claude_deep": "claude-opus-5-5",
 	"openai": ""}, ad["models"])
 # spent = R3 0.5 (claude, từ 01/10); calls_today = 1 (R3 step nhóm, ok, hôm nay); giá đã khai; trần 50
-c("budget claude", ad["budget"] == {"claude": {"spent": 0.5, "cap": 50.0, "cycle_start": datetime.date(2026, 10, 1),
-	"calls_today": 1, "max_calls": 30, "price_known": True}}, ad["budget"])
-c("runs: mới trước, đúng trường", [r["started"] for r in ad["runs"]] == [D(2026, 10, 27, 6, 0),
-	D(2026, 10, 27, 5, 30), D(2026, 10, 26, 8, 0)] and set(ad["runs"][0]) == set(ai.RUN_FIELDS), ad["runs"][:1])
+# openai: chưa có dòng Run nào, trần mặc định 90, model trống → price_known False
+c("budget claude + openai", ad["budget"] == {"claude": {"spent": 0.5, "cap": 50.0, "cycle_start": datetime.date(2026, 10, 1),
+	"calls_today": 1, "max_calls": 30, "price_known": True}, "openai": {"spent": 0.0, "cap": 90.0,
+	"cycle_start": datetime.date(2026, 10, 1), "calls_today": 0, "max_calls": 30, "price_known": False}}, ad["budget"])
+c("runs: mới trước, đúng trường (+ step_label)", [r["started"] for r in ad["runs"]] == [D(2026, 10, 27, 6, 0),
+	D(2026, 10, 27, 5, 30), D(2026, 10, 26, 8, 0)] and set(ad["runs"][0]) == set(ai.RUN_FIELDS) | {"step_label"},
+	ad["runs"][:1])
 c("runs: R3 đủ số", (ad["runs"][0]["provider"], ad["runs"][0]["tokens_in"], ad["runs"][0]["cost_usd"],
 	ad["runs"][0]["run_id"]) == ("claude", 1000, 0.5, "R2"))
 c("rules: đúng thứ tự đăng ký", [r["key"] for r in ad["rules"]] == ["t.a", "t.b", "t.c"])
@@ -495,6 +506,13 @@ store.calls.clear()
 t = ai.test_connection("openai")
 c("openai không khoá → khong-khoa, model trống", (t["ok"], t["model"], store.calls[-1][1]["status"]) ==
 	(False, "", "khong-khoa"), t)
+frappe.conf["bc_ai_openai_key"] = "sk-proj-GIAthuOpenAI0123456789abcdef"
+store.calls.clear()
+LLM_CALLS.clear()
+t = ai.test_connection("openai")
+c("openai có khoá, model trống → báo chưa đặt model, không gọi, không ghi Run", (t["ok"], t["model"], "chưa đặt model"
+	in t["error"], LLM_CALLS, store.calls) == (False, "", True, [], []), (t, store.calls))
+frappe.conf.pop("bc_ai_openai_key")
 
 print("12. Lộ khoá: không method nào trả khoá (§9.8)")
 llm.call = call_cam
@@ -536,6 +554,204 @@ c("khoá đúng dạng: keys_bad đều False", ad3["keys"]["claude"] is True
 frappe.conf.pop("bc_ai_anthropic_key")
 c("không khai khoá: keys_bad False (chưa có ≠ sai dạng)", ai.get_admin()["keys_bad"]["claude"] is False)
 frappe.conf["bc_ai_anthropic_key"] = SECRET
+
+
+print("13. P2 — bản tin tuần / tháng trong get_feed")
+as_(ADMIN)
+single("BC Settings", hidden_sections="")
+c("chưa có bản tin → briefs []", ai.get_feed()["briefs"] == [])
+as_(VIEWER)
+c("chưa có bản tin → briefs [] (người xem)", ai.get_feed()["briefs"] == [])
+ALL3 = ["tong-quan", "ton-kho", "cong-no"]
+# Tuần 19/10–25/10 (brief_date thứ Hai 26/10 = 1 ngày trước 27/10); bản cũ hơn 12/10 cùng loại không được chọn
+store_that.upsert_brief("tuan", datetime.date(2026, 10, 12), title="Tuần cũ", source="quy-tac", sections_used=["cong-no"],
+	period_from=datetime.date(2026, 10, 5), period_to=datetime.date(2026, 10, 11),
+	parts=[{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": [{"text": "Mục tuần cũ", "sections": ["cong-no"]}]}])
+store_that.upsert_brief("tuan", datetime.date(2026, 10, 26), title="Doanh số tuần chững lại", source="ai",
+	model="claude-opus-5-5", sections_used=ALL3, period_from=datetime.date(2026, 10, 19),
+	period_to=datetime.date(2026, 10, 25), parts=[
+		{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": [{"text": "Doanh số giảm nhẹ", "sections": ALL3},
+			{"text": "Tồn kho tăng", "sections": ALL3}]},
+		{"key": "viec_ton", "title": "Việc tồn chưa xử lý", "items": [{"text": "Công nợ quá hạn kéo dài", "sections": ALL3}]},
+		{"key": "uu_tien", "title": "Ưu tiên tuần tới", "items": []}])
+# Tháng 9 (brief_date 01/10 = 26 ngày trước) — bản quy tắc, mỗi mục chỉ mang mảng của nó
+store_that.upsert_brief("thang", datetime.date(2026, 10, 1), title="Tháng 9: phải trả tăng", source="quy-tac",
+	sections_used=["tong-quan", "phai-tra", "cong-no"], period_from=datetime.date(2026, 9, 1),
+	period_to=datetime.date(2026, 9, 30), parts=[
+		{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": [{"text": "Doanh số tháng tăng", "sections": ["tong-quan"]},
+			{"text": "Phải trả tăng", "sections": ["phai-tra"]}]},
+		{"key": "viec_ton", "title": "Việc tồn chưa xử lý", "items": [{"text": "Hoá đơn NCC chưa đối chiếu", "sections": ["phai-tra"]}]},
+		{"key": "uu_tien", "title": "Ưu tiên tháng tới", "items": [{"text": "Thu nợ quá hạn", "sections": ["cong-no"]}]}])
+BV_KEYS = {"type", "date", "period_from", "period_to", "title", "source", "parts"}
+
+
+def keys_deep(x):
+	if isinstance(x, dict):
+		return set(x) | set().union(*(keys_deep(v) for v in x.values())) if x else set()
+	if isinstance(x, list):
+		return set().union(*(keys_deep(v) for v in x)) if x else set()
+	return set()
+
+
+bv = ai.get_feed()["briefs"]
+c("người xem: tuần mới nhất rồi tháng (một bản mỗi loại)", [(b["type"], b["date"]) for b in bv] == [("tuan", "2026-10-26"),
+	("thang", "2026-10-01")], bv)
+c("người xem: đúng 7 khoá, không model / sections ở bất kỳ mức nào", all(set(b) == BV_KEYS for b in bv)
+	and not keys_deep(bv) & {"model", "sections", "sections_used"}, [sorted(keys_deep(b)) for b in bv])
+w = bv[0]
+c("tuần: kỳ, tiêu đề, nguồn, mục là chữ thuần, phần rỗng bị bỏ", (w["period_from"], w["period_to"], w["title"],
+	w["source"], w["parts"]) == ("2026-10-19", "2026-10-25", "Doanh số tuần chững lại", "ai", [
+	{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": ["Doanh số giảm nhẹ", "Tồn kho tăng"]},
+	{"key": "viec_ton", "title": "Việc tồn chưa xử lý", "items": ["Công nợ quá hạn kéo dài"]}]), w)
+c("tháng: đủ ba phần khi không ẩn mảng", [len(p["items"]) for p in bv[1]["parts"]] == [2, 1, 1]
+	and bv[1]["title"] == "Tháng 9: phải trả tăng", bv[1])
+c("bản tin ngày (brief) không đổi dạng", set(ai.get_feed()["brief"]) == {"title", "date", "items"})
+as_(ADMIN)
+ba = ai.get_feed()["briefs"]
+c("quản trị: thêm model + sections_used", [set(b) for b in ba] == [BV_KEYS | {"model", "sections_used"}] * 2
+	and (ba[0]["model"], ba[0]["sections_used"], ba[1]["model"]) == ("claude-opus-5-5", ALL3, ""), ba)
+c("quản trị: mục cũng là chữ (không sections từng mục)", all(isinstance(t, str) for b in ba for p in b["parts"]
+	for t in p["items"]))
+single("BC Settings", hidden_sections="phai-tra")
+as_(VIEWER)
+bv = ai.get_feed()["briefs"]
+m9 = bv[1] if len(bv) == 2 else {}
+# tháng: bỏ "Phải trả tăng" + cả phần viec_ton (chỉ có mục phai-tra); tiêu đề → tiêu đề trung tính của kỳ
+c("ẩn phai-tra: mục dùng mảng ẩn bị bỏ, phần rỗng bị bỏ", m9.get("parts") == [
+	{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": ["Doanh số tháng tăng"]},
+	{"key": "uu_tien", "title": "Ưu tiên tháng tới", "items": ["Thu nợ quá hạn"]}], m9)
+c("ẩn phai-tra: tiêu đề (dựng trên mọi mảng) → tiêu đề trung tính 'Bản tin tháng 9/2026'",
+	m9.get("title") == "Bản tin tháng 9/2026", m9.get("title"))
+c("ẩn phai-tra: không chữ nào của mục ẩn trong kết quả người xem", "Phải trả" not in json.dumps(bv, ensure_ascii=False)
+	and "Hoá đơn NCC" not in json.dumps(bv, ensure_ascii=False))
+c("ẩn phai-tra: bản tuần nguyên vẹn", bv[0]["title"] == "Doanh số tuần chững lại" and len(bv[0]["parts"]) == 2)
+as_(ADMIN)
+c("ẩn phai-tra: quản trị vẫn thấy đủ", [len(p["items"]) for p in ai.get_feed()["briefs"][1]["parts"]] == [2, 1, 1])
+single("BC Settings", hidden_sections="ton-kho")
+as_(VIEWER)
+bv = ai.get_feed()["briefs"]
+c("ẩn ton-kho: bản tuần AI (mọi mục mang ton-kho) vắng hẳn, tháng còn", [b["type"] for b in bv] == ["thang"], bv)
+single("BC Settings", hidden_sections="tong-quan\ncong-no\nphai-tra")
+c("mọi mục tháng bị ẩn → bản tháng vắng", [b["type"] for b in ai.get_feed()["briefs"]] == [], ai.get_feed()["briefs"])
+single("BC Settings", hidden_sections="")
+# Hạn hiển thị: tuần ≤ 14 ngày, tháng ≤ 45 ngày (theo brief_date, ngày lịch)
+B = "BC AI Brief"
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'tuan:2026-10-26'", (datetime.date(2026, 10, 13),))
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'thang:2026-10-01'", (datetime.date(2026, 9, 12),))
+c("tuần 14 ngày + tháng 45 ngày → còn hiện", [b["type"] for b in ai.get_feed()["briefs"]] == ["tuan", "thang"])
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'tuan:2026-10-26'", (datetime.date(2026, 10, 12),))
+frappe.db.sql(f"DELETE FROM `tab{B}` WHERE brief_key = 'tuan:2026-10-12'")
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'thang:2026-10-01'", (datetime.date(2026, 9, 11),))
+c("tuần 15 ngày + tháng 46 ngày → không hiện", ai.get_feed()["briefs"] == [], ai.get_feed()["briefs"])
+as_(ADMIN)
+c("quá hạn: quản trị cũng không thấy ở #/tro-ly", ai.get_feed()["briefs"] == [])
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'tuan:2026-10-26'", (datetime.date(2026, 10, 26),))
+frappe.db.sql(f"UPDATE `tab{B}` SET brief_date = %s WHERE brief_key = 'thang:2026-10-01'", (datetime.date(2026, 10, 1),))
+store_that.upsert_brief("tuan", datetime.date(2026, 10, 27), title="Rỗng", source="quy-tac", sections_used=[],
+	parts=[{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": []}])
+c("bản tin mới nhất không có mục nào → vắng (cả quản trị)", [b["type"] for b in ai.get_feed()["briefs"]] == ["thang"])
+frappe.db.sql(f"DELETE FROM `tab{B}` WHERE brief_key = 'tuan:2026-10-27'")
+
+print("14. P2 — nhóm Kiểm soát")
+ins("KS1", rule="ct.huy_nhieu", section="tro-ly", sections_used="tro-ly", route="#/tro-ly", severity="vang", rank=0,
+	documents=json.dumps([{"doctype": "Sales Invoice", "name": "SI-9"}]), title="Huỷ chứng từ tăng")
+as_(VIEWER)
+fv = ai.get_feed()
+k = next((x for x in fv["insights"] if x["id"] == "KS1"), None)
+c("kiểm soát (người xem): group kiem-soat, nhãn 'Kiểm soát', route trống, không chứng từ", k is not None and (k["group"],
+	k["group_label"], k["section_label"], k["route"]) == ("kiem-soat", "Kiểm soát", "Kiểm soát", "")
+	and set(k) == VIEW_KEYS, k)
+as_(ADMIN)
+ka = next(x for x in ai.get_feed()["insights"] if x["id"] == "KS1")
+c("kiểm soát (quản trị): chứng từ có, route trống", ka["documents"] == [{"doctype": "Sales Invoice", "name": "SI-9"}]
+	and ka["route"] == "" and ka["section_label"] == "Kiểm soát", ka)
+c("set_status trả cùng dạng kiểm soát", ai.set_status("KS1", "dang-xu-ly")["section_label"] == "Kiểm soát")
+c("nhóm không phải kiểm soát giữ route của nó", ai._shape({"section": "cong-no", "route": "#/cong-no"}, False)["route"]
+	== "#/cong-no")
+frappe.db.sql(f"DELETE FROM `tab{INSIGHT}` WHERE name = 'KS1'")
+
+print("15. P2 — get_admin: bản tin, phản biện, OpenAI")
+as_(ADMIN)
+single("BC Settings", ai_openai_model="gpt-5-x", ai_cap_openai_usd=20, ai_cycle_day_openai=1)
+child("BC Settings", "BC Settings", "BC AI Model Price", "ai_prices", [{"model": "gpt-5-x", "price_in": 1, "price_out": 4}])
+frappe.clear_document_cache("BC Settings", "BC Settings")
+insert(RUN, "RV1", run_type="ngay", step="review:kinh-doanh", run_id="R2", provider="openai", model="gpt-5-x",
+	started=D(2026, 10, 27, 7, 0), finished=D(2026, 10, 27, 7, 1), status="ok", cost_usd=0.2, cost_known=1,
+	tokens_in=900, tokens_out=100, insights_ai=2, rejected=1)
+insert(RUN, "RV2", run_type="ngay", step="review:kiem-soat", run_id="R2", provider="openai", model="gpt-5-x",
+	started=D(2026, 10, 27, 7, 2), finished=D(2026, 10, 27, 7, 2), status="khong-khoa", cost_usd=0, tokens_in=0,
+	tokens_out=0)
+insert(RUN, "RB1", run_type="tuan", step="ban-tin:tuan", provider="claude", model="claude-opus-5-5",
+	started=D(2026, 10, 27, 7, 5), finished=D(2026, 10, 27, 7, 6), status="ok", cost_usd=0.3, cost_known=1,
+	tokens_in=10, tokens_out=10)
+insert(RUN, "RB2", run_type="thang", step="ban-tin:thang", provider="claude", started=D(2026, 10, 27, 7, 6),
+	finished=D(2026, 10, 27, 7, 6), status="tat", cost_usd=0, tokens_in=0, tokens_out=0)
+ad = ai.get_admin()
+c("step_label từng loại", (ai._step_label("review:kinh-doanh"), ai._step_label("review:kiem-soat"),
+	ai._step_label("ban-tin:tuan"), ai._step_label("ban-tin:thang"), ai._step_label("tong"), ai._step_label("ai"),
+	ai._step_label("test"), ai._step_label("kho-sx"), ai._step_label("la")) == ("Phản biện · Kinh doanh",
+	"Phản biện · Kiểm soát", "Bản tin tuần", "Bản tin tháng", "Tổng hợp", "Bước AI", "Thử kết nối", "Kho & SX", "la"))
+c("runs: 4 dòng mới (phản biện, bản tin) đứng đầu, đúng nhãn", [(r["step"], r["step_label"]) for r in ad["runs"][:4]] == [
+	("ban-tin:thang", "Bản tin tháng"), ("ban-tin:tuan", "Bản tin tuần"), ("review:kiem-soat", "Phản biện · Kiểm soát"),
+	("review:kinh-doanh", "Phản biện · Kinh doanh")], [(r["step"], r["step_label"]) for r in ad["runs"][:4]])
+# openai: spent 0.2 (RV1; RV2 0), calls_today 1 (RV1 ok; RV2 khong-khoa không gọi mạng), trần 20, giá đã khai
+c("budget openai như Claude", ad["budget"]["openai"] == {"spent": 0.2, "cap": 20.0,
+	"cycle_start": datetime.date(2026, 10, 1), "calls_today": 1, "max_calls": 30, "price_known": True}, ad["budget"]["openai"])
+c("models.openai = model đang đặt", ad["models"]["openai"] == "gpt-5-x")
+# Bản tin quản trị: tuần 26/10 (AI, 3 mục) + tháng 01/10 (quy tắc, 4 mục) — mới trước
+c("briefs quản trị: loại, ngày, kỳ, nguồn, model, số mục", ad["briefs"] == [
+	{"type": "tuan", "date": "2026-10-26", "period_from": "2026-10-19", "period_to": "2026-10-25",
+		"title": "Doanh số tuần chững lại", "source": "ai", "model": "claude-opus-5-5", "items": 3},
+	{"type": "thang", "date": "2026-10-01", "period_from": "2026-09-01", "period_to": "2026-09-30",
+		"title": "Tháng 9: phải trả tăng", "source": "quy-tac", "model": "", "items": 4}], ad["briefs"])
+for i in range(8):
+	store_that.upsert_brief("tuan", datetime.date(2026, 8, 3) + datetime.timedelta(days=7 * i), title=f"T{i}",
+		source="quy-tac", sections_used=[], parts=[{"key": "dang_chu_y", "title": "x", "items": [{"text": "a",
+		"sections": []}]}])
+ad = ai.get_admin()
+c("briefs quản trị: tối đa 6, mới trước (cả hai loại)", len(ad["briefs"]) == 6 and [b["date"] for b in ad["briefs"]] ==
+	sorted([b["date"] for b in ad["briefs"]], reverse=True) and ad["briefs"][0]["date"] == "2026-10-26"
+	and any(b["type"] == "thang" for b in ad["briefs"]), [(b["type"], b["date"]) for b in ad["briefs"]])
+c("briefs_running: chưa có bản tin chạy", ad["briefs_running"] == {"tuan": False, "thang": False})
+frappe.cache().set_value(jobs.BRIEF_LOCK_KEY, 1)
+c("briefs_running: khoá bản tin → cả hai True", ai.get_admin()["briefs_running"] == {"tuan": True, "thang": True})
+frappe.cache().delete_value(jobs.BRIEF_LOCK_KEY)
+
+print("16. P2 — run_brief")
+as_(VIEWER)
+frappe.ENQUEUED.clear()
+background_jobs.FAKE_ENQUEUED_IDS.clear()
+c("người xem run_brief → PermissionError, không xếp", raises(ai.run_brief, frappe.PermissionError, "tuan")
+	and not frappe.ENQUEUED)
+as_(ADMIN)
+for bad in ("ngay", "", "TUAN", "tuan;thang", None):
+	c(f"kind sai {bad!r} → ValidationError, không xếp", raises(ai.run_brief, VE, bad) and not frappe.ENQUEUED)
+c("tuan → queued True", ai.run_brief("tuan") == {"queued": True})
+c("xếp bc.ai.brief.run_brief(kind=tuan), job id riêng, hàng long", frappe.ENQUEUED[-1][0] == "bc.ai.brief.run_brief"
+	and frappe.ENQUEUED[-1][2] == {"kind": "tuan"} and frappe.ENQUEUED[-1][1]["job_id"] == jobs.BRIEF_JOB_IDS["tuan"]
+	and frappe.ENQUEUED[-1][1]["queue"] == "long", frappe.ENQUEUED)
+background_jobs.FAKE_ENQUEUED_IDS.add(jobs.BRIEF_JOB_IDS["tuan"])
+c("tuan đang chờ → queued False, không xếp thêm", ai.run_brief("tuan") == {"queued": False} and len(frappe.ENQUEUED) == 1)
+c("thang (loại khác) vẫn xếp được", ai.run_brief(" thang ") == {"queued": True} and frappe.ENQUEUED[-1][2] == {"kind": "thang"})
+background_jobs.FAKE_ENQUEUED_IDS.clear()
+frappe.cache().set_value(jobs.BRIEF_LOCK_KEY, 1)
+c("khoá bản tin đang giữ → queued False", ai.run_brief("thang") == {"queued": False} and len(frappe.ENQUEUED) == 2)
+frappe.cache().delete_value(jobs.BRIEF_LOCK_KEY)
+frappe.cache().set_value(jobs.LOCK_KEY, 1)
+c("lượt ngày đang chạy không chặn bản tin", ai.run_brief("tuan") == {"queued": True})
+frappe.cache().delete_value(jobs.LOCK_KEY)
+background_jobs.FAKE_ENQUEUED_IDS.clear()
+_src = open(ai.__file__, encoding="utf-8").read()
+c("run_brief chỉ nhận POST, guard quản trị ở dòng đầu", re.search(r'@frappe\.whitelist\(methods=\["POST"\]\)\ndef run_brief\(kind\):\n'
+	r'\t"""(?:(?!""")[\s\S])*"""\n\t_admin_guard\(\)', _src) is not None)
+
+print("17. Dấu build shell = www/bc.py = bc-p8-r1")
+PKG = os.path.dirname(os.path.dirname(bc.ai.__file__))
+js = open(os.path.join(PKG, "public", "bc", "shell.js"), encoding="utf-8").read()
+py = open(os.path.join(PKG, "www", "bc.py"), encoding="utf-8").read()
+mj, mp = re.search(r"const BUILD = '([^']+)'", js), re.search(r'SHELL_BUILD = "([^"]+)"', py)
+c("BUILD (shell.js) = SHELL_BUILD (www/bc.py) = bc-p8-r1", mj and mp and mj.group(1) == mp.group(1) == "bc-p8-r1",
+	(mj and mj.group(1), mp and mp.group(1)))
 
 llm.call = call_cam
 try:

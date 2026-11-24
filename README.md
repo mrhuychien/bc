@@ -162,7 +162,8 @@ ngay), nguyên liệu còn treo trên sổ (ước tính), thành phẩm đang t
 Mỗi sáng 5:30 máy chủ đọc lại **đúng các con số của các màn báo cáo**, dùng quy tắc có ngưỡng để tìm việc đáng chú
 ý toàn công ty, rồi (nếu bật) nhờ Claude viết lại lời cho dễ đọc. Lãnh đạo mở `/bc#/tro-ly` thấy danh sách việc
 cần chú ý: cái gì, bao nhiêu, nên làm gì, bấm sang màn gốc để xem số. Đặc tả: `docs/SPEC_bc_ai.md`; bản này làm
-giai đoạn P0 + P1 (chưa có OpenAI phản biện, bộ dò chứng từ, bản tin tuần / tháng, hỏi đáp).
+giai đoạn P0 + P1 + P2 (P2: OpenAI phản biện lời AI, nhóm Kiểm soát chứng từ / giá / chỉ số lệch chuẩn, bản tin tuần /
+tháng). Chưa có: hỏi đáp (P3).
 
 **Luồng một lượt chạy** (`bc.ai.pipeline.run_daily`, cron `30 5 * * *` giờ của site → hàng đợi `long`, chống chạy
 trùng):
@@ -173,19 +174,23 @@ trùng):
 2. 8 bộ dò hệ thống (`bc/ai/detectors/he_thong.py`, chỉ `SELECT`): Error Log tăng vọt, tác vụ định kỳ lỗi, email
    lỗi, hàng đợi ứ, sao lưu cũ, đĩa đầy, đăng nhập sai nhiều lần, Trợ lý lỗi 3 lượt liền. Error Log chỉ được đếm
    theo tên lớp lỗi / tên method của app đã cài; tiêu đề lỗi nguyên văn (có thể chứa email, tên khách) không vào
-   gói số.
-3. 42 quy tắc (`bc/ai/rules/*.py`, hàm thuần trên gói số, không SQL): kinh doanh 5, kho & sản xuất 11, công nợ 7,
-   vận chuyển 6, nhân sự 3, ATTP 2, hệ thống 8. Từng quy tắc đọc số nào, so ngưỡng ra sao:
+   gói số. Rồi 3 bộ dò kiểm soát (P2, mảng `tro-ly`, đọc được gói vừa dựng): chứng từ (`chung_tu.py`), giá
+   (`gia.py`), lịch sử chỉ số (`kpi.py`) — mục "Nhóm Kiểm soát" dưới.
+3. 49 quy tắc (`bc/ai/rules/*.py`, hàm thuần trên gói số, không SQL): kinh doanh 5, kho & sản xuất 11, công nợ 7,
+   vận chuyển 6, nhân sự 3, ATTP 2, hệ thống 8, kiểm soát 7. Từng quy tắc đọc số nào, so ngưỡng ra sao:
    `docs/ai-rules-audit.md`.
 4. Lưu vào `BC AI Insight` theo khoá tín hiệu: mới → mở; còn → cộng ngày kéo dài; hết → tự đóng; nguồn số lỗi →
    **giữ nguyên**, không đóng nhầm; đã đóng mà xuất hiện lại → mở lại.
 5. Nếu bật AI, có khoá và chưa chạm trần chi: mỗi nhóm một lượt gọi Claude — viết lại lời, xếp ưu tiên, thêm khuyến
    nghị theo **bộ phận**, và được nêu thêm tối đa 3 nhận định ngoài quy tắc.
 6. Máy chủ thay số vào lời rồi kiểm; lời không qua kiểm thì bỏ, tín hiệu giữ lời theo quy tắc.
-7. Ghi `BC AI Run`: một dòng tổng + một dòng mỗi lượt gọi (token, chi phí, trạng thái) và ảnh chụp 70 chỉ số đầu màn.
+7. (P2, khi đặt `ai_openai_model`) Ngay sau mỗi nhóm viết xong: OpenAI phản biện các lời AI vừa lưu của nhóm đó —
+   mục "Phản biện" dưới.
+8. Ghi `BC AI Run`: một dòng tổng + một dòng mỗi lượt gọi (token, chi phí, trạng thái) và ảnh chụp 70 chỉ số đầu màn.
 
-Bước 5–6 hỏng kiểu gì (tắt AI, hết credit, API lỗi, quá giờ) cũng chỉ thành một trạng thái trong `BC AI Run`; màn
-vẫn hiện đủ tín hiệu với nhãn "Quy tắc".
+Bước 5–7 hỏng kiểu gì (tắt AI, hết credit, API lỗi, quá giờ) cũng chỉ thành một trạng thái trong `BC AI Run`; màn
+vẫn hiện đủ tín hiệu với nhãn "Quy tắc". Phản biện chạy sau khi lời của nhóm đã được lưu chắc: phản biện hỏng không
+xoá được lời đã viết.
 
 **Luật số.** Mô hình **không được viết con số**. Mọi số trong lời là chỗ giữ `{{path|kiểu}}` trỏ vào gói số
 (`{{cong-no.receivables.kpis.overdue_pct|pct}}`), kiểu `tien | so | pct | ngay | chu`; máy chủ chèn số thật theo
@@ -225,7 +230,7 @@ nhật được", để số cũ không bị đọc như số sáng nay.
 
 **Luật riêng tư.**
 
-- Khoá API chỉ nằm trong `site_config.json` (`bc_ai_anthropic_key`); không ở DocType, không trả ra API, không vào
+- Khoá API chỉ nằm trong `site_config.json` (`bc_ai_anthropic_key`, `bc_ai_openai_key`); không ở DocType, không trả ra API, không vào
   Error Log (thông báo lỗi được xoá mọi chuỗi trùng khoá trước khi lưu; Error Log của phần này chỉ ghi tên loại lỗi
   và dòng code). Chỉ `bc/ai/llm/` được gọi mạng và đọc khoá. Khoá dán lỗi (có dấu cách, xuống dòng) được coi như
   chưa có khoá — lượt chạy ghi `khong-khoa`.
@@ -247,14 +252,20 @@ nhật được", để số cũ không bị đọc như số sáng nay.
   gọi đó, nên **vừa ẩn thêm một mảng thì các thẻ lời AI cùng nhóm tạm biến mất với người xem cho tới lượt chạy sau**
   — ẩn xong hãy bấm "Chạy ngay" ở `#/ai` để lời được viết lại không có số của mảng đó.
 - Việc quản trị đã "Bỏ qua" không quay lại dưới dạng nhận định tự do của AI.
-- bc vẫn chỉ đọc: phần này chỉ ghi `BC AI Insight`, `BC AI Run` và mục "Trợ lý AI" của BC Settings.
+- Lời mô hình chỉ được trích số có trong **chính đề bài nó nhận**: số nằm trong khối không gửi (lịch sử chỉ số của mọi
+  mảng, số vận chuyển tháng trước) hay phần danh sách bị cắt khỏi đề bài thì máy chủ vẫn điền được, nhưng lời đó bị loại
+  như path sai (để một nhận định không mang số của mảng đang ẩn vào nhóm khác).
+- bc vẫn chỉ đọc: phần này chỉ ghi `BC AI Insight`, `BC AI Run`, `BC AI Brief` và mục "Trợ lý AI" của BC Settings.
 
 **Cấu hình** (`/bc#/ai`, hoặc mục "Trợ lý AI" trong `/app/bc-settings` — mọi field permlevel 1):
 
 | Field | Ý nghĩa | Mặc định |
 |---|---|---|
-| `ai_enabled` | Cho Claude viết lời. Tắt thì vẫn chạy quy tắc mỗi sáng | tắt |
+| `ai_enabled` | Cho Claude viết lời (lượt ngày + bản tin). Tắt thì vẫn chạy quy tắc mỗi sáng và bản tin theo quy tắc | tắt |
 | `ai_claude_model` | Model viết lời hằng ngày | `claude-sonnet-5-5` |
+| `ai_claude_model_deep` | Model viết bản tin tuần / tháng (trống = dùng model ngày) | `claude-opus-5-5` |
+| `ai_openai_model` | Model OpenAI phản biện. **Trống = phản biện tắt** | trống |
+| `ai_cap_openai_usd`, `ai_cycle_day_openai` | Trần chi / kỳ và ngày bắt đầu kỳ của OpenAI (như Claude) | 90 USD, ngày 1 |
 | `ai_mask_parties` | Thay tên khách / NCC bằng mã trước khi gửi | bật |
 | `ai_max_signals` | Số tín hiệu tối đa gửi mỗi nhóm (đỏ trước, mới trước) | 40 |
 | `ai_cap_claude_usd`, `ai_cycle_day_claude` | Trần chi mỗi kỳ và ngày bắt đầu kỳ; đã chi tới trần thì thôi gọi (đặt 0 = chặn hết) | 90 USD, ngày 1 |
@@ -262,13 +273,60 @@ nhật được", để số cũ không bị đọc như số sáng nay.
 | `ai_context` | Bối cảnh công ty gửi kèm mọi lượt (mùa vụ, ưu tiên của năm) | trống |
 | `ai_rules` | Ghi đè từng quy tắc: tắt, ngưỡng vàng, ngưỡng đỏ (trống hoặc 0 = dùng mặc định) | trống |
 
-Ngoài trần mềm trên còn chặn cứng 30 lượt gọi mỗi ngày. Trần thật nằm ở Console của Anthropic: không gắn thẻ, không
-bật tự nạp — hết credit thì API tự từ chối, lượt chạy ghi `het-credit` và dừng gọi tiếp. Các field `ai_openai_*`,
-`ai_claude_model_deep` đã có sẵn cho giai đoạn sau, hiện chưa dùng.
+Ngoài trần mềm trên còn chặn cứng 30 lượt gọi mỗi ngày **mỗi nhà cung cấp** (bản tin tính chung với lượt ngày của
+Claude; nút "Thử kết nối" cũng tính). Trần thật nằm ở Console của Anthropic / OpenAI: không gắn thẻ, không bật tự nạp —
+hết credit thì API tự từ chối, lượt chạy ghi `het-credit` và dừng gọi tiếp nhà cung cấp đó. Giá ghi `ai_prices` theo
+tên model đã đặt; model trả lời bằng tên bản chụp có hậu tố ngày (OpenAI hay làm vậy) mà chưa khai giá → tính theo giá
+model đã đặt.
 
 Trên màn `#/tro-ly`, quản trị đánh dấu từng việc "Đang xử lý", "Bỏ qua" 7 ngày / 30 ngày / hẳn, ghi chú (lượt sau mô
-hình đọc ghi chú này để nói tiến triển thay vì báo như việc mới). Màn `#/ai`: trạng thái khoá, "Thử kết nối", chi
-phí kỳ này, "Chạy ngay", bảng quy tắc (bật / tắt, ngưỡng), các lượt chạy gần nhất, lời AI bị loại.
+hình đọc ghi chú này để nói tiến triển thay vì báo như việc mới). Màn `#/ai`: trạng thái khoá Claude / OpenAI, "Thử kết
+nối" từng bên, chi phí kỳ này / trần từng bên, "Chạy ngay", "Tạo bản tin tuần" / "Tạo bản tin tháng" + bảng 6 bản tin
+gần nhất, bảng quy tắc (bật / tắt, ngưỡng), các lượt chạy gần nhất (cột bước đọc được: "Phản biện · <nhóm>", "Bản tin
+tuần / tháng"), lời AI bị loại.
+
+**Phản biện (P2, OpenAI).** Chỉ chạy khi `ai_openai_model` khác trống. Sau mỗi nhóm Claude viết xong, một lượt gọi
+OpenAI (Responses API, ép đầu ra theo JSON schema, `store: false` — OpenAI không giữ lại câu trả lời) nhận **đúng gói số
+người viết đã nhận** (đã che tên, đã bỏ mảng ẩn) cùng các lời AI vừa lưu (đã thay số, còn mã giả) và chấm từng lời:
+`dong-y` hoặc `nghi-ngo` (khẳng định không có số đỡ, nguyên nhân không bằng chứng, dùng số sai nghĩa, mức đỏ / vàng
+không tương xứng) kèm ghi chú ≤ 30 từ. Ghi chú qua đúng bộ soát số như lời người viết (sai → bỏ ghi chú, giữ verdict).
+`nghi-ngo` → thẻ có badge "Cần kiểm chứng" (mọi người); ghi chú chỉ quản trị thấy. Phản biện không đổi lời, mức, trạng
+thái, không ẩn gì; lời AI mới hôm sau xoá verdict cũ. Không model → không dòng Run nào; có model mà thiếu khoá / vượt
+trần / hết credit → MỘT dòng `review:<nhóm>` của trạng thái đó rồi thôi phản biện cho cả lượt. Lời có số ngoài đề bài
+người viết không được gửi phản biện.
+
+**Nhóm Kiểm soát (P2).** Ba bộ dò mới chỉ đọc chứng từ (SQL chỉ `SELECT`, mốc ngày truyền tham số, bỏ chứng từ đầu kỳ;
+"7 ngày" = hôm nay và 6 ngày trước). Tín hiệu nằm ở mảng `tro-ly`, nhóm lọc "Kiểm soát", dành cho lãnh đạo, không có nút
+sang màn gốc; danh sách chứng từ làm bằng chứng (≤ 20) chỉ quản trị thấy. Mức vàng mặc định, đỏ chỉ khi quản trị đặt
+ngưỡng đỏ ở `#/ai`.
+
+| Quy tắc | Báo khi (ngưỡng vàng mặc định) |
+|---|---|
+| `ct.huy_nhieu` | Số chứng từ bị huỷ trong 7 ngày (hoá đơn bán / mua, phiếu thu chi, bút toán nhập tay, phiếu kho) ≥ 5 **và** > 2 × trung bình mỗi tuần của 8 tuần trước |
+| `ct.ghi_lui` | Chứng từ duyệt, tạo trong 7 ngày, có ngày hạch toán lùi quá 10 ngày so với ngày tạo |
+| `ct.but_toan_tay_lon` | Bút toán nhập tay (không phải bút toán do chứng từ / tác vụ khác sinh) đã duyệt trong 7 ngày, tổng nợ ≥ 100 triệu |
+| `gia.ban_lech` | Dòng hoá đơn bán 7 ngày có đơn giá (theo đơn vị kho) thấp hơn trung vị 90 ngày trước của cùng mã × kênh quá 15% (cần ≥ 5 dòng nền; bỏ giá 0, trả hàng) |
+| `gia.chiet_khau_cao` | Dòng hoá đơn bán 7 ngày có chiết khấu dòng > 15% |
+| `gia.mua_tang` | Giá mua bình quân 30 ngày của một mã tăng > 10% so 90 ngày trước đó (chỉ mã mua ≥ 20 triệu trong 30 ngày) |
+| `kpi.lech_chuan` | Một trong 70 chỉ số đầu màn lệch khỏi trung vị 28 ngày quá 3 lần độ lệch trung vị (MAD), đủ lớn để không phải nhiễu; cần ≥ 14 ngày ảnh chụp. Một tín hiệu / chỉ số, nằm ở **mảng của chỉ số đó** (ẩn theo mảng đó). Bỏ chỉ số cộng dồn trong kỳ và tỷ lệ tính trên kỳ tới hôm nay (đổi kỳ là đổi nền) |
+
+Nhóm Kiểm soát chỉ gọi mô hình khi có tín hiệu và không nhận nhận định tự do (như nhóm Hệ thống). Lịch sử chỉ số
+không bao giờ gửi mô hình (có số của mọi mảng). Gói số chỉ có số đếm, số tiền, ngày, mã chứng từ, mã + tên hàng, tên
+khách / NCC (che bằng mã giả); không người lập / người sửa, không diễn giải bút toán. Phân loại 70 chỉ số (cộng dồn /
+tỷ lệ theo kỳ / ảnh chụp) và điều kiện SQL từng khối: `docs/ai-rules-audit.md` mục "Kiểm soát (P2)".
+
+**Bản tin tuần / tháng (P2).** Thứ Hai 06:00 (cron `0 6 * * 1`, `bc.ai.jobs.weekly`) viết bản tin của tuần trọn trước
+(thứ Hai → Chủ nhật); ngày 2 lúc 07:00 (`0 7 2 * *`, `bc.ai.jobs.monthly`) bản tin của tháng trước; quản trị bấm được ở
+`#/ai`. Hàng đợi `long`, khoá riêng (bản tin không chặn lượt ngày và ngược lại); chạy lại trong cùng tuần / tháng thì ghi
+đè cùng bản tin. Đầu vào do Python tính sẵn từ ảnh chụp chỉ số hằng ngày: giá trị cuối kỳ, so kỳ trước, so 4 tuần / 3
+tháng trước, cùng kỳ năm trước (tháng), thấp nhất / cao nhất 8 tuần / 12 tháng; chỉ số cộng dồn trong kỳ chỉ có giá trị
+(không phép so). Kèm tiêu đề các việc của kỳ (mới mở, đã đóng, còn tồn ≥ 7 / 30 ngày) — không gửi thân lời, ghi chú,
+chứng từ. Claude (model deep) viết ba phần "Điều đáng chú ý", "Việc tồn chưa xử lý", "Ưu tiên tuần / tháng tới" (≤ 5
+mục mỗi phần), số chỉ qua chỗ giữ và qua đúng bộ soát của lượt ngày; mục hỏng bị bỏ. AI tắt / hỏng / mọi mục bị loại →
+**bản tin theo quy tắc**: tối đa 5 chỉ số đổi nhiều nhất (≥ 10%), 5 việc tồn lâu nhất, 3 việc đỏ đang mở. Bản tin hiện
+dưới bản tin ngày ở `#/tro-ly` (tuần ≤ 14 ngày, tháng ≤ 45 ngày), badge "AI" / "Quy tắc". Mục AI mang mọi mảng mô hình
+đã thấy: người xem bị ẩn một trong các mảng đó thì không thấy mục đó (bản tin hết mục thì vắng; tiêu đề AI đổi thành
+tiêu đề trung tính); mục theo quy tắc chỉ mang mảng của chính nó.
 
 **Thêm một quy tắc.** Viết một hàm trong `bc/ai/rules/<nhóm>.py`; không cần khai báo ở đâu khác (màn `#/ai` tự có
 dòng mới; file quy tắc mới thì thêm tên module vào `_MODULES` của `bc/ai/registry.py`). Số phải có sẵn trong payload của một màn; đọc code method đó để lấy đúng tên khoá và đơn vị, rồi ghi vào
@@ -307,6 +365,20 @@ Thứ tự nên làm: (1) deploy, để AI **tắt**, xem 3 sáng liên tiếp �
 lại bảng giá `ai_prices` theo bảng giá hiện hành; (3) bật `ai_enabled`. Sau một tuần xem cột "Bị loại" ở `#/ai`: mục
 tiêu dưới 10% lời AI bị loại.
 
+**Deploy P2.** `migrate` tạo DocType `BC AI Brief`, thêm lựa chọn `thang` cho `BC AI Run.run_type` và hai cron bản tin;
+không đổi gì trên site cho tới khi quản trị bật (phản biện tắt vì `ai_openai_model` trống; nhóm Kiểm soát và bản tin
+theo quy tắc chạy ngay không cần khoá). `kpi.lech_chuan` cần 14 sáng có ảnh chụp mới bắt đầu so; bản tin tháng cần vài
+tháng ảnh chụp mới có đủ phép so (thiếu thì phép so vắng mặt, không thành 0). Bật phản biện:
+
+```bash
+ bench --site a.rongvanghoanggia.com set-config bc_ai_openai_key 'KHOÁ'      # dấu cách đầu dòng: không vào history
+bench --site a.rongvanghoanggia.com migrate && bench build --app bc && bench restart
+```
+
+rồi tạo key ở platform.openai.com (project riêng, không gắn thẻ, không auto recharge, đặt giới hạn chi của project),
+khai giá model vào `ai_prices`, đặt `ai_openai_model` ở `/app/bc-settings`, vào `#/ai` bấm "Thử kết nối" OpenAI. Tên
+model OpenAI không điền sẵn: chọn model hiện hành trên trang models của OpenAI lúc bật.
+
 Khác đặc tả (đã cân nhắc, ghi ở đầu các module): ép đầu ra bằng structured outputs thay cho tool bắt buộc (các
 model Claude 5.5 từ chối `tool_choice` ép buộc); `max_tokens` 16.000 vì model luôn suy nghĩ trước khi trả lời; có thêm
 trạng thái lỗi "bị từ chối"; giá hai model được điền sẵn khi migrate; nhận định tự do của AI tự đóng khi lượt sau
@@ -315,6 +387,19 @@ cả tháng trước để không tự đóng vào ngày 1 (chỉ theo dõi thá
 phải xem màn Vận chuyển theo tháng); đề bài kèm bảng kiểu của các con số. Kiểm nhanh sau deploy:
 `grep -rn "sk-" apps/bc/bc` phải rỗng. **Chưa kiểm trên site thật**: chưa có lượt gọi Claude thật nào (bộ thử dùng mô hình giả, không ra
 mạng) và chưa chạy trên bench thật.
+
+Khác đặc tả ở P2 (đã cân nhắc, ghi ở đầu các module): phản biện chạy ngay sau từng nhóm (không phải một bước cuối) và
+chấm mọi lời AI vừa lưu của nhóm (cả nhận định tự do), một lượt gọi / nhóm; lời có số ngoài đề bài người viết không gửi
+phản biện, và (đặt ở bước 6 của lượt ngày) bị loại luôn; nhóm Kiểm soát không nhận nhận định tự do; `kpi.lech_chuan`
+bỏ cả tỷ lệ tính trên kỳ tới hôm nay (không chỉ số cộng dồn); bộ lọc "bút toán nhập tay" áp cho bút toán ở cả ba khối
+chứng từ (huỷ chứng từ gốc kéo theo huỷ bút toán hệ thống không bị đếm hai lần); giá bán so theo đơn vị kho, giá mua
+theo tiền công ty; Retry-After của OpenAI từ 60 giây trở lên → chờ mặc định 5 / 20 giây; bản tin có bản theo quy tắc
+khi AI tắt; khoá bản tin là "loại:ngày sau kỳ" (một bản / tuần / tháng); người xem bị ẩn mảng thấy tiêu đề bản tin
+trung tính. **Giới hạn đã biết của P2**: một số chi tiết API OpenAI chưa đối chiếu được trên tài liệu (mẫu đầy đủ của
+thân lỗi, `usage` khi lượt hỏng, thử lại 502 / 504, header `retry-after-ms`) — làm theo dạng thường gặp, ghi ở đầu
+`bc/ai/llm/openai.py`; `ct.huy_nhieu` lọc theo `modified` không có chỉ mục trên v16 → mỗi bảng quét một lượt lúc 5:30;
+dòng chứng từ hiện mã khách (`customer` của chứng từ), không tên hiển thị; nút bản tin ở `#/ai` không tự làm mới (tải
+lại trang để thấy bản mới); chưa có lượt gọi OpenAI thật nào.
 
 ## Kiểm thử
 
@@ -326,8 +411,9 @@ bench): sản xuất 54 (gồm kiểm kê đưa về 0 rồi nhập lại), kên
 lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gian thực trên sổ kho 14; giao diện Playwright chung 138
 (desktop + điện thoại), tab mở trước deploy 6. **Trợ lý AI** (mô hình giả, không bộ nào ra mạng): dựng lời + soát số
 923, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
-kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 127, một lượt chạy trọn vẹn 274, luật
-tĩnh 42, giao diện hai màn 227 + 158 (lượt "đã cũ"). Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
+kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
+tĩnh 59, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 122, cửa gọi OpenAI 140, phản biện 81, nhóm
+Kiểm soát 96, chỉ số lệch chuẩn 62, bản tin tuần / tháng 145, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
 ## Cài đặt / deploy

@@ -1387,8 +1387,65 @@ _DAU_DONG = re.compile(r"^(?:[-–—•*·]+|\d{1,2}[.)])\s+")     # "- …", "
 _DAU_DONG_GIUA = re.compile(r"(?:[-–—•*·]+|\d{1,2}[.)])\s+")   # như trên, xét tại một vị trí bất kỳ (H6)
 
 
+def render_text(text, pack: dict, sections, mask=None, kinds=None, nguon: str | None = None,
+		one_line: bool = True) -> dict:
+	"""MỘT đoạn lời của MÔ HÌNH (tiêu đề, thân, một khuyến nghị, ghi chú phản biện, một mục bản tin) → {"ok", "text",
+	"masked", "paths", "sections_used", "errors"} — đúng đường đi của từng đoạn trong render_insight, cùng mọi luật:
+
+	0. one_line=True: gộp thành MỘT dòng trước mọi bước (H6) và sau khi thay số; False (thân): giữ xuống dòng, gọt hai đầu;
+	1. fill với `sections` (path ngoài tập → lỗi) và `kinds` (registry.kind_map + kiểu riêng của nơi gọi; None = không
+	   xét kiểu);
+	2. lint số trần (G1, G2 láng giềng placeholder, mã trong `nguon` — đề bài CUỐI đã gửi, None = không xét), chữ lạ
+	   (chu-la, trên lời đã bỏ placeholder và mã giả đã gửi), placeholder chu ra chuỗi rỗng (chu-rong);
+	3. hoàn nguyên mã giả đã gửi → tên thật (mask.unmask).
+	"text" = lời đã thay số VÀ đã hoàn nguyên tên (để lưu / hiện); "masked" = lời đã thay số, CÒN mã giả (trước bước 3 —
+	thứ duy nhất được phép gửi tiếp cho một mô hình khác). Lời rỗng sau cùng → lỗi "rong". Không cắt độ dài (nơi gọi
+	tự xét). ok = False khi có bất kỳ lỗi nào; khi đó nơi gọi KHÔNG được dùng "text" / "masked"."""
+	text = _chuoi(text)
+	if one_line:
+		text = _mot_dong(text)
+	ma = _nguon(nguon) if isinstance(nguon, str) else None
+	errors: list = []
+	f = fill(text, pack, sections, kinds)
+	_them(errors, *f.errors, *(f"so-tran:{mau}" for mau in _so_tran(text, mask, pack, ma)))
+	goc = mask.strip(text) if mask is not None else text
+	_them(errors, *(f"chu-la:{mau}" for mau in _chu_la(strip_placeholders(goc))))
+	_them(errors, *(f"chu-rong:{p}" for p, k in registry.placeholders(text) if k == "chu"
+		and isinstance(registry.resolve(pack, p, None), str) and not registry.resolve(pack, p, "").strip()))
+	out = mask.unmask(f.text) if mask is not None else f.text
+	co_chu = mask is not None and any(k == "chu" for _p, k in registry.placeholders(text))
+	masked = _che_chu(text, pack, sections, kinds, mask) if co_chu else f.text   # chỉ chu có thể mang tên đối tác
+	masked, out = (_mot_dong(masked), _mot_dong(out)) if one_line else (masked.strip(), out.strip())
+	if not out:
+		_them(errors, "rong")
+	return {"ok": not errors, "text": out, "masked": masked, "paths": list(f.paths),
+		"sections_used": list(f.sections_used), "errors": errors}
+
+
+def _che_chu(text: str, pack: dict, sections, kinds, mask) -> str:
+	"""Lời đã thay số nhưng giá trị của placeholder chu đi qua mask.mask (tên khách / NCC trong số liệu → mã giả, như
+	trong đề bài đã gửi) — bản "masked" của render_text. Không đổi tập mã "đã gửi" của mask (mask.mask ghi nhận mã phát
+	ra; ở đây chỉ tra cứu)."""
+	def thay(m):
+		if m.group(2) != "chu":
+			return m.group(0)
+		v = registry.resolve(pack, m.group(1).strip(), None)
+		if not isinstance(v, str):
+			return m.group(0)
+		return " ".join(str(mask.mask(v)).split()).replace("{", "(").replace("}", ")")
+
+	gui = getattr(mask, "_gui", None)
+	gui = set(gui) if isinstance(gui, set) else None
+	try:
+		return fill(registry.PLACEHOLDER.sub(thay, text), pack, sections, kinds).text
+	finally:
+		if gui is not None:
+			mask._gui = gui
+
+
 def render_insight(raw: dict, pack: dict, sections, mask=None, kinds=None, nguon: str | None = None) -> dict:
-	"""Lời của MÔ HÌNH cho một nhận định → {"ok", "title", "body", "advice": [str], "paths", "sections_used", "errors"}.
+	"""Lời của MÔ HÌNH cho một nhận định → {"ok", "title", "body", "advice": [str], "paths", "sections_used", "errors",
+	"masked": {"title", "body", "advice"}}.
 
 	raw = {"title", "body", "advice": [str]} (đầu ra mô hình, còn placeholder và có thể còn mã giả KH#/NCC#).
 	0. title và từng advice gộp thành MỘT dòng TRƯỚC mọi bước (H6: thứ được soát là thứ được hiện);
@@ -1400,28 +1457,30 @@ def render_insight(raw: dict, pack: dict, sections, mask=None, kinds=None, nguon
 	   đó (trừ tiền tố tiêu chuẩn / văn bản và "T10", "Q3"), không thì "so-tran:<mã>"; None = không xét;
 	3. hoàn nguyên mã giả đã gửi → tên thật (mask.unmask) trên lời đã thay số;
 	4. title sau bước 3 dài quá TITLE_MAX → lỗi "dai" (không cắt lời mô hình); advice bỏ dòng rỗng, tối đa 3.
+	Bước 0–3 của từng phần = render_text. "masked" = cùng lời đã thay số nhưng CÒN mã giả (phản biện gửi cái này).
 	ok = False khi có bất kỳ lỗi nào (errors ghi lý do: lỗi của fill, "so-tran:<mẩu>", "chu-la:<mẩu>", "rong" khi title /
 	body rỗng, "dai")."""
 	raw = raw if isinstance(raw, dict) else {}
 	advice = raw.get("advice")
 	advice = advice.splitlines() if isinstance(advice, str) else advice if isinstance(advice, (list, tuple)) else []
 	advice = [a for a in (_mot_dong(_DAU_DONG.sub("", _chuoi(x).strip())) for x in advice) if a][:ADVICE_MAX]
-	ma = _nguon(nguon) if isinstance(nguon, str) else None
-	errors, paths, secs, loi = [], [], [], []
-	for text in (_mot_dong(_chuoi(raw.get("title"))), _chuoi(raw.get("body")), *advice):
-		f = fill(text, pack, sections, kinds)
-		_them(errors, *f.errors, *(f"so-tran:{mau}" for mau in _so_tran(text, mask, pack, ma)))
-		goc = mask.strip(text) if mask is not None else text
-		_them(errors, *(f"chu-la:{mau}" for mau in _chu_la(strip_placeholders(goc))))
-		_them(errors, *(f"chu-rong:{p}" for p, k in registry.placeholders(text) if k == "chu"
-			and isinstance(registry.resolve(pack, p, None), str) and not registry.resolve(pack, p, "").strip()))
-		_them(paths, *f.paths)
-		_them(secs, *f.sections_used)
-		loi.append(mask.unmask(f.text) if mask is not None else f.text)
-	title, body, advice = _mot_dong(loi[0]), loi[1].strip(), [a for a in (_mot_dong(x) for x in loi[2:]) if a]
+	errors, paths, secs, loi, che = [], [], [], [], []
+	da = set()    # lời dài có thể có hàng chục nghìn lỗi: gộp bằng tập (không _them — O(n²))
+	for text, mot in ((raw.get("title"), True), (raw.get("body"), False), *((a, True) for a in advice)):
+		r = render_text(text, pack, sections, mask, kinds=kinds, nguon=nguon, one_line=mot)
+		for e in r["errors"]:
+			if e != "rong" and e not in da:   # "rong": chỉ title / body (xét dưới)
+				da.add(e)
+				errors.append(e)
+		_them(paths, *r["paths"])
+		_them(secs, *r["sections_used"])
+		loi.append(r["text"])
+		che.append(r["masked"])
+	title, body, advice = loi[0], loi[1], [a for a in loi[2:] if a]
 	if not title or not body:
 		_them(errors, "rong")
 	if len(title) > TITLE_MAX:
 		_them(errors, "dai")
 	return {"ok": not errors, "title": _cat(title), "body": body, "advice": advice, "paths": paths,
-		"sections_used": secs, "errors": errors}
+		"sections_used": secs, "errors": errors,
+		"masked": {"title": _cat(che[0]), "body": che[1], "advice": [a for a in che[2:] if a]}}

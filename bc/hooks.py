@@ -26,9 +26,12 @@ fixtures = [
 after_install = "bc.install.after_install"
 after_migrate = "bc.install.after_migrate"  # điền mặc định cho ô cấu hình mới (Single không tự nhận default khi migrate)
 
-# Trợ lý AI: 05:30 mỗi sáng theo múi giờ của site (System Settings › Time Zone). Chỉ xếp hàng job nền.
+# Trợ lý AI: 05:30 mỗi sáng; bản tin tuần thứ Hai 06:00; bản tin tháng 07:00 ngày 2 — theo múi giờ của site (System
+# Settings › Time Zone). Chỉ xếp hàng job nền.
 scheduler_events = {
 	"cron": {
 		"30 5 * * *": ["bc.ai.jobs.daily"],
+		"0 6 * * 1": ["bc.ai.jobs.weekly"],
+		"0 7 2 * *": ["bc.ai.jobs.monthly"],
 	},
 }

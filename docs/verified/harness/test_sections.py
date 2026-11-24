@@ -31,7 +31,7 @@ EXPECTED = {
 	"kho_ton.get_overview": "ton-kho", "kho_ton.get_trend": "ton-kho", "kho_han.get_overview": "han-dung",
 	"kho_kk.get_overview": "kiem-ke", "kho_nhap.get_overview": "nhap-tp",
 }
-KHONG_MANG = {"ai.get_admin", "ai.run_now", "ai.set_status", "ai.set_rule", "ai.test_connection",
+KHONG_MANG = {"ai.get_admin", "ai.run_now", "ai.run_brief", "ai.set_status", "ai.set_rule", "ai.test_connection",
 	"common.get_context_meta", "sections.get_hidden", "sections.set_hidden", "hidden.list_hidden",
 	"hidden.search_items", "hidden.hide_item", "hidden.unhide_item", "share.list_leaders", "share.create_leader",
 	"share.grant_existing", "share.issue_link", "share.revoke_link", "share.set_enabled", "share.login", "share.logout"}

@@ -167,10 +167,10 @@ out, err, fake, sl = goi([])
 c("khoá chỉ toàn dấu cách → vẫn no_key, không gọi mạng", err.kind == "no_key" and fake.unexpected == 0
 	and llm.has_key("claude") is False)
 out, err, fake, sl = goi([], provider="openai")
-c("openai không khoá → no_key (P2 chưa làm)", err.kind == "no_key" and fake.unexpected == 0)
+c("openai không khoá → no_key", err.kind == "no_key" and fake.unexpected == 0)
 frappe.conf["bc_ai_openai_key"] = OKEY
-out, err, fake, sl = goi([], provider="openai")
-c("openai có khoá → http 'chưa hỗ trợ', không gọi mạng", err.kind == "http" and err.message == "chưa hỗ trợ"
+out, err, fake, sl = goi([], provider="openai", model="")
+c("openai có khoá, model trống → http, không gọi mạng (adapter OpenAI: test_ai_openai.py)", err.kind == "http"
 	and fake.unexpected == 0 and llm.has_key("openai") is True, err.message)
 out, err, fake, sl = goi([], provider="gemini")
 c("provider lạ → LLMError http, không gọi mạng", err.kind == "http" and fake.unexpected == 0)

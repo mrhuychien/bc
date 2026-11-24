@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "brief_key",
+  "brief_type",
+  "brief_date",
+  "period_from",
+  "period_to",
+  "title",
+  "body",
+  "sections_used",
+  "source",
+  "model"
+ ],
+ "fields": [
+  {
+   "fieldname": "brief_key",
+   "fieldtype": "Data",
+   "label": "Khoá",
+   "unique": 1,
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 0,
+   "description": "<loại>:<ngày> — một bản tin / loại / ngày."
+  },
+  {
+   "fieldname": "brief_type",
+   "fieldtype": "Select",
+   "label": "Loại",
+   "options": "ngay\ntuan\nthang",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "brief_date",
+   "fieldtype": "Date",
+   "label": "Ngày bản tin",
+   "in_list_view": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "period_from",
+   "fieldtype": "Date",
+   "label": "Từ ngày",
+   "read_only": 1
+  },
+  {
+   "fieldname": "period_to",
+   "fieldtype": "Date",
+   "label": "Đến ngày",
+   "read_only": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Tiêu đề",
+   "length": 200,
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "body",
+   "fieldtype": "Long Text",
+   "label": "Nội dung (JSON)",
+   "read_only": 1,
+   "description": "{\"parts\": [{\"key\", \"title\", \"items\": [{\"text\", \"sections\"}]}]}"
+  },
+  {
+   "fieldname": "sections_used",
+   "fieldtype": "Small Text",
+   "label": "Mảng đã dùng",
+   "read_only": 1,
+   "description": "Mỗi dòng một mã mảng."
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Nguồn lời",
+   "options": "ai\nquy-tac",
+   "read_only": 1
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Mô hình",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "BC",
+ "name": "BC AI Brief",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title"
+}

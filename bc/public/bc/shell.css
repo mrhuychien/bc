@@ -558,6 +558,17 @@
     text-underline-offset: 3px; }
 .bc-ai-brief-item.bc-ai-do { color: #b91c1c; }
 .bc-ai-chips { margin-top: .9rem; }
+/* Bản tin tuần / tháng (dưới bản tin ngày) */
+.bc-ai-pbriefs { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-top: .75rem; }
+.bc-ai-pbriefs > .bc-card { margin-top: 0; }
+.bc-ai-pbrief { border-left: 4px solid var(--bc-accent-2); overflow-wrap: anywhere; min-width: 0; }
+.bc-ai-pbrief-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; }
+.bc-ai-pbrief-kind { font-size: .74rem; font-weight: 700; color: var(--bc-text-3); min-width: 0; }
+.bc-ai-pbrief-head .bc-badge { flex: none; }
+.bc-ai-pbrief-part { margin-top: .55rem; }
+.bc-ai-pbrief-part .bc-ai-advice { margin-top: .2rem; }
+.bc-ai-pbrief .bc-ai-tech { margin-top: .5rem; }
+.bc-ai-briefbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .6rem; }
 .bc-ai-list { display: flex; flex-direction: column; gap: .75rem; }
 .bc-ai-list > .bc-card + .bc-card { margin-top: 0; }
 .bc-ai-card { border-left: 5px solid var(--bc-warning); scroll-margin-top: calc(var(--bc-header-h) + 12px); overflow-wrap: anywhere;
@@ -594,6 +605,7 @@
 .bc-ai-kv b { color: var(--bc-text); font-weight: 700; text-align: right; overflow-wrap: anywhere; min-width: 0; }
 .bc-ai-test-out { font-size: .82rem; overflow-wrap: anywhere; min-width: 0; }
 .bc-ai-budget-num { font-size: 1.05rem; margin-bottom: .4rem; }
+.bc-ai-budget-sep { border-top: 1px dashed var(--bc-border); margin: .8rem 0 .7rem; }
 .bc-ai-warn { margin-top: .45rem; font-size: .8rem; font-weight: 700; color: #b45309; }
 .bc-ai-runbar { align-items: center; }
 .bc-ai-rule { padding: .65rem .1rem; border-top: 1px solid var(--bc-border); min-width: 0; }
@@ -614,4 +626,5 @@
 .bc-ai-item .bc-btn { flex: none; white-space: nowrap; }
 @media (min-width: 900px) {
     .bc-ai-rule-form { grid-template-columns: 10rem 10rem auto; justify-content: start; }
+    .bc-ai-pbriefs { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
 }

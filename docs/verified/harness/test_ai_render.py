@@ -638,7 +638,8 @@ eq("khuyến nghị: bỏ dòng rỗng, bỏ gạch / số đầu dòng, gộp m
 eq("paths của cả tiêu đề + thân, theo thứ tự", r["paths"], [f"{R}.top_overdue[0].overdue", f"{R}.kpis.overdue_pct",
 	f"{R}.kpis.overdue", f"{R}.kpis.total", f"{R}.top_overdue[1].customer_name", f"{R}.top_overdue[0].oldest"])
 eq("sections_used", r["sections_used"], ["cong-no"])
-c("lời lưu không còn mã giả, không còn placeholder", not any(x in json.dumps(r, ensure_ascii=False) for x in ("KH#", "NCC#", "{{")))
+c("lời lưu không còn mã giả, không còn placeholder", not any(x in json.dumps({k: v for k, v in r.items() if k != "masked"},
+	ensure_ascii=False) for x in ("KH#", "NCC#", "{{")))   # "masked" (P2): bản CÒN mã giả cho phản biện — không lưu
 r = ri(advice=["Phòng Mua hàng làm việc với NCC#0001 về {{phai-tra.payables.ap.due.overdue_count|so}} hoá đơn."])
 eq("path trong khuyến nghị cũng vào paths / sections_used", (r["ok"], r["advice"], r["paths"][-1], r["sections_used"]),
 	(True, [f"Phòng Mua hàng làm việc với {BAO_BI} về 12 hoá đơn."], "phai-tra.payables.ap.due.overdue_count",
@@ -1523,6 +1524,7 @@ eq("E5: mọi lời quy tắc của seed chung + seed kho qua được luật c�
 
 print("\n— G4: bộ nhận định ĐÚNG (≥ 60, đủ 7 nhóm, hai seed) — mọi câu phải được nhận —")
 c("G4: bộ lời đúng ≥ 60 câu, đủ 7 nhóm, cả hai seed", len(DUNG) >= 60 and {x[1] for x in DUNG} == set(registry.GROUPS)
+	- {registry.KIEM_SOAT}   # nhóm kiểm soát (P2) chưa có số trên hai seed này
 	and {x[0] for x in DUNG} == {"g", "k"}, (len(DUNG), sorted({x[1] for x in DUNG})))
 c("G4: mọi câu đã chạy qua render_insight trên gói số thật", sum(len(k.get("dung", [])) for k in THAT.values())
 	== len(DUNG), sum(len(k.get("dung", [])) for k in THAT.values()))

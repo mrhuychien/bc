@@ -92,6 +92,8 @@ c("ngoài bc/ai/llm/: không import requests / socket / http / urllib (trừ url
 	lo_net)
 c("luật mạng không rỗng nghĩa: bc/ai/llm/anthropic.py import requests",
 	"requests" in imports_of(TREES.get("ai/llm/anthropic.py", ast.parse(""))))
+c("luật mạng không rỗng nghĩa (P2): bc/ai/llm/openai.py import requests",
+	"requests" in imports_of(TREES.get("ai/llm/openai.py", ast.parse(""))))
 KHOA = re.compile(r"bc_ai_\w*key")
 lo_khoa = [k for k, t in NGOAI.items() if any(KHOA.search(s) for s in strings_of(t))]
 c("ngoài bc/ai/llm/: không chuỗi tên khoá bc_ai_*key", not lo_khoa, lo_khoa)
@@ -179,7 +181,7 @@ c("BC Settings: field_order khớp fields", st.get("field_order") == names)
 pl1 = [p for p in st.get("permissions", []) if p.get("permlevel") == 1]
 c("BC Settings permlevel 1: chỉ System Manager đọc / ghi", [p.get("role") for p in pl1 if p.get("read")
 	or p.get("write")] == ["System Manager"], pl1)
-for name, label in (("bc_ai_insight", "BC AI Insight"), ("bc_ai_run", "BC AI Run")):
+for name, label in (("bc_ai_insight", "BC AI Insight"), ("bc_ai_run", "BC AI Run"), ("bc_ai_brief", "BC AI Brief")):
 	d = dt(name)
 	roles = sorted({p.get("role") for p in d.get("permissions", [])})
 	c(f"{label}: DocPerm chỉ System Manager", roles == ["System Manager"], d.get("permissions"))
@@ -205,8 +207,8 @@ c("Insight.audience = lanh-dao / quan-tri (= registry.AUDIENCES)", si.get("audie
 c("Insight.source = quy-tac / ai", si.get("source") == ["quy-tac", "ai"], si.get("source"))
 c("Insight.review_verdict = (trống) / dong-y / nghi-ngo", si.get("review_verdict") == ["", "dong-y", "nghi-ngo"],
 	si.get("review_verdict"))
-c("Run.run_type = ngay / tuan / tay / hoi-dap (= store.RUN_TYPES)", sr.get("run_type") == ["ngay", "tuan", "tay",
-	"hoi-dap"] and tuple(sr["run_type"]) == store.RUN_TYPES, sr.get("run_type"))
+c("Run.run_type = ngay / tuan / tay / hoi-dap / thang (= store.RUN_TYPES)", sr.get("run_type") == ["ngay", "tuan", "tay",
+	"hoi-dap", "thang"] and tuple(sr["run_type"]) == store.RUN_TYPES, sr.get("run_type"))
 c("Run.status = ok / loi / het-credit / vuot-tran / tat / khong-khoa (= store.RUN_STATUSES)", sr.get("status") == [
 	"ok", "loi", "het-credit", "vuot-tran", "tat", "khong-khoa"] and tuple(sr["status"]) == store.RUN_STATUSES,
 	sr.get("status"))
@@ -237,6 +239,9 @@ exec(compile(open(os.path.join(PKG, "hooks.py"), encoding="utf-8").read().replac
 	"app_version", "app_version = ''"), "hooks.py", "exec"), ns)
 c("scheduler 5:30 hằng ngày gọi bc.ai.jobs.daily", "bc.ai.jobs.daily" in (ns.get("scheduler_events", {})
 	.get("cron", {}).get("30 5 * * *") or []), ns.get("scheduler_events"))
+_cron = ns.get("scheduler_events", {}).get("cron", {})
+c("P2: thứ Hai 06:00 gọi bc.ai.jobs.weekly, 07:00 ngày 2 gọi bc.ai.jobs.monthly", "bc.ai.jobs.weekly" in (_cron.get(
+	"0 6 * * 1") or []) and "bc.ai.jobs.monthly" in (_cron.get("0 7 2 * *") or []), _cron)
 
 # ═══════════════════════════════════════════════════════════════════════════
 print("5. install.SEED_AI — mặc định khi cài / migrate")
@@ -251,6 +256,7 @@ c("model: claude-sonnet-5-5 hằng ngày (= bc.ai.DEFAULT_CLAUDE_MODEL), claude-
 	(S.get("ai_claude_model"), S.get("ai_claude_model_deep")) == ("claude-sonnet-5-5", "claude-opus-5-5")
 	and S.get("ai_claude_model") == bc_ai.DEFAULT_CLAUDE_MODEL, S)
 c("ngày chốt kỳ = 1", (S.get("ai_cycle_day_claude"), S.get("ai_cycle_day_openai")) == (1, 1), S)
+c("ai_openai_model mặc định trống (phản biện OpenAI tắt tới khi quản trị đặt model)", not S.get("ai_openai_model"), S)
 c("ai_enabled KHÔNG có trong SEED_AI (cài xong AI vẫn tắt tới khi quản trị bật)", "ai_enabled" not in S, S)
 c("mọi khoá SEED_AI là field có thật của BC Settings", set(S) <= set(names), set(S) - set(names))
 c("giá khởi tạo có cho model mặc định", set(install.SEED_AI_PRICES) >= {S.get("ai_claude_model"),
@@ -258,5 +264,28 @@ c("giá khởi tạo có cho model mặc định", set(install.SEED_AI_PRICES) >
 src = ast.unparse(next(n for n in TREES["install.py"].body if isinstance(n, ast.FunctionDef)
 	and n.name == "seed_settings"))
 c("seed_settings dùng SEED_AI và chỉ điền ô chưa từng lưu (_chua_luu)", "SEED_AI" in src and "_chua_luu" in src)
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("6. Detector chỉ SELECT, quy tắc không SQL (mọi file dưới bc/ai/detectors, bc/ai/rules — kể cả P2)")
+_CAM = re.compile(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|REPLACE|TRUNCATE|CREATE|GRANT)\b", re.I)
+_GHI = {"set_value", "delete", "insert", "commit", "save", "db_set", "set_single_value", "rollback"}
+for thu_muc, la_rule in (("detectors", False), ("rules", True)):
+	for f in sorted(os.listdir(os.path.join(BC_ROOT, "bc", "ai", thu_muc))):
+		if not f.endswith(".py") or f == "__init__.py":
+			continue
+		tree = ast.parse(open(os.path.join(BC_ROOT, "bc", "ai", thu_muc, f), encoding="utf-8").read())
+		doc = {id(n.body[0].value) for n in ast.walk(tree) if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef))
+			and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+		chuoi = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+			and id(n) not in doc] + [ast.unparse(n) for n in ast.walk(tree) if isinstance(n, ast.JoinedStr)]
+		sql = [x for x in chuoi if re.search(r"\bSELECT\b|\bFROM\s+`tab", x)]
+		ghi = sorted({n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in _GHI})
+		if la_rule:
+			c(f"rules/{f}: không SQL, không frappe.db (quy tắc thuần)", not sql and not any(isinstance(n, ast.Attribute)
+				and n.attr == "db" for n in ast.walk(tree)) and not ghi, (sql[:2], ghi))
+		else:
+			c(f"detectors/{f}: SQL chỉ SELECT, không NOW() / CURDATE(), không gọi ghi DB", not [x for x in sql
+				if _CAM.search(x) or re.search(r"NOW\(|CURDATE|SYSDATE|CURRENT_(DATE|TIME)", x, re.I)] and not ghi,
+				([x[:50] for x in sql if _CAM.search(x)], ghi))
 
 c.done()

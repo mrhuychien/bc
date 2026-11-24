@@ -2,6 +2,8 @@
 // Một lượt gọi bc.api.ai.get_feed(closed) — máy chủ đã lọc theo vai và mảng đang ẩn (người xem không nhận chứng từ,
 // ghi chú quản trị, nhóm Hệ thống). Lời quy tắc / AI là VĂN BẢN THUẦN: mọi chuỗi máy chủ qua escapeHtml, không markdown.
 // Quản trị (System Manager): thêm nút đổi trạng thái, ghi chú, chứng từ, dòng kỹ thuật — người xem không có trong DOM.
+// Bản tin tuần / tháng (feed.briefs) vẽ dưới bản tin ngày: máy chủ đã bỏ mục dùng số của mảng ẩn (người xem), mục là
+// chữ thuần. Nhóm Kiểm soát (chứng từ / giá) không có nút "Xem ở màn" — máy chủ trả route trống.
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
@@ -11,7 +13,8 @@ import { skeleton } from '../components/skeleton.js';
 import { emptyState, errorState } from '../components/empty-state.js';
 
 // Thứ tự nhóm = registry.GROUPS của máy chủ (chỉ khoá — nhãn và việc nào có lấy từ dữ liệu). Nhóm lạ xếp sau.
-const GROUP_ORDER = ['kinh-doanh', 'kho-sx', 'van-chuyen', 'tai-chinh', 'nhan-su', 'attp', 'he-thong'];
+const GROUP_ORDER = ['kinh-doanh', 'kho-sx', 'van-chuyen', 'tai-chinh', 'nhan-su', 'attp', 'kiem-soat', 'he-thong'];
+const BRIEF_KIND = { tuan: 'Bản tin tuần', thang: 'Bản tin tháng' };
 const OPEN = ['mo', 'dang-xu-ly'];
 const NOTE = 'ⓘ Tín hiệu do quy tắc tính trên cùng số liệu với các màn báo cáo. Phần lời có nhãn AI do mô hình ngôn ngữ '
     + 'viết; mọi con số trong lời do máy chủ chèn từ số liệu gốc. Cập nhật 5:30 mỗi sáng.';
@@ -148,6 +151,37 @@ function paintHead(f) {
             data-brief="${escapeHtml(it.id)}">${escapeHtml(it.title)}</button></li>`).join('')}</ol></div>` : '');
 }
 
+/** Kỳ của bản tin: tuần "19/10 – 25/10/2026", tháng "Tháng 10/2026". */
+function periodText(b) {
+    const p = (s) => String(s || '').slice(0, 10).split('-');
+    const [y1, m1, d1] = p(b.period_from), [y2, m2, d2] = p(b.period_to);
+    if (b.type === 'thang' && y2) return `Tháng ${Number(m2)}/${y2}`;
+    if (y1 && y2) return `${d1}/${m1} – ${d2}/${m2}/${y2}`;
+    return b.date ? fmtDate(b.date) : '';
+}
+
+function periodBriefHtml(b) {
+    const admin = isAdmin();
+    const ai = b.source === 'ai';
+    const parts = (Array.isArray(b.parts) ? b.parts : []).filter((p) => Array.isArray(p.items) && p.items.length);
+    return `<article class="bc-card bc-ai-pbrief" data-pbrief="${escapeHtml(b.type)}">
+        <div class="bc-ai-pbrief-head">
+            <div class="bc-ai-pbrief-kind">${escapeHtml(BRIEF_KIND[b.type] || b.type || '')} · ${escapeHtml(periodText(b))}</div>
+            <span class="bc-badge ${ai ? 'bc-badge-primary' : 'bc-badge-muted'}" data-src="${ai ? 'ai' : 'quy-tac'}">${ai ? 'AI' : 'Quy tắc'}</span>
+        </div>
+        <h3 class="bc-ai-title">${escapeHtml(b.title)}</h3>
+        ${parts.map((p) => `<div class="bc-ai-pbrief-part" data-part="${escapeHtml(p.key)}">
+            <div class="bc-ai-sub">${escapeHtml(p.title)}</div>
+            <ul class="bc-ai-advice">${p.items.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul></div>`).join('')}
+        ${admin && b.model ? `<div class="bc-ai-tech">${escapeHtml(b.model)}</div>` : ''}
+    </article>`;
+}
+
+function paintBriefs(f) {
+    const bs = Array.isArray(f.briefs) ? f.briefs : [];
+    fill('tl-briefs', bs.length ? `<div class="bc-ai-pbriefs">${bs.map(periodBriefHtml).join('')}</div>` : '');
+}
+
 function paintChips() {
     const list = st.feed?.insights || [];
     if (!list.length) { fill('tl-chips', ''); return; }
@@ -190,6 +224,7 @@ async function load(isCurrent) {
         if (!alive()) return;
         st.feed = f;
         paintHead(f);
+        paintBriefs(f);
         paintTools();
         paintChips();
         paintList();
@@ -197,6 +232,7 @@ async function load(isCurrent) {
     } catch (err) {
         if (!alive()) return;
         fill('tl-brief', '');
+        fill('tl-briefs', '');
         fill('tl-stale', '');
         fill('tl-chips', '');
         fill('tl-list', errorState(err));
@@ -272,6 +308,7 @@ export async function render({ container, isCurrent }) {
         <div id="tl-alert"></div>
         <div id="tl-stale"></div>
         <div id="tl-brief">${skeleton(120)}</div>
+        <div id="tl-briefs"></div>
         ${isAdmin() ? '<div class="bc-filter-bar bc-ai-tools" id="tl-tools"></div>' : ''}
         <div id="tl-chips"></div>
         <div id="tl-list" class="bc-ai-list"></div>

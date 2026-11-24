@@ -368,7 +368,7 @@ KEYS = {"cn.qua_han_ty_le", "cn.vuot_han_muc", "cn.dso_cao", "cn.phai_tra_qua_ha
 	"ns.giay_to:attp", "ns.viec_ton:luong_trung", "attp.den_do:vong_kiem", "attp.den_do:su_co",
 	"attp.den_do:khac_phuc", "attp.den_do:khieu_nai", "attp.den_do:xuat_xuong", "attp.den_do:truy_xuat",
 	"ht.backup_cu"}
-NHOM = list(registry.GROUPS)      # thứ tự gọi
+NHOM = [g for g in registry.GROUPS if g != registry.KIEM_SOAT]   # thứ tự gọi (kiểm soát: chưa có detector → không gọi)
 CO_TIN = {"van-chuyen", "tai-chinh", "nhan-su", "attp", "he-thong"}
 
 

@@ -12,7 +12,8 @@ for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py t
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done
 # Trợ lý AI: mỗi bộ thử một DB riêng; LLM giả, không bộ nào ra mạng
-for t in render redact llm store rules_kd rules_kho rules_cn rules_vc rules_ns he_thong api pipeline tinh; do
+for t in render redact llm store rules_kd rules_kho rules_cn rules_vc rules_ns he_thong api pipeline tinh \
+		p2_nen openai review ks kpi brief p2_e2e; do
 	echo "═══ test_ai_$t.py"; out=$(BC_TEST_DB=bc_test_ai_$t python3 -B "test_ai_$t.py" 2>&1); rc=$?
 	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 done

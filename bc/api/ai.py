@@ -15,6 +15,15 @@ Luật đọc (get_feed / get_badge — dùng chung _rows, nên chấm đỏ tr�
   nhất — lượt ok gần nhất không làm mới nó (quy tắc không chạy được, số còn là số ngày last_seen). meta.stale_count =
   số nhận định stale trong danh sách đã lọc của người gọi.
 
+Bản tin tuần / tháng (P2, get_feed.briefs — đọc BC AI Brief qua bc.ai.store.latest_briefs, lọc lúc đọc như nhận định):
+- Tối đa một bản tuần (brief_date cách hôm nay ≤ 14 ngày) + một bản tháng (≤ 45 ngày), tuần trước tháng.
+- Người xem: bỏ mục có BẤT KỲ mảng nào trong `sections` đang ẩn; phần không còn mục bị bỏ; bản tin không còn mục nào
+  thì vắng hẳn. Tiêu đề bản AI dựng trên mọi mảng mô hình đã thấy (sections_used) → có mảng ẩn thì thay bằng tiêu đề
+  trung tính của kỳ (không số). Không bao giờ trả model / sections.
+- Quản trị: mọi mục + model + sections_used.
+Nhóm kiem-soat (tín hiệu kiểm soát chứng từ / giá, mảng tro-ly): section_label "Kiểm soát", route trống (không có màn
+nguồn để mở).
+
 Khoá API: chỉ trả có / không (bc.ai.llm.has_key); lỗi của lượt gọi thử đã qua bc.ai.llm.clean.
 Module bc.ai.{llm, budget, store} nạp muộn trong hàm (bộ thử thay bằng bản giả).
 """
@@ -44,6 +53,11 @@ NOTE_MAX = 500
 MUTE_MAX = 365
 KHOA_SAI_DANG = "khoá khai sai dạng (lẫn dấu cách / xuống dòng) — dán lại vào site_config"
 TEST_MAX_TOKENS = 2048      # thinking tính vào max_tokens — nhỏ hơn dễ dừng vì max_tokens
+BRIEF_KINDS = ("tuan", "thang")
+BRIEF_MAX_AGE = {"tuan": 14, "thang": 45}     # ngày: bản tin cũ hơn không hiện ở #/tro-ly
+BRIEF_ADMIN_MAX = 6
+STEP_LABELS = {"tong": "Tổng hợp", "ai": "Bước AI", "test": "Thử kết nối", "ban-tin:tuan": "Bản tin tuần",
+	"ban-tin:thang": "Bản tin tháng"}
 TEST_SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"],
 	"additionalProperties": False}
 RUN_FIELDS = ("run_type", "step", "run_id", "provider", "model", "started", "finished", "status", "tokens_in",
@@ -105,10 +119,12 @@ def _shape(r, admin: bool, today=None, ok_started=_CHUA) -> dict:
 	sec = cstr(r.get("section"))
 	g = registry.group_of(sec)
 	first = r.get("first_seen")
-	d = {"id": r.get("name"), "section": sec, "section_label": registry.SECTION_LABELS.get(sec, sec), "group": g,
+	ks = g == registry.KIEM_SOAT   # kiểm soát chứng từ / giá: nhãn nhóm, không màn nguồn
+	d = {"id": r.get("name"), "section": sec,
+		"section_label": registry.GROUPS[g]["label"] if ks else registry.SECTION_LABELS.get(sec, sec), "group": g,
 		"group_label": registry.GROUPS[g]["label"] if g else "", "severity": r.get("severity"),
 		"title": cstr(r.get("title")), "body": cstr(r.get("body")), "advice": _lines(r.get("advice")),
-		"route": cstr(r.get("route")), "source": r.get("source"), "status": r.get("status"),
+		"route": "" if ks else cstr(r.get("route")), "source": r.get("source"), "status": r.get("status"),
 		"days": max(0, date_diff(today, first)) if first else 0, "first_seen": first,
 		"last_seen": r.get("last_seen"), "review_verdict": cstr(r.get("review_verdict")),
 		"stale": _is_stale(r, ok_started)}
@@ -178,17 +194,67 @@ def _ai_on() -> bool:
 	return bool(cint(get_settings().get("ai_enabled"))) and bool(llm.has_key("claude"))
 
 
+def _iso(d) -> str | None:
+	return getdate(d).isoformat() if d else None
+
+
+def _neutral_title(kind: str, tu, den) -> str:
+	"""Tiêu đề trung tính của kỳ (không số liệu) — thay tiêu đề AI khi người xem có mảng ẩn trong sections_used."""
+	if kind == "tuan" and tu and den:
+		tu, den = getdate(tu), getdate(den)
+		return f"Bản tin tuần {tu.day}/{tu.month} – {den.day}/{den.month}/{den.year}"
+	if kind == "thang" and den:
+		den = getdate(den)
+		return f"Bản tin tháng {den.month}/{den.year}"
+	return "Bản tin tuần" if kind == "tuan" else "Bản tin tháng"
+
+
+def _brief_shape(b: dict, admin: bool, an: set) -> dict | None:
+	"""Một bản tin tuần / tháng ra API (đã lọc theo người gọi) hoặc None khi người xem không còn mục nào."""
+	parts = []
+	for p in b.get("parts") or []:
+		items = [cstr(it.get("text")) for it in p.get("items") or []
+			if admin or not any(s in an for s in it.get("sections") or [])]
+		if items:
+			parts.append({"key": cstr(p.get("key")), "title": cstr(p.get("title")), "items": items})
+	if not any(p["items"] for p in parts):
+		return None
+	title = cstr(b.get("title"))
+	if not admin and any(s in an for s in b.get("sections_used") or []):
+		title = _neutral_title(b.get("brief_type"), b.get("period_from"), b.get("period_to"))
+	d = {"type": b.get("brief_type"), "date": _iso(b.get("brief_date")), "period_from": _iso(b.get("period_from")),
+		"period_to": _iso(b.get("period_to")), "title": title, "source": cstr(b.get("source")), "parts": parts}
+	if admin:
+		d.update({"model": cstr(b.get("model")), "sections_used": list(b.get("sections_used") or [])})
+	return d
+
+
+def _briefs(admin: bool, today) -> list:
+	"""Bản tin tuần + tháng mới nhất còn hạn hiển thị, đã lọc theo người gọi (đặc tả P2 §5)."""
+	from bc.ai import store
+	an = set() if admin else hidden_sections()
+	out = []
+	for b in store.latest_briefs(BRIEF_KINDS, 1):
+		kind, ngay = b.get("brief_type"), b.get("brief_date")
+		if kind not in BRIEF_MAX_AGE or not ngay or date_diff(today, ngay) > BRIEF_MAX_AGE[kind]:
+			continue
+		x = _brief_shape(b, admin, an)
+		if x:
+			out.append(x)
+	return out
+
+
 @frappe.whitelist()
 def get_feed(refresh=0, closed=0):
-	"""Nhận định cho người gọi (đã lọc theo vai và mảng ẩn) → {meta, brief, counts, insights[]}.
+	"""Nhận định cho người gọi (đã lọc theo vai và mảng ẩn) → {meta, brief, briefs, counts, insights[]}.
 	Không cache dùng chung: kết quả phụ thuộc vai và mảng đang ẩn (refresh nhận cho đồng bộ với method báo cáo)."""
 	_guard("tro-ly")
 	admin = is_admin()
 	today = _today()
 	rows = _rows(admin, closed if admin else 0)
 	since = _ok_started()
-	return {"meta": _meta(rows, since), "brief": _brief(rows, today), "counts": _counts(rows),
-		"insights": [_shape(r, admin, today, since) for r in rows]}
+	return {"meta": _meta(rows, since), "brief": _brief(rows, today), "briefs": _briefs(admin, today),
+		"counts": _counts(rows), "insights": [_shape(r, admin, today, since) for r in rows]}
 
 
 @frappe.whitelist()
@@ -222,11 +288,34 @@ def _rule_shape(rd, override: dict | None, n_open: int) -> dict:
 		"disabled": bool(cfg.disabled), "open": cint(n_open)}
 
 
-def _budget_claude(model: str) -> dict:
+def _budget(provider: str, model: str) -> dict:
+	"""Chi phí kỳ này so trần của một nhà cung cấp; price_known theo model đang đặt (trống → False)."""
 	from bc.ai import budget
-	return {"spent": flt(budget.spent("claude")), "cap": flt(budget.cap("claude")),
-		"cycle_start": budget.cycle_start("claude"), "calls_today": cint(budget.calls_today("claude")),
-		"max_calls": budget.MAX_CALLS_PER_DAY, "price_known": budget.price_of(model) is not None}
+	return {"spent": flt(budget.spent(provider)), "cap": flt(budget.cap(provider)),
+		"cycle_start": budget.cycle_start(provider), "calls_today": cint(budget.calls_today(provider)),
+		"max_calls": budget.MAX_CALLS_PER_DAY, "price_known": bool(model) and budget.price_of(model) is not None}
+
+
+def _step_label(step) -> str:
+	"""Nhãn đọc được của BC AI Run.step: "review:<nhóm>" → "Phản biện · <nhãn nhóm>", tên nhóm → nhãn nhóm."""
+	step = cstr(step)
+	if step in STEP_LABELS:
+		return STEP_LABELS[step]
+	if step.startswith("review:"):
+		g = step.split(":", 1)[1]
+		return f"Phản biện · {registry.GROUPS.get(g, {}).get('label', g)}"
+	return registry.GROUPS.get(step, {}).get("label", step)
+
+
+def _admin_briefs() -> list:
+	"""6 bản tin tuần / tháng gần nhất (mới trước): loại, ngày, kỳ, tiêu đề, nguồn, model, số mục."""
+	from bc.ai import store
+	rows = store.latest_briefs(BRIEF_KINDS, BRIEF_ADMIN_MAX)
+	rows.sort(key=lambda b: (b.get("brief_date") or datetime.date.min, b.get("brief_type") == "thang"), reverse=True)
+	return [{"type": b.get("brief_type"), "date": _iso(b.get("brief_date")), "period_from": _iso(b.get("period_from")),
+		"period_to": _iso(b.get("period_to")), "title": cstr(b.get("title")), "source": cstr(b.get("source")),
+		"model": cstr(b.get("model")), "items": sum(len(p.get("items") or []) for p in b.get("parts") or [])}
+		for b in rows[:BRIEF_ADMIN_MAX]]
 
 
 def _insights_where(where: str, p: dict) -> list:
@@ -237,13 +326,14 @@ def _insights_where(where: str, p: dict) -> list:
 
 @frappe.whitelist()
 def get_admin():
-	"""Trạng thái cấu hình, chi phí, quy tắc, lượt chạy (chỉ quản trị). Khoá API: chỉ có / không.
-	models.claude + price_known theo bc.ai.daily_model() (ô trống → model mặc định — đúng model lượt chạy gọi)."""
+	"""Trạng thái cấu hình, chi phí (Claude + OpenAI), quy tắc, lượt chạy (step_label đọc được), bản tin tuần / tháng
+	gần nhất (chỉ quản trị). Khoá API: chỉ có / không. models.claude + price_known theo bc.ai.daily_model() (ô trống →
+	model mặc định — đúng model lượt chạy gọi); OpenAI: model trống = phản biện tắt (price_known False)."""
 	_admin_guard()
 	from bc.ai import jobs, llm
 	s = get_settings()
 	models = {"claude": daily_model(), "claude_deep": cstr(s.get("ai_claude_model_deep")),
-		"openai": cstr(s.get("ai_openai_model"))}
+		"openai": cstr(s.get("ai_openai_model")).strip()}
 	_load_rules()
 	ov, n_open = registry.overrides_from_settings(), _open_by_rule()
 	runs = frappe.db.sql(f"SELECT {', '.join(RUN_FIELDS)} FROM `tab{RUN}` ORDER BY started DESC, creation DESC LIMIT 20",
@@ -254,9 +344,11 @@ def get_admin():
 		"keys_bad": {"claude": bool(llm.key_malformed("claude")), "openai": bool(llm.key_malformed("openai"))},
 		"enabled": bool(cint(s.get("ai_enabled"))),
 		"models": models,
-		"budget": {"claude": _budget_claude(models["claude"])},
+		"budget": {"claude": _budget("claude", models["claude"]), "openai": _budget("openai", models["openai"])},
 		"running": bool(jobs.is_running()),
-		"runs": [{k: r.get(k) for k in RUN_FIELDS} for r in runs],
+		"briefs_running": {k: bool(jobs.brief_running(k)) for k in BRIEF_KINDS},
+		"runs": [{**{k: r.get(k) for k in RUN_FIELDS}, "step_label": _step_label(r.get("step"))} for r in runs],
+		"briefs": _admin_briefs(),
 		"rules": [_rule_shape(rd, ov.get(k), n_open.get(k, 0)) for k, rd in registry.RULES.items()],
 		"rejected": _insights_where("status IN %(st)s AND needs_check = 1", {"st": OPEN}),
 		"muted": _insights_where("status = 'bo-qua'", {}),
@@ -272,6 +364,18 @@ def run_now():
 	if not jobs.enqueue_run("tay"):
 		frappe.throw(_("Trợ lý đang chạy — chờ lượt hiện tại xong rồi thử lại."))
 	return {"queued": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def run_brief(kind):
+	"""Tạo bản tin tuần / tháng ngay (chỉ quản trị): xếp hàng bc.ai.brief.run_brief(kind). kind ∉ (tuan, thang) →
+	ValidationError. Bản tin đang chạy / đang chờ → {"queued": False} (không xếp thêm)."""
+	_admin_guard()
+	from bc.ai import jobs
+	kind = cstr(kind).strip()
+	if kind not in BRIEF_KINDS:
+		frappe.throw(_("Loại bản tin không hợp lệ (tuan | thang)."))
+	return {"queued": bool(jobs.enqueue_brief(kind))}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -349,10 +453,18 @@ def set_rule(rule_key, disabled=None, threshold=None, threshold_red=None):
 	return _rule_shape(rd, registry.overrides_from_settings().get(key), _open_by_rule().get(key, 0))
 
 
+def _cost(served, requested, ti, to):
+	"""Chi phí theo giá mô hình THỰC trả lời; chưa khai giá (vd tên bản chụp có hậu tố ngày của OpenAI) → giá mô hình đã
+	yêu cầu, như lượt ngày / phản biện (pipeline._cost)."""
+	from bc.ai import pipeline
+	return pipeline._cost(served, requested, cint(ti), cint(to))
+
+
 @frappe.whitelist(methods=["POST"])
 def test_connection(provider):
 	"""Gọi thử một lượt tối thiểu tới nhà cung cấp (chỉ quản trị) → {ok, model, error}; luôn ghi một BC AI Run
-	(run_type tay, step test — tính vào giới hạn lượt gọi / ngày). Không khoá → khong-khoa; vượt trần → vuot-tran."""
+	(run_type tay, step test — tính vào giới hạn lượt gọi / ngày). Không khoá → khong-khoa; vượt trần → vuot-tran.
+	OpenAI có khoá mà chưa đặt model → báo lỗi, KHÔNG gọi và không ghi Run (không có model nào để thử)."""
 	_admin_guard()
 	from bc.ai import budget, llm, store
 	provider = cstr(provider).strip()
@@ -364,6 +476,8 @@ def test_connection(provider):
 		loi = KHOA_SAI_DANG if llm.key_malformed(provider) else "chưa có khoá"
 		store.finish_run(run, status="khong-khoa", error=loi)
 		return {"ok": False, "model": model, "error": loi}
+	if not model:   # chỉ OpenAI (Claude trống → model mặc định): chưa đặt model = phản biện tắt, không gọi, không ghi Run
+		return {"ok": False, "model": "", "error": "chưa đặt model OpenAI (BC Settings) — phản biện đang tắt"}
 	ok, why = budget.can_call(provider)
 	if not ok:
 		msg = "quá số lượt gọi hôm nay" if why == "qua-so-luot" else "đã chi tới trần kỳ này"
@@ -377,11 +491,11 @@ def test_connection(provider):
 	except llm.LLMError as e:
 		m = e.model or model
 		store.finish_run(run, status=llm.run_status(e.kind), tokens_in=e.tokens_in, tokens_out=e.tokens_out,
-			cost_usd=budget.cost(m, e.tokens_in, e.tokens_out), error=llm.clean(e.message), model=e.model or None)
+			cost_usd=_cost(m, model, e.tokens_in, e.tokens_out), error=llm.clean(e.message), model=e.model or None)
 		return {"ok": False, "model": m, "error": llm.clean(e.message)}
 	m = res.get("model") or model
 	ti, to = cint(res.get("tokens_in")), cint(res.get("tokens_out"))
 	good = (res.get("data") or {}).get("ok") is True
-	store.finish_run(run, status="ok", tokens_in=ti, tokens_out=to, cost_usd=budget.cost(m, ti, to),
+	store.finish_run(run, status="ok", tokens_in=ti, tokens_out=to, cost_usd=_cost(m, model, ti, to),
 		error=None if good else "mô hình không trả ok", model=m)
 	return {"ok": good, "model": m, "error": "" if good else "mô hình không trả ok"}

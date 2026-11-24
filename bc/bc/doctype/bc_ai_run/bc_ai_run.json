@@ -29,7 +29,7 @@
    "fieldname": "run_type",
    "fieldtype": "Select",
    "label": "Loại lượt chạy",
-   "options": "ngay\ntuan\ntay\nhoi-dap",
+   "options": "ngay\ntuan\ntay\nhoi-dap\nthang",
    "default": "ngay",
    "in_list_view": 1,
    "read_only": 1
@@ -40,7 +40,7 @@
    "label": "Bước",
    "in_list_view": 1,
    "read_only": 1,
-   "description": "tong = dòng tổng của lượt chạy; còn lại = một lượt gọi mô hình (tên nhóm)."
+   "description": "tong = dòng tổng của lượt chạy; còn lại = một lượt gọi mô hình (tên nhóm, review:<nhóm>, ban-tin:tuan / ban-tin:thang)."
   },
   {
    "fieldname": "run_id",

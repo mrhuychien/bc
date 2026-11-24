@@ -2,6 +2,8 @@
 // Một lượt bc.api.ai.get_admin(): khoá (chỉ có / không — không bao giờ có chuỗi khoá), model, chi phí kỳ này so trần,
 // quy tắc (bật / tắt, ngưỡng ghi đè — 0 / trống = mặc định), 20 lượt chạy gần nhất, lời AI bị loại, việc đang bỏ qua.
 // "Chạy ngay": xếp hàng lượt chạy nền rồi hỏi lại mỗi 5 giây tới khi xong (tối đa 5 phút, rời màn thì dừng).
+// P2: chi phí Claude + OpenAI (phản biện), "Thử kết nối OpenAI", "Tạo bản tin tuần / tháng" (xếp hàng job nền —
+// bc.api.ai.run_brief) + bảng 6 bản tin gần nhất; nhãn bước đọc được (step_label của máy chủ: "Phản biện · <nhóm>").
 
 import * as api from '../lib/api.js';
 import { fill } from '../lib/dom.js';
@@ -16,11 +18,13 @@ const POLL_MAX_MS = 5 * 60 * 1000;
 const RUN_STATUS = { 'ok': ['Thành công', 'bc-badge-success'], 'loi': ['Lỗi', 'bc-badge-danger'],
     'het-credit': ['Hết credit', 'bc-badge-danger'], 'vuot-tran': ['Vượt trần chi', 'bc-badge-warning'],
     'tat': ['AI đang tắt', 'bc-badge-muted'], 'khong-khoa': ['Chưa có khoá', 'bc-badge-warning'] };
-const RUN_TYPE = { 'ngay': 'Hằng ngày', 'tuan': 'Hằng tuần', 'tay': 'Chạy tay', 'hoi-dap': 'Hỏi đáp' };
+const RUN_TYPE = { 'ngay': 'Hằng ngày', 'tuan': 'Hằng tuần', 'thang': 'Hằng tháng', 'tay': 'Chạy tay', 'hoi-dap': 'Hỏi đáp' };
+const BRIEF_KIND = { tuan: 'Tuần', thang: 'Tháng' };
+const PROVIDER = { claude: 'Claude', openai: 'OpenAI' };
 const STEP = { 'tong': 'Tổng hợp', 'ai': 'Bước AI', 'test': 'Thử kết nối', 'review': 'Phản biện' };
 const AUDIENCE = { 'lanh-dao': 'Lãnh đạo', 'quan-tri': 'Quản trị' };
 
-let st = { d: null, polling: false };
+let st = { d: null, polling: false, briefQueued: {} };
 let pollSeq = 0;
 
 function fmtDT(s) {
@@ -59,26 +63,41 @@ function statusHtml(d) {
         <button type="button" class="bc-btn bc-btn-sm" id="ai-test"><i class="fas fa-plug"></i> Thử kết nối Claude</button>
         <span class="bc-ai-test-out" id="ai-test-out" role="status"></span>
     </div>
-    <div class="bc-note">OpenAI dùng cho phản biện ở giai đoạn sau — hiện chưa gọi. Bật / tắt AI, đổi model, trần chi và
+    <div class="bc-flex bc-gap-2 bc-wrap bc-items-center bc-mt-2">
+        <button type="button" class="bc-btn bc-btn-sm" id="ai-test-openai"><i class="fas fa-plug"></i> Thử kết nối OpenAI</button>
+        <span class="bc-ai-test-out" id="ai-test-openai-out" role="status"></span>
+    </div>
+    <div class="bc-note" id="ai-openai-note">OpenAI phản biện lời AI của lượt hằng ngày (badge "Cần kiểm chứng" khi nghi ngờ).
+        ${m.openai ? 'Đang bật phản biện.' : 'Model OpenAI trống — phản biện đang tắt.'} Bật / tắt AI, đổi model, trần chi và
         bối cảnh công ty: <a href="${escapeHtml(settingsUrl(d))}" target="_blank" rel="noopener">BC Settings › Trợ lý AI</a>.</div>`;
 }
 
-function budgetHtml(d) {
-    const b = d.budget?.claude;
-    if (!b) return '<div class="bc-muted bc-text-sm">Chưa có số chi phí.</div>';
+/** Chi phí kỳ này của một nhà cung cấp. id của Claude giữ như P1 (ai-spent…), OpenAI thêm hậu tố -openai. */
+function budgetOne(d, p) {
+    const b = d.budget?.[p];
+    const sx = p === 'claude' ? '' : `-${p}`;
+    if (!b) return `<div class="bc-muted bc-text-sm" data-budget="${p}">Chưa có số chi phí ${escapeHtml(PROVIDER[p])}.</div>`;
     const spent = Number(b.spent) || 0, cap = Number(b.cap) || 0;
     const pct = cap > 0 ? Math.min(100, Math.round(spent / cap * 100)) : 100;
-    return `<div class="bc-ai-budget">
-        <div class="bc-ai-budget-num" id="ai-spent"><b>${escapeHtml(usd(spent))}</b> / ${escapeHtml(usd(cap))}</div>
+    const noModel = p === 'openai' && !d.models?.openai;
+    const warnPrice = noModel ? `<div class="bc-ai-warn" id="ai-nomodel${sx}">Chưa đặt model OpenAI — phản biện đang tắt.</div>`
+        : (b.price_known ? '' : `<div class="bc-ai-warn" id="ai-noprice${sx}">${p === 'claude' ? 'Model hằng ngày' : 'Model OpenAI'} chưa khai giá — chi phí không tính được (vẫn giới hạn số lượt gọi).</div>`);
+    return `<div class="bc-ai-budget" data-budget="${p}">
+        <div class="bc-ai-sub">${escapeHtml(PROVIDER[p])}</div>
+        <div class="bc-ai-budget-num" id="ai-spent${sx}"><b>${escapeHtml(usd(spent))}</b> / ${escapeHtml(usd(cap))}</div>
         <div class="bc-progress ${pct >= 80 ? 'bc-alt' : ''}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"
-            aria-label="Đã chi so với trần"><span style="width:${pct}%"></span></div>
-        ${cap <= 0 ? '<div class="bc-ai-warn" id="ai-cap0">Trần 0 USD — đang chặn mọi lượt gọi.</div>' : ''}
+            aria-label="${escapeHtml(`Đã chi ${PROVIDER[p]} so với trần`)}"><span style="width:${pct}%"></span></div>
+        ${cap <= 0 ? `<div class="bc-ai-warn" id="ai-cap0${sx}">Trần 0 USD — đang chặn mọi lượt gọi.</div>` : ''}
         <div class="bc-ai-kv bc-mt-2">
             <div><span>Kỳ tính từ</span><b>${escapeHtml(fmtDate(b.cycle_start))}</b></div>
-            <div><span>Lượt gọi hôm nay</span><b id="ai-calls">${fmtNum(b.calls_today)} / ${fmtNum(b.max_calls)}</b></div>
+            <div><span>Lượt gọi hôm nay</span><b id="ai-calls${sx}">${fmtNum(b.calls_today)} / ${fmtNum(b.max_calls)}</b></div>
         </div>
-        ${b.price_known ? '' : '<div class="bc-ai-warn" id="ai-noprice">Model hằng ngày chưa khai giá — chi phí không tính được (vẫn giới hạn số lượt gọi).</div>'}
+        ${warnPrice}
     </div>`;
+}
+
+function budgetHtml(d) {
+    return `${budgetOne(d, 'claude')}<div class="bc-ai-budget-sep"></div>${budgetOne(d, 'openai')}`;
 }
 
 function runBtnHtml(d) {
@@ -130,7 +149,7 @@ function runsHtml(d) {
     return dataTable({ rows: d.runs || [], pageSize: 20, emptyMessage: 'Chưa có lượt chạy nào', columns: [
         { key: 'started', label: 'Lúc', align: 'left', sortable: false, render: (r) => escapeHtml(fmtDT(r.started)) },
         { key: 'run_type', label: 'Loại', align: 'left', sortable: false,
-            render: (r) => `${escapeHtml(RUN_TYPE[r.run_type] || r.run_type || '')}<div class="bc-muted bc-text-sm">${escapeHtml(STEP[r.step] || r.step || '')}</div>` },
+            render: (r) => `${escapeHtml(RUN_TYPE[r.run_type] || r.run_type || '')}<div class="bc-muted bc-text-sm" data-step>${escapeHtml(r.step_label || STEP[r.step] || r.step || '')}</div>` },
         { key: 'model', label: 'Nhà cung cấp / model', align: 'left', sortable: false,
             render: (r) => (r.provider ? `${escapeHtml(r.provider)}<div class="bc-muted bc-text-sm">${escapeHtml(r.model || '')}</div>` : '—') },
         { key: 'status', label: 'Trạng thái', sortable: false, render: (r) => {
@@ -143,6 +162,37 @@ function runsHtml(d) {
         { key: 'cost_usd', label: 'Chi phí', sortable: false,
             render: costCell },
         { key: 'error', label: 'Lỗi', align: 'left', sortable: false, render: (r) => (r.error ? wrapText(r.error) : '') },
+    ] });
+}
+
+// ─── Bản tin tuần / tháng ───────────────────────────────────────────────────
+function briefBtnHtml(d) {
+    const btn = (kind, label) => {
+        const run = !!d.briefs_running?.[kind] || !!st.briefQueued?.[kind];
+        return `<button type="button" class="bc-btn bc-btn-sm" id="ai-brief-${kind}" data-brief-kind="${kind}" ${run ? 'disabled' : ''}>
+            <i class="fas ${run ? 'fa-spinner fa-spin' : 'fa-newspaper'}"></i> ${run ? 'Đang tạo…' : label}</button>`;
+    };
+    return `${btn('tuan', 'Tạo bản tin tuần')}${btn('thang', 'Tạo bản tin tháng')}
+        <span class="bc-muted bc-text-sm">Tự chạy thứ Hai 6:00 (tuần trước) và ngày 2 hằng tháng 7:00 (tháng trước).</span>`;
+}
+
+function periodText(b) {
+    const p = (s) => String(s || '').slice(0, 10).split('-');
+    const [y1, m1, d1] = p(b.period_from), [y2, m2, d2] = p(b.period_to);
+    if (b.type === 'thang' && y2) return `${Number(m2)}/${y2}`;
+    return y1 && y2 ? `${d1}/${m1} – ${d2}/${m2}/${y2}` : '—';
+}
+
+function briefsHtml(d) {
+    return dataTable({ rows: d.briefs || [], pageSize: 6, emptyMessage: 'Chưa có bản tin tuần / tháng nào', columns: [
+        { key: 'date', label: 'Ngày', align: 'left', sortable: false, render: (b) => escapeHtml(fmtDate(b.date)) },
+        { key: 'type', label: 'Loại · kỳ', align: 'left', sortable: false,
+            render: (b) => `${escapeHtml(BRIEF_KIND[b.type] || b.type || '')}<div class="bc-muted bc-text-sm">${escapeHtml(periodText(b))}</div>` },
+        { key: 'title', label: 'Tiêu đề', align: 'left', sortable: false, render: (b) => wrapText(b.title || '') },
+        { key: 'source', label: 'Nguồn', sortable: false, render: (b) => (b.source === 'ai'
+            ? '<span class="bc-badge bc-badge-primary">AI</span>' : '<span class="bc-badge bc-badge-muted">Quy tắc</span>') },
+        { key: 'model', label: 'Model', align: 'left', sortable: false, render: (b) => (b.model ? escapeHtml(b.model) : '—') },
+        { key: 'items', label: 'Số mục', sortable: false, render: (b) => fmtNum(b.items) },
     ] });
 }
 
@@ -178,6 +228,9 @@ function paint(d) {
     fill('ai-runbar', runBtnHtml(d));
     fill('ai-rules', rulesHtml(d));
     fill('ai-runs', runsHtml(d));
+    st.briefQueued = {};   // máy chủ (briefs_running) nói từ đây
+    fill('ai-briefbar', briefBtnHtml(d));
+    fill('ai-briefs', briefsHtml(d));
     fill('ai-rejected', rejectedHtml(d));
     fill('ai-muted', mutedHtml(d));
 }
@@ -234,12 +287,12 @@ async function onRun(btn, isCurrent) {
     }
 }
 
-async function onTest(btn) {
-    const out = document.getElementById('ai-test-out');
+async function onTest(btn, provider = 'claude') {
+    const out = document.getElementById(provider === 'claude' ? 'ai-test-out' : `ai-test-${provider}-out`);
     btn.disabled = true;
     if (out) { out.className = 'bc-ai-test-out bc-muted'; out.textContent = 'Đang thử…'; }
     try {
-        const r = await api.ai.test('claude');
+        const r = await api.ai.test(provider);
         if (out) {
             out.className = `bc-ai-test-out ${r.ok ? 'bc-txt-success' : 'bc-txt-danger'}`;
             out.textContent = r.ok ? `Kết nối được (${r.model || ''})` : `Không được: ${r.error || 'không rõ lỗi'}${r.model ? ` (${r.model})` : ''}`;
@@ -247,6 +300,28 @@ async function onTest(btn) {
     } catch (err) {
         if (out) { out.className = 'bc-ai-test-out bc-txt-danger'; out.textContent = err.message; }
     } finally {
+        btn.disabled = false;
+    }
+}
+
+/** Tạo bản tin ngay: chỉ xếp hàng job nền (máy chủ từ chối xếp thêm khi một bản tin đang chạy → queued false). */
+async function onBrief(btn) {
+    const kind = btn.dataset.briefKind;
+    const label = kind === 'thang' ? 'bản tin tháng' : 'bản tin tuần';
+    btn.disabled = true;
+    try {
+        // Tab mở trước deploy có thể còn lib/api.js cũ (chưa có runBrief) → gọi thẳng method.
+        const r = await (api.ai.runBrief ? api.ai.runBrief(kind) : api.call('bc.api.ai.run_brief', { kind }));
+        if (r?.queued) {
+            st.briefQueued = { ...(st.briefQueued || {}), [kind]: true };
+            fill('ai-briefbar', briefBtnHtml(st.d || {}));
+            showToast(`Đã xếp ${label} — đang tạo nền, tải lại màn sau ít phút để xem`, 'success');
+        } else {
+            showToast('Một bản tin đang được tạo — chờ xong rồi thử lại.', 'warning');
+            btn.disabled = false;
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
         btn.disabled = false;
     }
 }
@@ -289,7 +364,7 @@ export async function render({ container, isCurrent }) {
         container.innerHTML = emptyState({ icon: '🔒', title: 'Chỉ dành cho quản trị' });
         return;
     }
-    st = { d: null, polling: false };
+    st = { d: null, polling: false, briefQueued: {} };
     pollSeq++;  // lượt hỏi của lần vào trước (nếu còn) tự dừng
     container.innerHTML = `<div id="ai-root" class="bc-ai-admin-screen">
         <div class="bc-view-banner">
@@ -299,7 +374,7 @@ export async function render({ container, isCurrent }) {
         </div>
         <div class="bc-grid bc-grid-even" style="align-items:start">
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Trạng thái</div></div><div id="ai-status">${skeleton(150)}</div></div>
-            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Chi phí Claude kỳ này</div></div><div id="ai-budget">${skeleton(150)}</div></div>
+            <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Chi phí kỳ này</div></div><div id="ai-budget">${skeleton(150)}</div></div>
         </div>
         <div class="bc-filter-bar bc-mt-3 bc-ai-runbar" id="ai-runbar"></div>
         <div class="bc-section-title">Quy tắc</div>
@@ -307,6 +382,8 @@ export async function render({ container, isCurrent }) {
             lượt chạy sau không sinh tín hiệu của quy tắc đó.</div><div id="ai-rules">${skeleton(200)}</div></div>
         <div class="bc-section-title">Lượt chạy gần nhất</div>
         <div class="bc-card"><div id="ai-runs">${skeleton(200)}</div></div>
+        <div class="bc-section-title">Bản tin tuần / tháng</div>
+        <div class="bc-card"><div class="bc-ai-briefbar" id="ai-briefbar"></div><div id="ai-briefs">${skeleton(120)}</div></div>
         <div class="bc-grid bc-grid-even bc-mt-3" style="align-items:start">
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Lời AI bị loại</div></div><div id="ai-rejected">${skeleton(80)}</div></div>
             <div class="bc-card"><div class="bc-card-head"><div class="bc-card-title">Việc đang bỏ qua</div></div><div id="ai-muted">${skeleton(80)}</div></div>
@@ -318,6 +395,9 @@ export async function render({ container, isCurrent }) {
         const t = e.target;
         if (t.closest('#ai-run')) { onRun(t.closest('#ai-run'), isCurrent); return; }
         if (t.closest('#ai-test')) { onTest(t.closest('#ai-test')); return; }
+        if (t.closest('#ai-test-openai')) { onTest(t.closest('#ai-test-openai'), 'openai'); return; }
+        const bk = t.closest('[data-brief-kind]');
+        if (bk) { onBrief(bk); return; }
         const s = t.closest('[data-save]');
         if (s) { onSaveRule(s.closest('[data-rule]')); return; }
         const o = t.closest('[data-reopen]');

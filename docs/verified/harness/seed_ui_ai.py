@@ -6,8 +6,11 @@ BC_TEST_DB=bc_test_ai_ui [BC_UI_USER=Administrator] python3 -B seed_ui_ai.py ser
 	lỗi có chứa khoá — máy chủ phải xoá), hàng đợi giả (run_now chỉ ghi lại, KHÔNG chạy pipeline; "đang chạy" RUN_SECS
 	giây rồi tự hết), chặn mọi kết nối mạng ra ngoài (socket chỉ cho unix + 127.0.0.1).
 
-fresh: lượt ok mới (05:40 hôm nay giả 27/10/2026), AI bật, có giá model, có việc đỏ (chấm đỏ menu).
-stale: lượt ok cuối 25/10 (> 26 giờ), AI tắt, trần 0, chưa khai giá, chỉ việc vàng (không chấm đỏ).
+fresh: lượt ok mới (05:40 hôm nay giả 27/10/2026), AI bật, có giá model, có việc đỏ (chấm đỏ menu); P2: việc nhóm
+	Kiểm soát (K1, không màn nguồn), bản tin tuần AI + bản tin tháng quy tắc (một mục dùng mảng phai-tra — người xem
+	không thấy), dòng Run phản biện OpenAI + bản tin, model OpenAI có giá.
+stale: lượt ok cuối 25/10 (> 26 giờ), AI tắt, trần 0, chưa khai giá, chỉ việc vàng (không chấm đỏ); bản tin tuần cũ
+	22 ngày (quá hạn 14 ngày → không hiện), model OpenAI trống.
 """
 import datetime
 import json
@@ -20,10 +23,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 FAKE_KEY = "sk-ant-api03-GIA-chi-de-thu-ui-0a1b2c3d4e5f"   # khoá GIẢ — ui_ai.mjs kiểm chuỗi này không lộ ra trang
+FAKE_OPENAI_KEY = "sk-proj-GIAchideThuUiOpenAI9z8y7x6w5v"     # khoá GIẢ OpenAI
 RUN_SECS = float(os.environ.get("BC_UI_AI_RUN_SECS", "7"))
 D = datetime.datetime
 XSS = "<img src=x onerror=window.__xss=1>"
-INSIGHT, RUN = "BC AI Insight", "BC AI Run"
+INSIGHT, RUN, BRIEF = "BC AI Insight", "BC AI Run", "BC AI Brief"
+
+
+def _brief(name, kind, ngay, tu, den, title, source, model, parts):
+	"""Một dòng BC AI Brief như store.upsert_brief ghi (body JSON {"parts"}, sections_used mỗi dòng một mã)."""
+	from seed import insert
+	secs = list(dict.fromkeys(x for p in parts for it in p["items"] for x in it["sections"]))
+	insert(BRIEF, name, brief_key=f"{kind}:{ngay.isoformat()}", brief_type=kind, brief_date=ngay, period_from=tu,
+		period_to=den, title=title, source=source, model=model, sections_used="\n".join(secs),
+		body=json.dumps({"parts": parts}, ensure_ascii=False))
 
 
 def _no_net():
@@ -51,11 +64,11 @@ def seed(kind):
 	reset()
 	fresh = kind == "fresh"
 	bc_settings(ai_enabled=1 if fresh else 0, ai_claude_model="claude-sonnet-5-5", ai_claude_model_deep="claude-opus-5-5",
-		ai_openai_model="", ai_cap_claude_usd=50 if fresh else 0, ai_cycle_day_claude=1, ai_max_signals=40,
+		ai_openai_model="gpt-5-x" if fresh else "", ai_cap_claude_usd=50 if fresh else 0, ai_cycle_day_claude=1, ai_max_signals=40,
 		ai_mask_parties=1, hidden_sections="phai-tra")
 	if fresh:
 		child("BC Settings", "BC Settings", "BC AI Model Price", "ai_prices",
-			[{"model": "claude-sonnet-5-5", "price_in": 3, "price_out": 15}])
+			[{"model": "claude-sonnet-5-5", "price_in": 3, "price_out": 15}, {"model": "gpt-5-x", "price_in": 1, "price_out": 4}])
 
 	def ins(name, **f):
 		sec = f.get("section", "cong-no")
@@ -89,6 +102,26 @@ def seed(kind):
 		ins("M2", section="kiem-ke", status="bo-qua", mute_until=None, title="Kiểm kê lâu chưa làm")
 		ins("C1", section="nhap-tp", status="dong", closed_on=D(2026, 10, 20, 5, 30), title="Việc đã đóng gần đây")
 		ins("C2", section="nhap-tp", status="dong", closed_on=D(2026, 9, 1, 5, 30), title="Việc đóng lâu rồi")
+		# P2: kiểm soát chứng từ (mảng tro-ly → nhóm kiem-soat): route trống, chứng từ chỉ quản trị
+		ins("K1", section="tro-ly", rule="ct.huy_nhieu", route="", rank=10, title="Huỷ chứng từ nhiều bất thường",
+			documents=json.dumps([{"doctype": "Sales Invoice", "name": "SI-KS-1"}]))
+		ins("K2", section="tro-ly", rule="gia.ban_lech", route="#/tro-ly", rank=11, title="Giá bán lệch chuẩn")
+		ai3 = ["tong-quan", "cong-no"]
+		_brief("BR1", "tuan", datetime.date(2026, 10, 26), datetime.date(2026, 10, 19), datetime.date(2026, 10, 25),
+			f"Tuần doanh số chững lại {XSS}", "ai", "claude-opus-5-5", [
+				{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": [
+					{"text": f"Doanh số tuần giảm nhẹ so với tuần trước {XSS}", "sections": ai3},
+					{"text": "Quá hạn công nợ nhích lên", "sections": ai3}]},
+				{"key": "viec_ton", "title": "Việc tồn chưa xử lý", "items": [{"text": "Quá hạn tăng chưa xử lý", "sections": ai3}]},
+				{"key": "uu_tien", "title": "Ưu tiên tuần tới", "items": []}])
+		_brief("BR2", "thang", datetime.date(2026, 10, 1), datetime.date(2026, 9, 1), datetime.date(2026, 9, 30),
+			"Bản tin tháng 9/2026", "quy-tac", None, [
+				{"key": "dang_chu_y", "title": "Điều đáng chú ý", "items": [
+					{"text": "Doanh số tháng tăng", "sections": ["tong-quan"]},
+					{"text": "Phải trả nhà cung cấp tăng mạnh", "sections": ["phai-tra"]}]},
+				{"key": "viec_ton", "title": "Việc tồn chưa xử lý", "items": [
+					{"text": "Đối chiếu hoá đơn nhà cung cấp", "sections": ["phai-tra"]}]},
+				{"key": "uu_tien", "title": "Ưu tiên tháng tới", "items": [{"text": "Thu nợ quá hạn", "sections": ["cong-no"]}]}])
 		runs = [
 			("R1", dict(run_type="ngay", step="tong", started=D(2026, 10, 27, 5, 30), finished=D(2026, 10, 27, 5, 40),
 				status="ok", signals=12, insights_ai=3, rejected=1)),
@@ -104,11 +137,20 @@ def seed(kind):
 				finished=D(2026, 10, 26, 9, 0), status="ok", tokens_in=20, tokens_out=5, cost_known=0)),
 			("R5", dict(run_type="ngay", step="tong", started=D(2026, 10, 26, 5, 30), finished=D(2026, 10, 26, 5, 41),
 				status="ok", signals=10)),
+			("RV", dict(run_type="ngay", step="review:tai-chinh", run_id="R1", provider="openai", model="gpt-5-x",
+				started=D(2026, 10, 27, 5, 38), finished=D(2026, 10, 27, 5, 39), status="ok", tokens_in=8000,
+				tokens_out=500, cost_usd=0.01, cost_known=1, insights_ai=2, rejected=0)),
+			("RB", dict(run_type="tuan", step="ban-tin:tuan", provider="claude", model="claude-opus-5-5",
+				started=D(2026, 10, 26, 6, 0), finished=D(2026, 10, 26, 6, 2), status="ok", tokens_in=9000,
+				tokens_out=900, cost_usd=0, cost_known=0)),
 		]
 	else:
 		ins("B1", section="cong-no", rank=1, title="Quá hạn nhích lên")
 		ins("B2", section="ton-kho", rank=2, source="ai", last_seen=D(2026, 10, 24, 5, 30))   # trước lượt ok 25/10 → cũ
 		ins("B3", section="he-thong", audience="quan-tri", rank=3, route="", title="Hàng đợi chậm")
+		_brief("BR9", "tuan", datetime.date(2026, 10, 5), datetime.date(2026, 9, 28), datetime.date(2026, 10, 4),
+			"Bản tin tuần cũ", "quy-tac", None, [{"key": "dang_chu_y", "title": "Điều đáng chú ý",
+				"items": [{"text": "Mục cũ", "sections": ["cong-no"]}]}])
 		runs = [
 			("R1", dict(run_type="ngay", step="tong", started=D(2026, 10, 25, 5, 30), finished=D(2026, 10, 25, 5, 40),
 				status="ok", signals=3)),
@@ -136,6 +178,7 @@ def serve(port):
 	from bc.ai import jobs
 
 	frappe.conf["bc_ai_anthropic_key"] = FAKE_KEY
+	frappe.conf["bc_ai_openai_key"] = FAKE_OPENAI_KEY
 	frappe.ENQUEUE_RUN = False          # run_now chỉ ghi lại — không bao giờ chạy pipeline thật
 	orig = frappe.enqueue
 

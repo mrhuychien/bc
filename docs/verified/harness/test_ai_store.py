@@ -750,14 +750,16 @@ goi = [(s, n, *d.split("."), f(datetime.date(2026, 10, 27))) for s, n, d, f in c
 c("CALLS = 24 lời gọi (23 của bảng đặc tả + vc tháng trước), đúng thứ tự và tham số", goi == BANG,
 	[x for x in goi if x not in BANG])
 c("24 cặp (mảng, tên) không trùng", len({(s, n) for s, n, *_ in BANG}) == 24 == len(collect.CALLS))
+NS = registry.NO_SEND - {(registry.TRO_LY, "kpi")}   # P2: khối lịch sử KPI của detector (không do collect dựng)
 c("khối không gửi mô hình (registry.NO_SEND) = đúng van-chuyen.overview_truoc, và nó có trong CALLS",
-	registry.NO_SEND == {("van-chuyen", "overview_truoc")} and registry.NO_SEND <= {(s, n) for s, n, *_ in BANG})
+	NS == {("van-chuyen", "overview_truoc")} and NS <= {(s, n) for s, n, *_ in BANG})
 f_truoc = next((f for s, n, d, f in collect.CALLS if (s, n) == ("van-chuyen", "overview_truoc")), None)
 c("tháng trước: 27/10/2026 → 2026-09; 01/11 → 2026-10; 15/01/2026 → 2025-12 (qua năm); 31/03 → 2026-02",
 	f_truoc is not None and [f_truoc(datetime.date(*x))["thang"] for x in ((2026, 10, 27), (2026, 11, 1), (2026, 1, 15), (2026, 3, 31))]
 	== ["2026-09", "2026-10", "2025-12", "2026-02"])
 c("mảng trong pack = mọi mảng của các nhóm gọi mô hình (trừ he-thong); không thoi-gian-thuc, không tro-ly",
-	{s for s, *_ in goi} == {s for g, d in registry.GROUPS.items() if g != registry.HE_THONG for s in d["sections"]}
+	{s for s, *_ in goi} == {s for g, d in registry.GROUPS.items() if g not in (registry.HE_THONG, registry.KIEM_SOAT)
+		for s in d["sections"]}   # kiem-soat (P2): mảng tro-ly do detector đổ vào, không do collect
 	and not {s for s, *_ in goi} & {"thoi-gian-thuc", "tro-ly"})
 wl = whitelisted()
 c("mỗi method là @frappe.whitelist của bc.api và _guard ĐÚNG mảng mà pack đặt số vào (ẩn mảng ↔ ẩn số)",

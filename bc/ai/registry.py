@@ -2,8 +2,8 @@
 """bc.ai.registry — hợp đồng lõi của Trợ lý AI: tín hiệu (Signal), quy tắc (@rule), detector (@detector), đường dẫn
 (path) vào gói số, placeholder, nhóm gọi mô hình, KPI.
 
-Gói số (pack) = {mảng: {tên: payload của đúng một method bc.api.*}} (bc.ai.collect) + pack["he-thong"][tên] do detector
-đổ vào. Path là ĐỊA CHỈ DUY NHẤT của mọi con số: "cong-no.receivables.kpis.overdue_pct",
+Gói số (pack) = {mảng: {tên: payload của đúng một method bc.api.*}} (bc.ai.collect) + pack["he-thong"][tên] /
+pack["tro-ly"][tên] do detector (theo mảng khai ở @detector) đổ vào. Path là ĐỊA CHỈ DUY NHẤT của mọi con số: "cong-no.receivables.kpis.overdue_pct",
 "cong-no.receivables.top_overdue[0].overdue". Khoá cấp 1 = mảng → suy ra nhận định dùng số của mảng nào (ẩn mảng thì
 ẩn nhận định).
 
@@ -28,6 +28,8 @@ import frappe
 from bc.api._common import SECTIONS
 
 HE_THONG = "he-thong"            # "mảng" của detector hệ thống — không nằm trong SECTIONS, chỉ quản trị thấy
+TRO_LY = "tro-ly"                # mảng của detector kiểm soát (P2, đặc tả §4.3) — nằm trong SECTIONS, ẩn được
+KIEM_SOAT = "kiem-soat"          # nhóm gọi mô hình / nhóm lọc của tín hiệu mảng tro-ly
 AUDIENCES = ("lanh-dao", "quan-tri")
 SEVERITIES = ("do", "vang")       # đỏ nặng hơn vàng
 KINDS = ("tien", "so", "pct", "ngay", "chu")
@@ -42,6 +44,7 @@ GROUPS = {
 	"tai-chinh": {"label": "Công nợ", "sections": ("cong-no", "phai-tra"), "audience": "lanh-dao"},
 	"nhan-su": {"label": "Nhân sự", "sections": ("nhan-su",), "audience": "lanh-dao"},
 	"attp": {"label": "ATTP", "sections": ("attp",), "audience": "lanh-dao"},
+	KIEM_SOAT: {"label": "Kiểm soát", "sections": (TRO_LY,), "audience": "lanh-dao"},
 	HE_THONG: {"label": "Hệ thống", "sections": (HE_THONG,), "audience": "quan-tri"},
 }
 
@@ -57,7 +60,8 @@ SECTION_LABELS = {
 
 # Module chứa @rule / @detector — load() import để đăng ký.
 _MODULES = ("bc.ai.rules.kd", "bc.ai.rules.kho", "bc.ai.rules.cn", "bc.ai.rules.vc", "bc.ai.rules.ns",
-	"bc.ai.rules.attp", "bc.ai.detectors.he_thong")
+	"bc.ai.rules.attp", "bc.ai.rules.ks", "bc.ai.detectors.he_thong", "bc.ai.detectors.chung_tu",
+	"bc.ai.detectors.gia", "bc.ai.detectors.kpi")
 
 
 def group_of(section: str) -> str | None:
@@ -173,8 +177,15 @@ class RuleDef:
 	route: str = ""
 
 
+@dataclass
+class DetectorDef:
+	name: str
+	fn: object          # hàm(ctx) → dict
+	section: str        # mảng của pack nhận kết quả: HE_THONG hoặc TRO_LY
+
+
 RULES: dict = {}        # key → RuleDef (thứ tự đăng ký)
-DETECTORS: dict = {}    # tên → hàm(ctx) → dict
+DETECTORS: dict = {}    # tên → DetectorDef (thứ tự đăng ký); tên duy nhất trên MỌI mảng
 
 
 class NotRunnable(Exception):
@@ -203,11 +214,19 @@ def rule(key: str, *, section: str, sources, vang=None, do=None, unit: str = "",
 	return deco
 
 
-def detector(name: str):
-	"""Đăng ký detector: hàm(ctx) → dict, ctx = {"now": datetime, "today": date}. Kết quả vào pack["he-thong"][name].
-	SQL chỉ SELECT; mốc thời gian lấy từ ctx (không NOW() / CURDATE())."""
+def detector(name: str, section: str = HE_THONG):
+	"""Đăng ký detector: hàm(ctx) → dict, ctx = {"now": datetime, "today": date, "pack": gói số đã dựng tới lúc đó
+	(None với detector he-thong; CHỈ ĐỌC — không sửa)}. Kết quả vào pack[section][name]. section: HE_THONG (mặc định,
+	chỉ quản trị thấy) hoặc một mã trong SECTIONS (P2: "tro-ly"). SQL chỉ SELECT; mốc thời gian lấy từ ctx (không
+	NOW() / CURDATE()). Tên trùng ở module khác → ValueError."""
+	if section not in SECTIONS and section != HE_THONG:
+		raise ValueError(f"bc.ai: mảng không tồn tại: {section}")
+
 	def deco(fn):
-		DETECTORS[name] = fn
+		cu = DETECTORS.get(name)
+		if cu is not None and cu.fn.__module__ != fn.__module__:
+			raise ValueError(f"bc.ai: trùng tên detector {name}")
+		DETECTORS[name] = DetectorDef(name=name, fn=fn, section=section)
 		return fn
 	return deco
 
@@ -240,11 +259,20 @@ class Cfg:
 		return None
 
 	def signal(self, severity: str, title: str, *, detail: str = "", paths=(), tinh: dict | None = None,
-			obj: str | None = None, documents=(), route: str | None = None) -> Signal:
-		"""Tín hiệu của quy tắc này. `obj`: đối tượng (→ key '<rule>:<obj>') khi một quy tắc sinh nhiều tín hiệu."""
-		return Signal(key=self.key if obj in (None, "") else f"{self.key}:{obj}", rule=self.key, section=self.section,
+			obj: str | None = None, documents=(), route: str | None = None, section: str | None = None) -> Signal:
+		"""Tín hiệu của quy tắc này. `obj`: đối tượng (→ key '<rule>:<obj>') khi một quy tắc sinh nhiều tín hiệu.
+		`section`: mảng của RIÊNG tín hiệu này khi khác mảng của quy tắc (kpi.lech_chuan: mảng của KPI) — mọi thứ phía
+		sau theo mảng của TÍN HIỆU: path số tự tính `<section>._ai.<slug>.<tên>`, nhóm gọi mô hình / nhóm lọc, lọc mảng
+		ẩn, route mặc định "#/<section>" (he-thong: ""). Mảng phải thuộc SECTIONS hoặc là he-thong (sai → ValueError)."""
+		if section in (None, "", self.section):
+			sec, rt = self.section, self.route
+		else:
+			if section not in SECTIONS and section != HE_THONG:
+				raise ValueError(f"bc.ai: mảng không tồn tại: {section}")
+			sec, rt = section, ("" if section == HE_THONG else f"#/{section}")
+		return Signal(key=self.key if obj in (None, "") else f"{self.key}:{obj}", rule=self.key, section=sec,
 			audience=self.audience, severity=severity, title=title, detail=detail, paths=list(paths),
-			documents=list(documents)[:20], route=self.route if route is None else route, tinh=dict(tinh or {}))
+			documents=list(documents)[:20], route=rt if route is None else route, tinh=dict(tinh or {}))
 
 
 def load() -> None:
@@ -347,7 +375,9 @@ def _finish(pack: dict, rd: RuleDef, s: Signal) -> Signal:
 		raise ValueError(f"{rd.key}: khoá tín hiệu lạ {s.key}")
 	if s.severity not in SEVERITIES:
 		raise ValueError(f"{rd.key}: mức không hợp lệ {s.severity}")
-	s.rule, s.section, s.audience = rd.key, rd.section, rd.audience
+	if s.section not in SECTIONS and s.section != HE_THONG:   # mảng riêng của tín hiệu (Cfg.signal(section=…))
+		raise ValueError(f"{rd.key}: mảng lạ {s.section}")
+	s.rule, s.audience = rd.key, rd.audience
 	if s.tinh:
 		if not isinstance(pack.get(s.section), dict):
 			pack[s.section] = {}
@@ -363,14 +393,17 @@ def _finish(pack: dict, rd: RuleDef, s: Signal) -> Signal:
 	return s
 
 
-def run_detectors(now) -> dict:
-	"""{tên: kết quả} của mọi detector (lỗi → {"_error": True}, ghi Error Log) — đặt vào pack["he-thong"]."""
+def run_detectors(now, section: str = HE_THONG, pack: dict | None = None) -> dict:
+	"""{tên: kết quả} của mọi detector thuộc `section` (lỗi / không trả dict → {"_error": True}, ghi Error Log) — nơi
+	gọi đặt vào pack[section]. ctx = {"now", "today", "pack"}: pack = gói số đã dựng tới lúc gọi (detector chỉ đọc)."""
 	load()
-	ctx = {"now": now, "today": frappe.utils.getdate(now)}
+	ctx = {"now": now, "today": frappe.utils.getdate(now), "pack": pack}
 	out = {}
-	for name, fn in DETECTORS.items():
+	for name, d in DETECTORS.items():
+		if d.section != section:
+			continue
 		try:
-			res = fn(ctx)
+			res = d.fn(ctx)
 			out[name] = res if isinstance(res, dict) else {"_error": True}
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"bc.ai detector {name}")
@@ -383,7 +416,8 @@ def run_detectors(now) -> dict:
 SO_KIEU = ("tien", "so", "pct")
 
 # (mảng, tên) có trong gói số cho quy tắc đọc nhưng KHÔNG gửi mô hình (kỳ trước — mô hình dễ kể như số kỳ này).
-NO_SEND: frozenset = frozenset({("van-chuyen", "overview_truoc")})
+NO_SEND: frozenset = frozenset({("van-chuyen", "overview_truoc"),
+	(TRO_LY, "kpi")})    # lịch sử KPI 28 ngày của detector kpi: số của MỌI mảng (không lọc được theo mảng ẩn)
 
 
 def kind_map(signals=()) -> dict:
@@ -484,6 +518,25 @@ KPIS: list = [
 	("attp.overview.dem.do", "so", "Lĩnh vực ATTP đèn đỏ"),
 	("attp.overview.dem.vang", "so", "Lĩnh vực ATTP đèn vàng"),
 ]
+
+
+# KPI cộng dồn trong một kỳ (luỹ kế tháng / năm tài chính / mùa tới hôm nay): so với trung vị 28 ngày hay tuần trước
+# không có nghĩa (tự tăng theo ngày trong kỳ, rơi về 0 đầu kỳ) → kpi.lech_chuan bỏ qua, bản tin chỉ giữ phép so hợp lý.
+# Lý do từng path (đã đọc method gốc): docs/ai-rules-audit.md, mục "Kiểm soát". Mỗi phần tử là một path của KPIS.
+# Tỷ lệ trên kỳ tới hôm nay (tỷ lệ trả hàng, tăng trưởng, tỷ lệ giao trong tháng…) KHÔNG cộng dồn → không ở đây.
+KPI_TICH_LUY: frozenset = frozenset({
+	"tong-quan.summary.rows[0].sales",             # kd.get_summary: năm tài chính tới hôm nay
+	"tong-quan.summary.rows[0].returns",
+	"tong-quan.summary.rows[0].net",
+	"tong-quan.channels.rows[0].sales",            # kd.get_channels: năm tài chính tới hôm nay
+	"tong-quan.channels.rows[1].sales",
+	"kiem-ke.overview.tong.gia_tri",               # kho_kk.get_overview: tháng này tới hôm nay (Σ có dấu)
+	"kiem-ke.overview.xuat_khac.gia_tri",
+	"nhap-tp.overview.nhap.total.value",           # kho_nhap.get_overview: tháng này tới hôm nay
+	"van-chuyen.overview.giao.total",              # vc.get_overview: số đơn tháng này tới hôm nay
+	"nhan-su.overview.bien_dong.vao",              # ns.get_overview: 12 tháng lịch neo đầu tháng (gồm tháng này tới
+	"nhan-su.overview.bien_dong.nghi",             #   hôm nay) — cộng dồn trong tháng, rơi một tháng ở đầu tháng
+})
 
 
 def snapshot_kpis(pack: dict) -> dict:
