@@ -408,9 +408,9 @@ CASES = [
 	("từ chối", [resp([], "refusal", usage(900, 5))], qa.M_TU_CHOI, "loi", 1, []),
 	("hết credit (400 credit balance) — không thử lại", [loi_api(400, "invalid_request_error",
 		"Your credit balance is too low to access the Anthropic API.")], qa.M_CREDIT, "het-credit", 1, []),
-	("quá giờ ba lần — thử lại sau 5 s, 20 s", [real_requests.exceptions.ReadTimeout("read timed out")] * 3, qa.M_GIO,
-		"loi", 3, [5, 20]),
-	("quá tải 529 ba lần", [loi_api(529, "overloaded_error", "Overloaded")] * 3, qa.M_MO_HINH, "loi", 3, [5, 20]),
+	("quá giờ — hỏi đáp không thử lại", [real_requests.exceptions.ReadTimeout("read timed out")], qa.M_GIO,
+		"loi", 1, []),
+	("quá tải 529 — hỏi đáp không thử lại", [loi_api(529, "overloaded_error", "Overloaded")], qa.M_MO_HINH, "loi", 1, []),
 	("trả lời bị cắt (max_tokens)", [resp([think(), {"type": "text", "text": "Phải thu là 1"}], "max_tokens")], qa.M_CAT,
 		"loi", 1, []),
 ]

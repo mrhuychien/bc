@@ -99,6 +99,10 @@ sách cấm dưới đây → từ chối; `Employee` / `User` chỉ trả các 
    khác** (ảnh chụp / diff / nội dung tự do / khoá): `tabVersion`, `tabDeleted Document`, `tabComment`,
    `tabCommunication%`, `tabActivity Log`, `tabAccess Log`, `tabData Import%`, `tabPrepared Report`, `tabSubmission
    Queue`, `tabScheduled Job Log`, `tabNotification Log`, `tabWebhook%`, `tabBank Account`.
+   Thêm một lớp theo cấu trúc (không phụ thuộc danh sách tên): mọi bảng `tab…` phải là bảng của một DocType trên
+   site, và DocType đó không thuộc phân hệ hệ thống / thư / tích hợp / địa chỉ liên hệ / nhân sự (Core, Desk, Email,
+   Integrations, Website, Automation, Custom, Printing, Social, Workflow, Portal, Telephony, Contacts, HR, Payroll,
+   app `ns`, MISA Integration). `tabEmployee` / `tabUser` được miễn lớp này vì đã có luật cột (mục 5).
 5. `tabEmployee` và `tabUser`: chỉ được dùng cột trong danh sách cho phép (Employee: mã, tên, phòng ban, chức
    danh, chi nhánh, trạng thái, ngày vào / nghỉ, công ty, loại hợp đồng; User: `name`, `enabled`, `user_type`,
    `creation`, `last_login`, `last_active`). Câu có một trong hai bảng này mà dùng `*` hoặc nhắc tới cột khác của
@@ -172,8 +176,9 @@ tra — kiểm lại ở màn gốc trước khi dùng." Bước này không s�
   lọt qua giới hạn.
 - Câu hỏi ≤ 500 ký tự. ≤ 6 bước tra cứu và ≤ 7 lượt gọi mô hình / câu; hết lượt tra thì mô hình phải trả lời bằng
   số đã có. Mỗi lượt gọi ≤ 6.000 token đầu ra (gồm cả phần suy nghĩ của mô hình — model 5.5 luôn suy nghĩ và phần đó
-  tính vào giới hạn; lời trả lời được yêu cầu ngắn). Toàn bộ ≤ 150 giây **tính từ lúc hỏi** (gồm chờ hàng đợi): một
-  lượt gọi chỉ bắt đầu khi trường hợp tệ nhất của nó (kể cả thử lại) còn vừa; công cụ xin sau hạn không chạy.
+  tính vào giới hạn; lời trả lời được yêu cầu ngắn). Toàn bộ ≤ 150 giây **tính từ lúc hỏi** (gồm chờ hàng đợi). Lượt gọi
+  của hỏi đáp không thử lại (lỗi tạm thời → báo bận ngay), mỗi lượt chờ đọc tối đa 60 giây và chỉ bắt đầu khi còn vừa
+  trong hạn; công cụ xin sau hạn không chạy.
 - Cùng trần chi theo kỳ của Claude (`ai_cap_claude_usd`): đã chạm trần → từ chối. Lượt gọi hỏi đáp **không** tính
   vào giới hạn 30 lượt gọi / ngày của lượt chạy sáng, và có giới hạn riêng 300 lượt gọi / ngày.
 - Dùng cache đề bài của Claude cho phần lặp lại giữa các lượt gọi trong một câu; chi phí ghi theo token thực tế.

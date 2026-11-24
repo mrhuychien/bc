@@ -365,6 +365,15 @@ for status, etype in ((529, "overloaded_error"), (500, "api_error"), (503, "api_
 		and sl == [5, 20], (err and err.kind, len(fake.calls), sl))
 out, err, fake, sl = hoi([loi(500, "api_error", "x"), loi(529, "overloaded_error", "x"), ok()])
 c("500 → 529 → 200: thành công ở lượt 3", err is None and len(fake.calls) == 3 and sl == [5, 20])
+# retries: hỏi đáp gọi retries=0 (không thử lại — báo bận ngay); 1 → thử lại đúng một lần; None → đủ hai lần như trên
+out, err, fake, sl = hoi([loi(529, "overloaded_error", "x"), ok()], retries=0)
+c("retries=0: 529 → lỗi ngay sau 1 POST, không ngủ", err is not None and err.kind == "http" and len(fake.calls) == 1
+	and sl == [] and "đã thử" not in err.message, (err and err.kind, len(fake.calls), sl))
+out, err, fake, sl = hoi([loi(529, "overloaded_error", "x"), loi(529, "overloaded_error", "x"), ok()], retries=1)
+c("retries=1: thử lại đúng một lần (ngủ [5]) rồi lỗi", err is not None and len(fake.calls) == 2 and sl == [5],
+	(len(fake.calls), sl))
+out, err, fake, sl = hoi([ok()], retries=0)
+c("retries=0: lượt thành công không đổi gì", err is None and out is not None and len(fake.calls) == 1 and sl == [])
 E = real_requests.exceptions
 for nhan, exc in (("ReadTimeout", E.ReadTimeout("read timed out")), ("ConnectTimeout", E.ConnectTimeout("x")),
 		("ConnectionError", E.ConnectionError("aborted")), ("ChunkedEncodingError", E.ChunkedEncodingError("x"))):

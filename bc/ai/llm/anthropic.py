@@ -206,12 +206,13 @@ def _key() -> str:
 	return key
 
 
-def _post(key: str, model: str, timeout, build) -> dict:
+def _post(key: str, model: str, timeout, build, retries=None) -> dict:
 	"""Vòng gửi chung của call / chat: build(key, fallback) → (headers, data). Trả thân dict của lượt 200; lỗi → LLMError
 	theo _classify, retry 5 s / 20 s cho 429 / 5xx / quá giờ, gọi lại một lần không kèm fallback khi tổ chức chưa có
-	beta đó (lần này không tính vào retry)."""
+	beta đó (lần này không tính vào retry). retries: số lần thử lại tối đa (None = đủ RETRY_WAITS; 0 = không thử lại —
+	hỏi đáp: người hỏi đang chờ, thà báo bận ngay còn hơn ăn hết thời gian của câu)."""
 	fallback = model in FALLBACK_MODELS
-	waits = list(RETRY_WAITS)
+	waits = list(RETRY_WAITS if retries is None else RETRY_WAITS[:max(0, int(retries))])
 	lan = 0
 	while True:
 		headers, data = build(key, fallback)
@@ -298,11 +299,11 @@ def _chat_parse(body: dict, model: str) -> dict:
 
 
 def chat(model: str, system: str, messages: list, tools: list, max_tokens: int = 2000, timeout: int = 60,
-		tool_choice=None) -> dict:
+		tool_choice=None, retries=None) -> dict:
 	"""Một lượt gọi Claude có công cụ (xem bc.ai.llm.chat). Tham số sai dạng → LLMError http, không gọi mạng."""
 	loi = _chat_args_error(messages, tools, tool_choice)
 	if loi:
 		raise LLMError("http", loi)
 	body = _post(_key(), model, timeout,
-		lambda k, fb: _chat_request(k, model, system, messages, tools, max_tokens, tool_choice, fb))
+		lambda k, fb: _chat_request(k, model, system, messages, tools, max_tokens, tool_choice, fb), retries=retries)
 	return _chat_parse(body, model)

@@ -105,9 +105,9 @@ KB = {"f": None}  # kịch bản hiện tại
 _ID = itertools.count(1)
 
 
-def fake_chat(provider, model, system, messages, tools, max_tokens=2000, timeout=60, tool_choice=None):
+def fake_chat(provider, model, system, messages, tools, max_tokens=2000, timeout=60, tool_choice=None, retries=None):
 	REQ.append(copy.deepcopy({"provider": provider, "model": model, "system": system, "messages": messages,
-		"tools": tools, "max_tokens": max_tokens, "timeout": timeout, "tool_choice": tool_choice}))
+		"tools": tools, "max_tokens": max_tokens, "timeout": timeout, "tool_choice": tool_choice, "retries": retries}))
 	return KB["f"](REQ[-1])
 
 
@@ -384,17 +384,19 @@ _r, a, rq = hoi(VIEWER, "Chậm", cham(dung(tu("xem_mang", {"mang": "thang", "te
 	cham(dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})), 50),
 	cham(dung(tu("xem_mang", {"mang": "thang", "ten": "monthly"})), 50), tra("muộn"))
 LECH["mono"], LECH["dung"] = 0.0, False
-eq("mỗi lượt gọi 50 giây: dừng trước lượt 3 (lượt tệ nhất không còn vừa), loi quá giờ", (a["status"], a.get("message"),
-	len(rq)), ("loi", qa.M_GIO, 2))
-eq("chờ đọc từng lượt: lượt tệ nhất 3 × (10 + T) + 25 s vừa phần còn lại trừ 5 s", [q["timeout"] for q in rq], [30, 13])
+eq("mỗi lượt gọi 50 giây: gọi được 3 lượt, dừng trước lượt 4 (không còn đủ giờ), loi quá giờ", (a["status"],
+	a.get("message"), len(rq)), ("loi", qa.M_GIO, 3))
+eq("chờ đọc từng lượt: (chờ nối 10 + T) vừa phần còn lại trừ 5 s, tối đa 60", [q["timeout"] for q in rq], [60, 60, 35])
+eq("hỏi đáp gọi mô hình KHÔNG thử lại (retries = 0) ở mọi lượt", sorted({q["retries"] for q in rq}), [0])
 _t, _da = [], 0.0
-for q, giay in zip(rq, (50, 50)):
-	_t.append(_da + 3 * (q["timeout"] + 10) + 25)
+for q, giay in zip(rq, (50, 50, 50)):
+	_t.append(_da + qa.LAN_THU * (q["timeout"] + qa.CHO_NOI) + qa.CHO_THU_LAI)
 	_da += giay
-c("mọi lượt gọi, kể cả khi thử lại hết, xong trước 150 giây kể từ lúc hỏi", all(x <= qa.TOTAL_SECONDS - 5 for x in _t), _t)
+c("mọi lượt gọi, kể cả khi chạm hết thời gian chờ, xong trước 150 giây kể từ lúc hỏi", all(x <= qa.TOTAL_SECONDS - 5 for x in _t), _t)
 from bc.ai.llm import anthropic as _anth  # noqa: E402
-eq("hằng số lượt tệ nhất của qa khớp bc.ai.llm.anthropic (CONNECT_TIMEOUT, tổng RETRY_WAITS, số lần thử)",
-	tuple(getattr(qa, x, None) for x in ('CHO_NOI', 'CHO_THU_LAI', 'LAN_THU')), (_anth.CONNECT_TIMEOUT, sum(_anth.RETRY_WAITS), len(_anth.RETRY_WAITS) + 1))
+eq("hằng số lượt tệ nhất của qa khớp bc.ai.llm.anthropic (CONNECT_TIMEOUT; không thử lại: 1 lần thử, không chờ)",
+	tuple(getattr(qa, x, None) for x in ('CHO_NOI', 'CHO_THU_LAI', 'LAN_THU', 'RETRIES')),
+	(_anth.CONNECT_TIMEOUT, sum(_anth.RETRY_WAITS[:qa.RETRIES]), qa.RETRIES + 1, 0))
 CL = "cho.lau@x.vn"
 frappe.ROLES[CL] = ["BC Viewer"]
 frappe.ENQUEUE_RUN = False
@@ -701,6 +703,18 @@ if True:   # tài khoản được xoá ở cuối bộ thử (và DROP IF EXIST
 	c("get_schema(Customer): fieldname / fieldtype / label / options, bảng tabCustomer", S0["table"] == "tabCustomer" and any(
 		f["fieldname"] == "customer_name" and set(f) == {"fieldname", "fieldtype", "label", "options"} for f in S0["fields"]))
 	c("get_schema(Salary Slip) bị từ chối", sc[1].get("is_error") is True, sc[1])
+	# luật 4b: DocType thuộc phân hệ hệ thống (không có trong danh sách tên cấm) cũng không xem được cấu trúc
+	from bc.ai import sqlguard as _sg
+	_meta_goc = frappe.get_meta
+	frappe.get_meta = lambda dt, *a, **k: type("M", (), {"name": dt, "module": {"ToDo": "Desk", "File": "Core"}.get(dt, "Selling"),
+		"fields": [{"fieldname": "x", "fieldtype": "Data", "label": "X", "options": None}]})()
+	_cau_4b = type("C", (), {"buoc": []})()
+	try:
+		kq_4b = [qa._get_schema(_cau_4b, "t1", {"doctype": d}, None, None) for d in ("ToDo", "File", "Customer")]
+	finally:
+		frappe.get_meta = _meta_goc
+	c("get_schema: DocType phân hệ Desk / Core bị từ chối theo phân hệ (luật 4b), DocType nghiệp vụ thì được",
+		[bool(x.get("is_error")) for x in kq_4b] == [True, True, False] and _sg.doctype_allowed("ToDo"), kq_4b)
 	S2 = json.loads(sc[2]["content"]) if not sc[2].get("is_error") else {"fields": []}
 	from bc.ai import sqlguard
 	c("get_schema(Employee): chỉ cột được phép", S2["fields"] and {f["fieldname"] for f in S2["fields"]}

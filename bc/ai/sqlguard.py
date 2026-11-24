@@ -86,6 +86,18 @@ TIEN_TO_CAM = ("taboauth", "tabsalary", "tabpayroll", "tabemployee ", "tabsx phi
 # Chữ lương trong tên bảng tab… (chữ thường): bảng lương / chấm công tự tạo trên site.
 MAU_LUONG = ("salary", "payroll", "luong", "lương", "chamcong", "cham cong", "chấm công")
 
+# Luật 4b — lớp CẤU TRÚC (không phụ thuộc danh sách tên ở trên): mọi bảng `tab…` trong câu phải là bảng của một DocType
+# có trên site, và DocType đó không thuộc phân hệ dưới đây. Danh sách tên luôn sót (bản sao, nhật ký, cấu hình tích
+# hợp…); phân hệ thì không: bảng hệ thống / tích hợp / thư / nhân sự bị chặn cả khối. Chạy ở bc.ai.sqlro (cần danh mục
+# DocType của site) qua tables() + module_allowed(). Bảng có danh sách cột riêng (ALLOWED_COLUMNS: tabEmployee,
+# tabUser) được miễn luật phân hệ — luật 5 đã quản cột của chúng.
+MODULE_CAM = frozenset({
+	"core", "desk", "email", "integrations", "website", "automation", "custom", "printing", "social", "workflow",
+	"portal", "telephony", "contacts",        # Frappe: hệ thống, thư, tích hợp, địa chỉ / người liên hệ
+	"hr", "payroll",                          # HRMS
+	"ns", "misa integration",                 # app của công ty: nhân sự (hồ sơ cá nhân), tích hợp hoá đơn (nhật ký thô)
+})
+
 # Luật 5 — cột được dùng.
 ALLOWED_COLUMNS = {
 	"tabEmployee": frozenset({
@@ -528,6 +540,29 @@ def check(sql: str, columns: dict | None = None) -> tuple:
 		return True, "", _soat(sql, columns)
 	except _Loi as e:
 		return False, str(e), ""
+
+
+def key(ten: str) -> str:
+	"""Dạng so sánh của một tên bảng / DocType / phân hệ (chữ thường, bỏ dấu khi có chữ ngoài ASCII)."""
+	return _chuan(str(ten or "")).strip()
+
+
+def tables(sql: str) -> list:
+	"""Luật 4b: các tên bảng `tab…` được nhắc trong câu (giữ nguyên chữ, không trùng) — tên trong nháy ` ` bắt đầu
+	bằng "tab", hoặc tên trần "tab" + chữ HOA / chữ số ("tabItem"). Tên cột thường ("table_name", "tabs") không tính."""
+	out: dict = {}
+	for t in tach(str(sql or "").strip()):
+		if not t.ten:
+			continue
+		v = t.v.strip()
+		if len(v) > 3 and v[:3].lower() == "tab" and (t.k == "i" or not (v[3].islower() or v[3] == "_")):
+			out.setdefault(v)
+	return list(out)
+
+
+def module_allowed(module: str) -> bool:
+	"""Luật 4b: phân hệ của DocType có được đọc không (MODULE_CAM)."""
+	return key(module) not in MODULE_CAM
 
 
 def wrap(sql: str, limit: int = 200, seconds: int = 10) -> str:

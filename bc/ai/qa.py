@@ -67,9 +67,12 @@ MAX_TOKENS = 6000            # token / lượt gọi — gồm cả phần SUY N
 TOTAL_SECONDS = 150          # cả câu hỏi, tính từ lúc HỎI (ask) — gồm cả thời gian chờ trong hàng đợi
 CALL_TIMEOUT = 60            # giây / lượt gọi (chờ đọc của một lần thử)
 MIN_CALL_TIMEOUT = 10        # còn ít hơn mức này cho một lần thử thì dừng "quá giờ", không gọi
-# Một lượt llm.chat tệ nhất: 3 lần thử × (chờ nối 10 s + chờ đọc T) + chờ 5 s + 20 s giữa các lần (bc.ai.llm.anthropic
-# CONNECT_TIMEOUT / RETRY_WAITS — bộ thử soát hai số này khớp). Lượt gọi chỉ bắt đầu khi phần tệ nhất đó còn vừa.
-LAN_THU, CHO_NOI, CHO_THU_LAI = 3, 10, 25
+# Hỏi đáp KHÔNG thử lại (llm.chat retries = RETRIES = 0): người hỏi đang chờ — 429 / 5xx / quá giờ thì báo bận ngay để
+# hỏi lại, còn hơn dành sẵn thời gian cho 3 lần thử (cách đó chỉ để lại ~9 giây cho mỗi lượt gọi của một câu 7 lượt).
+# Một lượt llm.chat tệ nhất = LAN_THU × (chờ nối CHO_NOI + chờ đọc T) + CHO_THU_LAI (bc.ai.llm.anthropic
+# CONNECT_TIMEOUT — bộ thử soát khớp). Lượt gọi chỉ bắt đầu khi phần tệ nhất đó còn vừa trong hạn của câu.
+RETRIES = 0
+LAN_THU, CHO_NOI, CHO_THU_LAI = RETRIES + 1, 10, 0
 DU_GIO = 5                   # giây chừa lại cuối câu (ghi cache, dòng Run)
 JOB_TIMEOUT = 300            # giây (hàng đợi default)
 SITE_PER_DAY = 200           # câu / ngày toàn site
@@ -1100,7 +1103,7 @@ def _chay(cau, question, hist, mdl, t_hoi=None) -> tuple:
 		cuoi = cau.steps >= MAX_STEPS or cau.calls == MAX_CALLS - 1
 		try:
 			res = llm.chat(PROVIDER, mdl, system, messages, tl, max_tokens=MAX_TOKENS, timeout=cho,
-				tool_choice=TOOL_CHOICE_NONE if cuoi else None)
+				tool_choice=TOOL_CHOICE_NONE if cuoi else None, retries=RETRIES)
 		except llm.LLMError as e:
 			cau.calls += 1
 			cau.tin += cint(getattr(e, "tokens_in", 0))
@@ -1232,6 +1235,11 @@ def _get_schema(cau, tid, inp, mask, nguoi) -> dict:
 		return _loi(tid, "không có DocType này")
 	if meta is not None and getattr(meta, "name", None) and not sqlguard.doctype_allowed(cstr(meta.name)):
 		return _loi(tid, "DocType này không được xem")
+	# Luật 4b: phân hệ hệ thống / tích hợp / nhân sự — như run_select (Employee / User có danh sách cột riêng: miễn)
+	co_cot_rieng = any(sqlguard.key(k) in (sqlguard.key(f"tab{getattr(meta, 'name', None) or dt}"), sqlguard.key(f"tab{dt}"))
+		for k in sqlguard.ALLOWED_COLUMNS)
+	if not co_cot_rieng and not sqlguard.module_allowed(cstr(getattr(meta, "module", None) or "")):
+		return _loi(tid, "DocType này thuộc phân hệ hệ thống / tích hợp / nhân sự — không được xem")
 	# Employee / User: danh sách cột cho phép, so KHÔNG phân biệt hoa thường / dấu (get_meta("employee") vẫn nạp được
 	# Employee qua collation của MariaDB) — tên thật của meta nếu có, rồi tên đã gõ.
 	ten = cstr(getattr(meta, "name", None) or "") or dt

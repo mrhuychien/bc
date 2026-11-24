@@ -202,7 +202,7 @@ def call(provider: str, model: str, system: str, user: str, schema_name: str, sc
 
 
 def _dispatch_chat(provider: str, model: str, system: str, messages: list, tools: list, max_tokens: int, timeout: int,
-		tool_choice) -> dict:
+		tool_choice, retries=None) -> dict:
 	if provider != "claude":   # hỏi đáp chỉ chạy trên Claude (đặc tả P3 §0) — không gọi mạng
 		raise LLMError("http", "hỏi đáp chỉ hỗ trợ nhà cung cấp claude")
 	if not has_key(provider):   # trước mọi lời gọi mạng
@@ -212,11 +212,12 @@ def _dispatch_chat(provider: str, model: str, system: str, messages: list, tools
 	if not str(model or "").strip():
 		raise LLMError("http", "chưa chọn mô hình (ô model trong BC Settings đang trống)")
 	from bc.ai.llm import anthropic as adapter
-	return adapter.chat(model, system, messages, tools, max_tokens=max_tokens, timeout=timeout, tool_choice=tool_choice)
+	return adapter.chat(model, system, messages, tools, max_tokens=max_tokens, timeout=timeout, tool_choice=tool_choice,
+		retries=retries)
 
 
 def chat(provider: str, model: str, system: str, messages: list, tools: list, max_tokens: int = 2000,
-		timeout: int = 60, tool_choice=None) -> dict:
+		timeout: int = 60, tool_choice=None, retries=None) -> dict:
 	"""Một lượt gọi Messages API CÓ công cụ (P3 hỏi đáp). provider phải là "claude".
 
 	messages: [{"role": "user" | "assistant", "content": chuỗi | [khối]}] — content của lượt assistant trước gửi lại
@@ -225,10 +226,11 @@ def chat(provider: str, model: str, system: str, messages: list, tools: list, ma
 	→ {"content": [khối nguyên như API trả], "stop_reason": "end_turn" | "tool_use" | "max_tokens" | …, "tokens_in",
 	"tokens_out", "cost_tokens_in", "model"}; tokens_in = vào + ghi cache + đọc cache, cost_tokens_in = vào + 1,25 × ghi
 	+ 0,1 × đọc. Lỗi → LLMError (kind như call; "refusal" khi cả chuỗi fallback từ chối — mang token đã tính tiền); cùng
-	luật khoá, cùng retry (5 s / 20 s cho 429 / 5xx / quá giờ; hết credit không retry)."""
+	luật khoá, cùng retry (5 s / 20 s cho 429 / 5xx / quá giờ; hết credit không retry). retries: số lần thử lại tối
+	đa (None = như call; 0 = không thử lại — hỏi đáp dùng 0 để mỗi lượt gọi có đủ thời gian trong hạn của câu)."""
 	err = None
 	try:
-		return _dispatch_chat(provider, model, system, messages, tools, max_tokens, timeout, tool_choice)
+		return _dispatch_chat(provider, model, system, messages, tools, max_tokens, timeout, tool_choice, retries)
 	except LLMError as e:
 		err = e
 	except Exception as e:   # lỗi không lường: chỉ TÊN loại + nơi lỗi — lời của nó có thể chép câu hỏi / kết quả công cụ

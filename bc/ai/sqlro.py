@@ -172,6 +172,7 @@ class ReadOnly:
 	def __init__(self):
 		self._conn = None
 		self.columns: dict = {}
+		self.doctypes: dict = {}     # {tên DocType (dạng so sánh): phân hệ} — luật 4b
 
 	def __enter__(self) -> "ReadOnly":
 		if not available():
@@ -211,6 +212,8 @@ class ReadOnly:
 				"AND table_name IN ('tabEmployee', 'tabUser')")
 			for bang, cot in cur.fetchall():
 				self.columns.setdefault(str(bang), set()).add(str(cot))
+			cur.execute("SELECT name, module FROM `tabDocType`")
+			self.doctypes = {sqlguard.key(ten): str(mod or "") for ten, mod in cur.fetchall()}
 			cur.close()
 		except NotReadOnly:
 			self._dong()
@@ -230,6 +233,7 @@ class ReadOnly:
 		ok, ly_do, sach = sqlguard.check(sql, self.columns)
 		if not ok:
 			raise SqlRefused(ly_do)
+		self._soat_phan_he(sach)
 		cau = sqlguard.wrap(sach, limit=LIMIT + 1, seconds=SECONDS)
 		try:
 			cur = self._conn.cursor()
@@ -257,6 +261,19 @@ class ReadOnly:
 			tong += dai
 			rows.append(hang)
 		return {"columns": cot, "rows": rows, "cut": cut}
+
+	def _soat_phan_he(self, sach: str) -> None:
+		"""Luật 4b (lớp cấu trúc): mọi bảng `tab…` phải là bảng của một DocType trên site và không thuộc phân hệ cấm
+		(sqlguard.MODULE_CAM). Bảng có danh sách cột riêng (tabEmployee, tabUser) được miễn — luật 5 quản cột."""
+		mien = {sqlguard.key(k) for k in sqlguard.ALLOWED_COLUMNS}
+		for bang in sqlguard.tables(sach):
+			if sqlguard.key(bang) in mien:
+				continue
+			mod = self.doctypes.get(sqlguard.key(bang[3:]))
+			if mod is None:
+				raise SqlRefused(f"bảng {bang!r} không phải bảng của một DocType trên site")
+			if not sqlguard.module_allowed(mod):
+				raise SqlRefused(f"bảng {bang!r} thuộc phân hệ {mod} (hệ thống / tích hợp / nhân sự) — không được đọc")
 
 	def _dong(self):
 		try:

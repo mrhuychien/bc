@@ -421,8 +421,9 @@ lọt qua giới hạn. Tham số job chỉ có `qid` + `user`; câu hỏi + l�
 ngay. Job chạy **dưới chính người hỏi**: dựng đề bài (vai trò, luật trả lời, bối cảnh công ty đã
 che tên, ngày hôm nay, năm tài chính — không số liệu kinh doanh), rồi vòng tool use ≤ 7 lượt gọi Claude, ≤ 6 bước tra;
 hết lượt tra thì lượt cuối buộc trả lời bằng số đã có (`tool_choice: none`). Hạn 150 giây tính **từ lúc hỏi** (gồm
-thời gian chờ trong hàng đợi); một lượt gọi chỉ bắt đầu khi trường hợp tệ nhất của nó (3 lần thử × (10 giây nối + chờ
-đọc) + 25 giây chờ giữa các lần) vẫn xong trước hạn; công cụ xin sau hạn không chạy. Màn hình hỏi `get_answer(id)` mỗi 2
+thời gian chờ trong hàng đợi). Lượt gọi của hỏi đáp **không thử lại** (429 / 5xx / quá giờ → báo bận ngay để người hỏi
+hỏi lại): nhờ vậy mỗi lượt được chờ đọc tới 60 giây, và chỉ bắt đầu khi (10 giây nối + chờ đọc) vẫn xong trước hạn;
+công cụ xin sau hạn không chạy. Màn hình hỏi `get_answer(id)` mỗi 2
 giây, tối đa 180 giây (hạn máy chủ + 30 giây, để luôn lấy được kết quả cuối). Câu trả lời nằm trong cache 30 phút dưới khoá gắn với người hỏi — người khác (kể cả quản trị) không
 lấy được.
 
@@ -444,7 +445,11 @@ lấy được.
   bảng lương, bảng con của Employee…) và **không bảng chép lại dữ liệu của bảng khác** (`tabVersion`, `tabDeleted
   Document`, Comment / Communication, các log, Prepared Report, Submission Queue, Data Import, Webhook*, Bank Account),
   `tabEmployee` / `tabUser` chỉ cột được phép và không `*` (từ đứng ngay sau hai bảng đó luôn coi là bí danh, kể cả
-  `END` / `FULL`… — CTE cùng tên không mở được cột cấm). Câu bị chặn → lý do ngắn cho mô
+  `END` / `FULL`… — CTE cùng tên không mở được cột cấm). Trên danh sách tên còn một **lớp theo cấu trúc**: mọi bảng
+  `tab…` trong câu phải là bảng của một DocType có trên site, và DocType đó không thuộc phân hệ hệ thống / thư / tích
+  hợp / địa chỉ liên hệ / nhân sự (Core, Desk, Email, Integrations, Website, Automation, Custom, Printing, Social,
+  Workflow, Portal, Telephony, Contacts, HR, Payroll, app `ns`, MISA Integration) — bảng mới của các phân hệ đó bị
+  chặn mà không cần kể tên; `get_schema` theo cùng luật. Câu bị chặn → lý do ngắn cho mô
   hình, mô hình viết lại câu khác. Chạy dạng `SET STATEMENT max_statement_time=10 FOR SELECT * FROM (<câu>) AS _t LIMIT
   …`: ≤ 200 dòng, ≤ 40.000 ký tự. Ô chuỗi được che tên khách / NCC và tên người (không phân biệt hoa thường — `UPPER(tên)`
   cũng che) **rồi mới** cắt 200 ký tự (cắt trước thì tên nằm ở chỗ cắt lọt một nửa); cột người
@@ -480,7 +485,7 @@ gửi dữ liệu ra ngoài. **Lưu ý cho quản trị**: `run_select` gửi k�
 **Giới hạn và chi phí.** `ai_qa_per_day` câu / người / ngày (mặc định 20; đếm dòng `BC AI Run` `hoi-dap` của người đó
 trong ngày, cả câu lỗi; câu bị từ chối lúc hỏi không tính); 200 câu / ngày toàn site; mỗi người một câu tại một thời
 điểm; câu hỏi ≤ 500 ký tự; ≤ 6 bước tra, ≤ 7 lượt gọi, `max_tokens` 6.000 mỗi lượt (gồm phần suy nghĩ), cả câu ≤ 150 giây (thời gian chờ
-tính từ lúc hỏi; chờ đọc mỗi lượt gọi thu theo thời gian còn lại sao cho cả các lần thử lại vẫn vừa). Chi phí tính vào **cùng trần chi theo kỳ của Claude** (`ai_cap_claude_usd`;
+tính từ lúc hỏi; chờ đọc mỗi lượt gọi tối đa 60 giây, thu theo thời gian còn lại; không thử lại). Chi phí tính vào **cùng trần chi theo kỳ của Claude** (`ai_cap_claude_usd`;
 chạm trần → từ chối), ghi theo token thực tế sau mỗi lượt gọi (đọc cache × 0,1, ghi cache × 1,25 giá token vào —
 `cache_control` cấp trên cho phần lặp lại giữa các lượt của một câu). Lượt gọi hỏi đáp **không** tính vào 30 lượt / ngày
 của lượt sáng; có giới hạn riêng 300 lượt gọi / ngày (câu đang chạy giữ chỗ 7 lượt). Mọi lỗi (tắt, thiếu khoá, hết
@@ -556,7 +561,7 @@ lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gia
 923, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
 kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
 tĩnh 65, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 123, cửa gọi OpenAI 140, phản biện 84, nhóm
-Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58; P3 hỏi đáp: `llm.chat` 117, bộ soát SQL + kết nối chỉ đọc trên MariaDB thật 130, máy hỏi đáp 181, đầu-cuối P3 (request thật, cửa HTTP giả, tài khoản chỉ đọc thật, ẩn mảng, lỗi, giới hạn, tắt) 105, giao diện `#/hoi-dap` 65. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
+Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58; P3 hỏi đáp: `llm.chat` 120, bộ soát SQL + kết nối chỉ đọc trên MariaDB thật 141, máy hỏi đáp 183, đầu-cuối P3 (request thật, cửa HTTP giả, tài khoản chỉ đọc thật, ẩn mảng, lỗi, giới hạn, tắt) 105, giao diện `#/hoi-dap` 65. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
 `docs/verified/harness/run_all.sh` (xem README trong thư mục đó).
 
 ## Cài đặt / deploy

@@ -504,6 +504,8 @@ try:
 	frappe.db.sql(f"ALTER TABLE `tabEmployee` ADD COLUMN `employment_type` varchar(140), "
 		"ADD COLUMN `cot_moi_ns` varchar(140)")            # HRMS + một Custom Field chỉ có trên site
 	frappe.db.sql(f"CREATE TABLE `{BIG}` (x int, nhan varchar(400), tien decimal(21,9), ngay date, gio datetime)")
+	# luật 4b: bảng phải là bảng của một DocType trên site → ghi vào danh mục, phân hệ nghiệp vụ
+	frappe.db.sql("INSERT INTO `tabDocType` (name, module) VALUES (%s, %s)", (BIG[3:], "Stock"))
 	frappe.db.sql(f"INSERT INTO `{BIG}` (x, nhan, tien, ngay, gio) WITH RECURSIVE n AS (SELECT 1 AS i UNION ALL "
 		"SELECT i + 1 FROM n WHERE i < 500) SELECT i, REPEAT('Đ', 300), i * 1000.5, '2026-11-05', '2026-11-05 08:30:00' "
 		"FROM n")
@@ -567,6 +569,39 @@ try:
 			c("tổng ≤ 40.000 ký tự JSON, cut", n <= 40_000 + 200 and r["cut"] and 0 < len(r["rows"]) < 150,
 				(n, len(r["rows"])))
 			c("mọi kết quả JSON được (không Decimal / date)", bool(json.dumps(r)))
+			# ── luật 4b (lớp cấu trúc): bảng phải là bảng của một DocType trên site, không thuộc phân hệ hệ thống / tích
+			# hợp / nhân sự — kể cả bảng KHÔNG có trong danh sách tên cấm
+			def chan(sql):
+				try:
+					ro.select(sql)
+					return None
+				except sqlro.SqlRefused as e:
+					return e.reason
+			for bang, mod in (("tabFile", "Core"), ("tabToDo", "Desk"), ("tabNote", "Desk"), ("tabDocShare", "Core")):
+				c(f"4b: {bang} (phân hệ {mod}) không có trong danh sách tên cấm mà vẫn bị từ chối theo phân hệ",
+					sqlguard.check(f"SELECT name FROM `{bang}`")[0] is True
+					and "phân hệ" in (chan(f"SELECT name FROM `{bang}`") or ""), chan(f"SELECT name FROM `{bang}`"))
+			c("4b: bảng tab… không phải DocType nào → từ chối", "không phải bảng của một DocType" in
+				(chan("SELECT 1 FROM `tabKhong Co Bang Nay`") or ""), chan("SELECT 1 FROM `tabKhong Co Bang Nay`"))
+			c("4b: bảng cấm nằm trong truy vấn con / UNION cũng bị từ chối", all("phân hệ" in (chan(q) or "") for q in (
+				"SELECT name FROM tabCustomer WHERE name IN (SELECT name FROM tabToDo)",
+				"SELECT name FROM tabCustomer UNION ALL SELECT name FROM `tabFile`",
+				"WITH t AS (SELECT name FROM tabNote) SELECT * FROM t")))
+			c("4b: bảng nghiệp vụ vẫn chạy (Customer, Sales Invoice, Item)", all(chan(q) is None for q in (
+				"SELECT name FROM tabCustomer", "SELECT COUNT(*) FROM `tabSales Invoice`", "SELECT name FROM tabItem")))
+			c("4b: tabUser / tabEmployee được miễn luật phân hệ (đã có luật cột)", chan("SELECT name, enabled FROM tabUser")
+				is None and chan("SELECT name, department FROM tabEmployee") is None,
+				(chan("SELECT name, enabled FROM tabUser"), chan("SELECT name, department FROM tabEmployee")))
+			c("4b: tên cột kiểu 'table_x' / bí danh không bị coi là bảng", chan(
+				"SELECT name AS table_name, 1 AS tabs FROM tabCustomer") is None)
+			bang_4b = sqlguard.tables("SELECT a.name, table_x, tabs FROM `tabSales Invoice` a JOIN tabItem i ON 1 = 1 "
+				"JOIN `tabSales Invoice` b ON 1 = 1 WHERE 'tabFile' = 'x'")
+			c("4b: sqlguard.tables() — tên trong nháy và 'tab' + chữ HOA, không trùng, bỏ tên cột thường và chuỗi",
+				bang_4b == ["tabSales Invoice", "tabItem"], bang_4b)
+			mod_4b = [sqlguard.module_allowed(m) for m in ("Core", "desk", "Integrations", "HR", "NS", "MISA Integration",
+				"Contacts", "Accounts", "Stock", "Selling", "BC", "SX", "Van Chuyen", "Setup")]
+			c("4b: module_allowed — hệ thống / tích hợp / nhân sự bị chặn, nghiệp vụ được",
+				mod_4b == [False] * 7 + [True] * 7, mod_4b)
 			# câu hợp lệ của bộ thử chạy được thật
 			hong = []
 			for q in VALID:
