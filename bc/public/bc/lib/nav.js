@@ -16,6 +16,7 @@ export const NAV_GROUPS = [
         { route: '/san-pham', label: 'Sản phẩm', icon: 'fa-box' },
     ] },
     { title: 'Sản xuất', items: [
+        { route: '/san-xuat', label: 'Báo cáo sản xuất', icon: 'fa-clipboard-list' },
         { route: '/sx-tet', label: 'SX Hàng Tết', icon: 'fa-industry' },
     ] },
     { title: 'Kho', items: [

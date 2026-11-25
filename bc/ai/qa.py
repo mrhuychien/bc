@@ -123,6 +123,7 @@ NHAN = {
 	("tet", "items"): "hàng Tết: theo mặt hàng",
 	("tinh-thanh", "provinces"): "doanh số theo tỉnh thành",
 	("san-pham", "top_products"): "sản phẩm bán chạy",
+	("san-xuat", "overview"): "số hộp sản xuất ghi theo ngày của một tháng (khoán / công nhật, theo mã, 12 tháng)",
 	("sx-tet", "items"): "sản xuất hàng Tết theo mặt hàng",
 	("sx-tet", "daily"): "sản xuất từng ngày của một tháng",
 	("ton-kho", "overview"): "tồn kho hiện tại",
@@ -145,6 +146,7 @@ THAM_SO = {
 	("tong-quan", "top_customers"): {"limit": ("int", 1, 20)},
 	("ngay", "daily"): {"year": ("int", 2000, 2100), "month": ("int", 1, 12)},
 	("san-pham", "top_products"): {"group": ("enum", ("all", "tet", "traditional"))},
+	("san-xuat", "overview"): {"thang": ("thang",)},
 	("sx-tet", "items"): {"from_date": ("ngay",), "to_date": ("ngay",)},
 	("sx-tet", "daily"): {"year": ("int", 2000, 2100), "month": ("int", 1, 12)},
 	("kiem-ke", "overview"): {"thang": ("thang",)},
@@ -259,6 +261,11 @@ def check_params(key: tuple, ts) -> tuple:
 			m = _THANG.match(v) if isinstance(v, str) else None
 			if not m or not 1 <= int(m.group(2)) <= 12:
 				return None, f"{k} phải là tháng YYYY-MM"
+			# Tháng tương lai: các khối theo tháng (kho.month_period…) lặng lẽ trả THÁNG NÀY — mô hình sẽ đọc số tháng này
+			# như số tháng hỏi. Từ chối để mô hình nói "chưa có số liệu".
+			hom_nay = getdate(frappe.utils.nowdate())
+			if (int(m.group(1)), int(m.group(2))) > (hom_nay.year, hom_nay.month):
+				return None, f"{k} là tháng chưa tới (sau {hom_nay.month:02d}/{hom_nay.year}) — chưa có số liệu"
 		out[k] = v
 	if "from_date" in spec and "to_date" in spec:
 		if ("from_date" in out) != ("to_date" in out):

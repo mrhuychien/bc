@@ -38,7 +38,8 @@ KINDS = ("tien", "so", "pct", "ngay", "chu")
 GROUPS = {
 	"kinh-doanh": {"label": "Kinh doanh", "sections": ("tong-quan", "ngay", "thang", "tet", "tinh-thanh", "san-pham"),
 		"audience": "lanh-dao"},
-	"kho-sx": {"label": "Kho & SX", "sections": ("sx-tet", "ton-kho", "han-dung", "kiem-ke", "nhap-tp"),
+	"kho-sx": {"label": "Kho & SX", "sections": ("san-xuat", "sx-tet", "ton-kho", "han-dung", "kiem-ke",
+		"nhap-tp"),
 		"audience": "lanh-dao"},
 	"van-chuyen": {"label": "Vận chuyển", "sections": ("van-chuyen",), "audience": "lanh-dao"},
 	"tai-chinh": {"label": "Công nợ", "sections": ("cong-no", "phai-tra"), "audience": "lanh-dao"},
@@ -52,7 +53,7 @@ GROUPS = {
 SECTION_LABELS = {
 	"thoi-gian-thuc": "Thời gian thực", "tro-ly": "Trợ lý AI", "tong-quan": "Tổng quan", "ngay": "Theo ngày",
 	"thang": "Theo tháng", "tet": "Hàng Tết", "tinh-thanh": "Tỉnh thành", "san-pham": "Sản phẩm",
-	"sx-tet": "SX Hàng Tết", "ton-kho": "Tồn kho", "han-dung": "Hạn dùng & tồn âm",
+	"san-xuat": "Báo cáo sản xuất", "sx-tet": "SX Hàng Tết", "ton-kho": "Tồn kho", "han-dung": "Hạn dùng & tồn âm",
 	"kiem-ke": "Kiểm kê & điều chỉnh", "nhap-tp": "Nhập TP & giá vốn", "van-chuyen": "Giao hàng & xe",
 	"cong-no": "Phải thu", "phai-tra": "Phải trả & quỹ", "nhan-su": "Nhân sự & lương",
 	"attp": "An toàn thực phẩm", HE_THONG: "Hệ thống",

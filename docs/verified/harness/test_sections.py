@@ -26,6 +26,7 @@ EXPECTED = {
 	"kd.get_top_customers": "tong-quan", "kd.get_daily": "ngay", "kd.get_orders": "ngay", "kd.get_monthly": "thang",
 	"kd.get_provinces": "tinh-thanh", "kd.get_top_products": "san-pham",
 	"tet.get_npp_growth": "tet", "tet.get_npp_detail": "tet", "tet.get_mt_detail": "tet", "tet.get_items": "tet",
+	"sx_hop.get_overview": "san-xuat", "sx_hop.get_day": "san-xuat",
 	"sx.get_items": "sx-tet", "sx.get_daily_summary": "sx-tet", "sx.get_daily_detail": "sx-tet",
 	"cn.get_receivables": "cong-no", "cn.get_payables": "phai-tra",
 	"attp.get_overview": "attp", "attp.get_report": "attp",
@@ -112,6 +113,12 @@ if __name__ == "__main__":
 	c("mọi mảng đều có method; không mảng thừa", set(EXPECTED.values()) == set(_common.SECTIONS))
 	nav = re.findall(r"route: '/([a-z-]+)'", open(os.path.join(BC_ROOT, "bc/public/bc/lib/nav.js"), encoding="utf-8").read())
 	c("lib/nav.js (menu) khớp SECTIONS, đúng thứ tự", nav == list(_common.SECTIONS), nav)
+	from bc.ai import registry
+	nhan = dict(re.findall(r"route: '/([a-z-]+)', label: '([^']+)'",
+		open(os.path.join(BC_ROOT, "bc/public/bc/lib/nav.js"), encoding="utf-8").read()))
+	c("nhãn mảng của Trợ lý AI (registry.SECTION_LABELS) = nhãn menu lib/nav.js, đủ mọi mảng",
+		{s: registry.SECTION_LABELS.get(s) for s in _common.SECTIONS} == nhan,
+		{s: (registry.SECTION_LABELS.get(s), nhan.get(s)) for s in _common.SECTIONS if registry.SECTION_LABELS.get(s) != nhan.get(s)})
 	shell = open(os.path.join(BC_ROOT, "bc/public/bc/shell.js"), encoding="utf-8").read()
 	views = re.findall(r"'/([a-z-]+)': \(\) => import\(withV\('\./views/", shell.split("const IS_ADMIN")[0])
 	c("shell.js ALL_VIEWS = đúng các mảng", sorted(views) == sorted(_common.SECTIONS), views)

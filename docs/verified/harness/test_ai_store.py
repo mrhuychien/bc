@@ -649,6 +649,7 @@ BANG = [
 	("tet", "items", "tet", "get_items", {}),
 	("tinh-thanh", "provinces", "kd", "get_provinces", {}),
 	("san-pham", "top_products", "kd", "get_top_products", {"group": "all"}),
+	("san-xuat", "overview", "sx_hop", "get_overview", {}),
 	("sx-tet", "items", "sx", "get_items", {}),
 	("sx-tet", "daily", "sx", "get_daily_summary", {"year": 2026, "month": 10}),
 	("ton-kho", "overview", "kho_ton", "get_overview", {}),
@@ -667,6 +668,7 @@ BANG = [
 ]
 # Tham số KHÔNG truyền phải có đúng mặc định này trong chữ ký thật (đọc bc/api/*.py): kỳ mặc định = tháng / mùa này.
 MAC_DINH = {("kd", "get_top_customers"): {"limit": 8}, ("sx", "get_items"): {"from_date": None, "to_date": None},
+	("sx_hop", "get_overview"): {"thang": None},
 	("kho_kk", "get_overview"): {"thang": None}, ("kho_nhap", "get_overview"): {"thang": None},
 	("vc", "get_overview"): {"thang": None}, ("attp", "get_report"): {"thang": None}}
 COLLECT_PY = os.path.join(BC_ROOT, "bc", "ai", "collect.py")
@@ -747,9 +749,9 @@ c("không import requests / đọc khoá API", "requests" not in src and "bc_ai_
 
 print("B2. CALLS đúng bảng §3: tên method, tên tham số, mặc định (đối chiếu chữ ký thật), mảng của _guard")
 goi = [(s, n, *d.split("."), f(datetime.date(2026, 10, 27))) for s, n, d, f in collect.CALLS]
-c("CALLS = 24 lời gọi (23 của bảng đặc tả + vc tháng trước), đúng thứ tự và tham số", goi == BANG,
+c("CALLS = 25 lời gọi (24 của bảng đặc tả + vc tháng trước), đúng thứ tự và tham số", goi == BANG,
 	[x for x in goi if x not in BANG])
-c("24 cặp (mảng, tên) không trùng", len({(s, n) for s, n, *_ in BANG}) == 24 == len(collect.CALLS))
+c("25 cặp (mảng, tên) không trùng", len({(s, n) for s, n, *_ in BANG}) == 25 == len(collect.CALLS))
 NS = registry.NO_SEND - {(registry.TRO_LY, "kpi")}   # P2: khối lịch sử KPI của detector (không do collect dựng)
 c("khối không gửi mô hình (registry.NO_SEND) = đúng van-chuyen.overview_truoc, và nó có trong CALLS",
 	NS == {("van-chuyen", "overview_truoc")} and NS <= {(s, n) for s, n, *_ in BANG})
@@ -794,7 +796,7 @@ try:
 finally:
 	for (m, f), fn in goc.items():
 		setattr(api(m), f, fn)
-c("gọi đúng 24 lời gọi của bảng, theo thứ tự, MỌI lời gọi refresh=1, tham số theo tên (không vị trí)",
+c("gọi đúng 25 lời gọi của bảng, theo thứ tự, MỌI lời gọi refresh=1, tham số theo tên (không vị trí)",
 	da_goi == [(m, f, (), {"refresh": 1, **kw}) for s, n, m, f, kw in BANG], [x for x in da_goi][:30])
 c("không gọi live.get_snapshot (thoi-gian-thuc) hay method nào ngoài bảng", ("live", "get_snapshot") in goc
 	and not [x for x in da_goi if (x[0], x[1]) not in {(m, f) for s, n, m, f, kw in BANG}])
@@ -803,7 +805,7 @@ for s, n, m, f, kw in BANG:
 	mong.setdefault(s, {})[n] = {"tu": f"{m}.{f}"}
 c("pack[mảng][tên] = payload của đúng method đó", pack == mong, pack)
 
-print("B3. Trên DB có số (seed gộp), dưới Administrator: đủ 24 khối với payload thật")
+print("B3. Trên DB có số (seed gộp), dưới Administrator: đủ 25 khối với payload thật")
 import seed_ui2  # noqa: E402,F401  (reset + seed SX, công nợ, ATTP, vận chuyển, nhân sự, bán hàng)
 
 frappe.session.user = ADMIN
@@ -836,7 +838,7 @@ def loi_cua(pack):
 
 pack = collect.build()
 c("đủ mọi (mảng, tên) của bảng, không thừa", {(s, n) for s, d in pack.items() for n in d}
-	== {(s, n) for s, n, *_ in BANG} and len(pack) == 16, sorted(pack))
+	== {(s, n) for s, n, *_ in BANG} and len(pack) == 17, sorted(pack))
 c("không khối nào _error; collect không gọi clear_last_message; không ghi Error Log",
 	loi_cua(pack) == [] and dem_clear["collect"] == 0 and not [x for x in frappe.LOGGED if "collect" in str(x)],
 	(loi_cua(pack), dem_clear, frappe.LOGGED[:3]))
@@ -869,8 +871,8 @@ t = pack["san-pham"]["top_products"]
 c("san-pham.top_products nhóm all: TET1 130 hộp + TRAD1 120 hộp, cửa sổ năm tài chính",
 	[(r["item_code"], r["qty"]) for r in t["rows"]] == [("TET1", 130.0), ("TRAD1", 120.0)]
 	and (t["meta"]["window"], t["meta"]["group"]) == ("fy", "all"), t)
-c("kỳ mặc định = tháng này: kiem-ke / nhap-tp / van-chuyen đều 2026-10",
-	[pack[s]["overview"]["meta"]["thang"] for s in ("kiem-ke", "nhap-tp", "van-chuyen")] == ["2026-10"] * 3)
+c("kỳ mặc định = tháng này: san-xuat / kiem-ke / nhap-tp / van-chuyen đều 2026-10",
+	[pack[s]["overview"]["meta"]["thang"] for s in ("san-xuat", "kiem-ke", "nhap-tp", "van-chuyen")] == ["2026-10"] * 4)
 c("khối có 'available' đều True trên seed này (payload thật, không phải khối tắt)",
 	all(pd.get("available", True) is True for dd in pack.values() for pd in dd.values()))
 c("pack gọn trong JSON được (gửi mô hình / ghi cache)", len(json.dumps(pack, ensure_ascii=False, default=str)) > 50000)
@@ -893,7 +895,7 @@ c("mọi khối trong pack đều vừa tính (meta.cached = False)", [(s, n) fo
 	if (pd.get("meta") or {}).get("cached") is not False] == [])
 frappe.session.user = VIEWER
 nguoi_xem = {(m, f): getattr(api(m), f)(**kw) for s, n, m, f, kw in BANG}
-c("sau collect, người xem mở màn (gọi mặc định, không refresh) trúng cache ở CẢ 24 lời gọi",
+c("sau collect, người xem mở màn (gọi mặc định, không refresh) trúng cache ở CẢ 25 lời gọi",
 	[k2 for k2, v in nguoi_xem.items() if (v.get("meta") or {}).get("cached") is not True] == [])
 c("… kể cả khi màn gọi không tham số: kd.get_daily(), sx.get_daily_summary(), kd.get_top_products()",
 	all(x["meta"]["cached"] is True for x in (api("kd").get_daily(), api("sx").get_daily_summary(),
@@ -949,7 +951,7 @@ finally:
 	api("cn").get_receivables, frappe.get_traceback = goc_cn, goc_tb
 c("không ném lỗi; mục hỏng = ĐÚNG {'_error': True}", pack["cong-no"]["receivables"] == {"_error": True},
 	pack["cong-no"]["receivables"])
-c("chỉ mục đó lỗi — 22 mục còn lại vẫn nguyên số (kể cả phai-tra cùng module cn)", loi_cua(pack)
+c("chỉ mục đó lỗi — 24 mục còn lại vẫn nguyên số (kể cả phai-tra cùng module cn)", loi_cua(pack)
 	== [("cong-no", "receivables")] and all(bo_meta(pack[s][n]) == bo_meta(tot[s][n]) for s, n, *_ in BANG
 	if (s, n) != ("cong-no", "receivables")), loi_cua(pack))
 c("frappe.clear_last_message() được collect gọi đúng 1 lần cho 1 lỗi; lời lỗi không còn trong message_log",
@@ -982,7 +984,7 @@ frappe.session.user = VIEWER
 frappe.LOGGED.clear()
 dem_clear.update(collect=0, khac=0)
 pack = collect.build()
-c("người xem + ẩn cong-no, attp: đúng 3 mục _error (receivables, attp.overview, attp.report), 21 mục còn lại có số",
+c("người xem + ẩn cong-no, attp: đúng 3 mục _error (receivables, attp.overview, attp.report), 22 mục còn lại có số",
 	loi_cua(pack) == [("attp", "overview"), ("attp", "report"), ("cong-no", "receivables")]
 	and pack["attp"] == {"overview": {"_error": True}, "report": {"_error": True}}
 	and bo_meta(pack["phai-tra"]["payables"]) == bo_meta(tot["phai-tra"]["payables"]), loi_cua(pack))
@@ -993,11 +995,11 @@ c("… 3 lần clear_last_message, 3 dòng Error Log chỉ ghi PermissionError",
 	if "bc.ai collect" in str(x)), (dem_clear, frappe.LOGGED))
 frappe.session.user = ADMIN
 pack = collect.build()
-c("Administrator qua _guard kể cả mảng đang ẩn: đủ 24 khối có số", loi_cua(pack) == []
+c("Administrator qua _guard kể cả mảng đang ẩn: đủ 25 khối có số", loi_cua(pack) == []
 	and pack["cong-no"]["receivables"]["kpis"]["receivable"] == 220 * M, loi_cua(pack))
 frappe.session.user = "nguoi-la@example.com"            # không có vai BC Viewer / System Manager
 pack = collect.build()
-c("người không có quyền: cả 24 mục _error, vẫn không ném lỗi", len(loi_cua(pack)) == 24
+c("người không có quyền: cả 25 mục _error, vẫn không ném lỗi", len(loi_cua(pack)) == 25
 	and all(pd == {"_error": True} for dd in pack.values() for pd in dd.values()), loi_cua(pack))
 frappe.session.user = VIEWER
 single("BC Settings", hidden_sections="")

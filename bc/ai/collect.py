@@ -8,8 +8,8 @@ Luật:
   Không có thoi-gian-thuc (5:30 sáng chưa có số trong ngày) và không có tro-ly (chính mảng này).
 - Mọi lời gọi refresh=1: tính lại + ghi cache. Tham số còn lại để ĐÚNG như màn hình gọi lúc mở (tháng này, mùa này)
   nên khoá cache trùng với khoá màn sẽ đọc buổi sáng: kd.get_daily / sx.get_daily_summary nhận năm + tháng của
-  `today`; kho_kk / kho_nhap / vc / attp.get_report để mặc định (tháng này); kd.get_top_products nhóm "all".
-  Thêm MỘT lời gọi không có trên màn: vc.get_overview(thang=<tháng trước>) → van-chuyen.overview_truoc (24 lời gọi)
+  `today`; sx_hop / kho_kk / kho_nhap / vc / attp.get_report để mặc định (tháng này); kd.get_top_products nhóm "all".
+  Thêm MỘT lời gọi không có trên màn: vc.get_overview(thang=<tháng trước>) → van-chuyen.overview_truoc (25 lời gọi)
   — chỉ vc.cuoc_canh_bao đọc; pipeline không gửi khối này cho mô hình (registry.NO_SEND).
 - Một lời gọi lỗi (kể cả _guard chặn, module không import được) → riêng mục đó thành {"_error": True}, các mục khác
   vẫn có số; frappe.clear_last_message() để lời báo lỗi không lọt ra ngoài. Error Log chỉ ghi TÊN loại lỗi + vị trí
@@ -60,6 +60,7 @@ CALLS: tuple = (
 	("tet", "items", "tet.get_items", _khong),
 	("tinh-thanh", "provinces", "kd.get_provinces", _khong),
 	("san-pham", "top_products", "kd.get_top_products", _moi_nhom),
+	("san-xuat", "overview", "sx_hop.get_overview", _khong),
 	("sx-tet", "items", "sx.get_items", _khong),
 	("sx-tet", "daily", "sx.get_daily_summary", _nam_thang),
 	("ton-kho", "overview", "kho_ton.get_overview", _khong),

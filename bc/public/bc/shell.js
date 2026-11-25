@@ -6,7 +6,7 @@ import { showModal, closeModal } from './components/modal.js';
 import { NAV_GROUPS as REPORT_GROUPS, sectionOf } from './lib/nav.js';
 
 // Dấu vết build — PHẢI khớp SHELL_BUILD trong www/bc.py. Gõ `BC.build` trong Console.
-const BUILD = 'bc-p9-r1';
+const BUILD = 'bc-p10-r1';
 const CTX = window.BC_CONTEXT || {};
 if (!window.BC_CONTEXT) console.error('[BC] window.BC_CONTEXT missing — kiểm tra www/bc.html');
 console.log(`[BC] shell build=${BUILD} · assetVersion=${CTX.assetVersion || '?'}`);
@@ -23,6 +23,7 @@ const ALL_VIEWS = {
     '/tet': () => import(withV('./views/tet.js')),
     '/tinh-thanh': () => import(withV('./views/tinh-thanh.js')),
     '/san-pham': () => import(withV('./views/san-pham.js')),
+    '/san-xuat': () => import(withV('./views/san-xuat.js')),
     '/sx-tet': () => import(withV('./views/sx-tet.js')),
     '/ton-kho': () => import(withV('./views/ton-kho.js')),
     '/han-dung': () => import(withV('./views/han-dung.js')),

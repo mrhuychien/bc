@@ -199,6 +199,14 @@ const SCEN = {
     },
 };
 
+// Báo cáo sản xuất trên seed chung (không có bảng ghi hộp): màn dựng xong, không lỗi tải. Số liệu kiểm ở ui_san_xuat.mjs.
+SCEN['/san-xuat'] = async (page) => {
+    await page.waitForSelector('.bc-view-banner', { timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+    const t = await page.textContent('.bc-main');
+    check('/san-xuat: dựng xong, không lỗi tải', t.includes('Báo cáo sản xuất') && !t.includes('Không tải được'), t.replace(/\s+/g, ' ').slice(0, 200));
+};
+
 // Nhóm Kho trên seed chung (không có sổ kho): mọi màn phải dựng xong, không lỗi tải, không treo khung chờ.
 // Số liệu Kho kiểm riêng trên seed sổ kho (ui_kho_*.mjs, seed_ui_kho.py).
 for (const r of ['/ton-kho', '/han-dung', '/kiem-ke', '/nhap-tp']) {

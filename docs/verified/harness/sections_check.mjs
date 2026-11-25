@@ -12,7 +12,7 @@ function check(label, ok, detail = '') {
     checks.push(ok);
     console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  ${String(detail).slice(0, 300)}`}`);
 }
-const ALL = ['thoi-gian-thuc', 'tro-ly', 'tong-quan', 'ngay', 'thang', 'tet', 'tinh-thanh', 'san-pham', 'sx-tet',
+const ALL = ['thoi-gian-thuc', 'tro-ly', 'tong-quan', 'ngay', 'thang', 'tet', 'tinh-thanh', 'san-pham', 'san-xuat', 'sx-tet',
     'ton-kho', 'han-dung', 'kiem-ke', 'nhap-tp', 'van-chuyen', 'cong-no', 'phai-tra', 'nhan-su', 'attp'];  // = SECTIONS
 
 function watch(page, errors) {

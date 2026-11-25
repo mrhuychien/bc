@@ -333,6 +333,8 @@ def kieu_theo_ten(path: str):
 		k = "so"
 	if k is None and keys[0] == "he-thong":           # mảng hệ thống chỉ có số đếm / giờ / GB (và dia_day.pct)
 		k = "so"
+	if k is None and keys[0] == "san-xuat":           # Báo cáo sản xuất: số hộp / thùng / ngày / mã (tỷ lệ đều *_pct)
+		k = "so"
 	return k
 
 

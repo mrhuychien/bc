@@ -81,6 +81,7 @@ bc/api/ai.py          whitelisted
 | `tet` | `npp_growth` ← `tet.get_npp_growth` · `items` ← `tet.get_items` |
 | `tinh-thanh` | `provinces` ← `kd.get_provinces` |
 | `san-pham` | `top_products` ← `kd.get_top_products("all")` |
+| `san-xuat` | `overview` ← `sx_hop.get_overview()` (tháng này — số hộp ghi ở phần Ghi hộp của sx) |
 | `sx-tet` | `items` ← `sx.get_items()` · `daily` ← `sx.get_daily_summary(năm, tháng)` |
 | `ton-kho` | `overview` ← `kho_ton.get_overview` · `trend` ← `kho_ton.get_trend` |
 | `han-dung` | `overview` ← `kho_han.get_overview` |
@@ -107,7 +108,7 @@ bc/api/ai.py          whitelisted
 | Nhóm | Mảng | audience |
 |---|---|---|
 | `kinh-doanh` | tong-quan, ngay, thang, tet, tinh-thanh, san-pham | lanh-dao |
-| `kho-sx` | sx-tet, ton-kho, han-dung, kiem-ke, nhap-tp | lanh-dao |
+| `kho-sx` | san-xuat, sx-tet, ton-kho, han-dung, kiem-ke, nhap-tp | lanh-dao |
 | `van-chuyen` | van-chuyen | lanh-dao |
 | `tai-chinh` | cong-no, phai-tra | lanh-dao |
 | `nhan-su` | nhan-su | lanh-dao |

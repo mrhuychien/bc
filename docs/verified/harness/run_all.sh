@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 python3 -B extract_cf.py >/dev/null
 fail=0
 for t in test_sx.py test_channel.py test_cn.py test_attp.py test_tet_source.py test_vc.py test_ns.py test_sections.py \
-		test_kho_ton.py test_kho_han.py test_kho_kk.py test_kho_nhap.py test_kho_nen.py; do
+		test_kho_ton.py test_kho_han.py test_kho_kk.py test_kho_nhap.py test_kho_nen.py test_sx_hop.py; do
 	echo "═══ $t"; python3 -B "$t" | tail -1 || fail=1
 	python3 -B "$t" >/dev/null 2>&1 || fail=1
 done
@@ -44,6 +44,19 @@ if node -e "require('playwright')" 2>/dev/null; then
 		echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	done
 	pkill -f '^python3 -B server.py 8127' || true
+	# Báo cáo sản xuất: #/san-xuat hai vai trên seed Ghi hộp riêng (DB bc_test_sxh_ui, cổng 8160 / 8161) — số trên màn =
+	# API thật; lượt phụ "nosx": site không cài sx (available False)
+	pkill -f 'server.py 816[01]' || true; sleep 0.5
+	BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py >/dev/null || fail=1
+	(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_sxh_ui python3 -B server.py 8160 > /tmp/bc-ui-sx-v.log 2>&1 &)
+	(env -u BC_OLD_PUBLIC BC_TEST_DB=bc_test_sxh_ui BC_UI_USER=Administrator python3 -B server.py 8161 > /tmp/bc-ui-sx-a.log 2>&1 &)
+	sleep 1.5
+	echo "═══ ui_san_xuat.mjs"; out=$(node ui_san_xuat.mjs http://127.0.0.1:8160 http://127.0.0.1:8161 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py nosx >/dev/null || fail=1
+	echo "═══ ui_san_xuat.mjs nosx"; out=$(node ui_san_xuat.mjs http://127.0.0.1:8160 http://127.0.0.1:8161 nosx 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	pkill -f 'server.py 816[01]' || true
 	# Trợ lý AI: #/tro-ly + #/ai (LLM giả, hàng đợi giả, chặn mạng) — 2 lượt seed riêng (fresh / stale)
 	for pass in fresh stale; do
 		pkill -f 'seed_ui_ai.py serve 812[89]' || true; sleep 0.5

@@ -988,6 +988,16 @@ LA_THAT = {
 sai = {p: (getattr(render, "kieu_theo_ten", lambda x: "?")(p), k) for p, k in LA_THAT.items()
 	if getattr(render, "kieu_theo_ten", lambda x: "?")(p) != k}
 eq("D8: tên khoá của lá số thật → đúng kiểu (mẫu đại diện của gói số seed_ui2)", sai, {})
+# Báo cáo sản xuất (sx_hop.get_overview): MỌI lá số của payload (kể cả items[] — seed gộp không có dòng ghi hộp nên
+# lượt E2 trên gói số thật chỉ thấy kpis / days / groups / trend): hộp, thùng, ngày, mã → so; *_pct, pct → pct.
+SX_HOP = {f"san-xuat.overview.{p}": k for k, ds in (
+	("so", ("kpis.hop", "kpis.thung", "kpis.khoan", "kpis.cong_nhat", "kpis.so_ngay", "kpis.tb_ngay", "kpis.so_ma",
+		"kpis.ngay_cuoi.hop", "kpis.chua_chot", "kpis.prev_hop", "kpis.prev_full", "days.weekday", "days.hop", "days.khoan",
+		"days.cong_nhat", "days.thung", "days.so_ma", "items.hop", "items.khoan", "items.cong_nhat", "items.thung",
+		"items.so_ngay", "items.tb_ngay", "groups.hop", "trend.hop", "trend.so_ngay", "trend.tb_ngay")),
+	("pct", ("kpis.cong_nhat_pct", "kpis.growth_pct", "items.pct", "groups.pct"))) for p in ds}
+eq("D8: mọi lá số của san-xuat.overview xếp đúng kiểu (hộp / thùng / đếm → so, tỷ lệ → pct)",
+	{p: render.kieu_theo_ten(p) for p in SX_HOP if render.kieu_theo_ten(p) != SX_HOP[p]}, {})
 kpi_lech = [(p, k) for p, k, _l in registry.KPIS if getattr(render, "kieu_theo_ten", lambda x: k)(p) not in (None, k)]
 eq("D8: luật tên khoá không trái với kiểu khai trong registry.KPIS", kpi_lech, [])
 

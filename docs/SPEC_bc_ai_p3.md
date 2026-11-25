@@ -54,6 +54,7 @@ Danh mục cố định, lấy từ `bc.ai.collect.CALLS` (bỏ khối kỳ trư
 | tet · npp_growth / items | `tet.get_npp_growth` / `get_items` | — |
 | tinh-thanh · provinces | `kd.get_provinces` | — |
 | san-pham · top_products | `kd.get_top_products` | `group`: `all` \| `tet` \| `traditional` |
+| san-xuat · overview | `sx_hop.get_overview` | `thang` (`YYYY-MM`) |
 | sx-tet · items | `sx.get_items` | `from_date` + `to_date` (`YYYY-MM-DD`, đi cùng nhau, cách nhau ≤ 731 ngày) |
 | sx-tet · daily | `sx.get_daily_summary` | `year`, `month` |
 | ton-kho · overview / trend | `kho_ton.get_overview` / `get_trend` | — |
@@ -68,7 +69,8 @@ Danh mục cố định, lấy từ `bc.ai.collect.CALLS` (bỏ khối kỳ trư
 | attp · report | `attp.get_report` | `thang` |
 
 - Gọi thẳng hàm Python, **không bao giờ** truyền `refresh` (đọc cache như màn hình). Tham số lạ, sai kiểu, ngoài
-  khoảng → trả lỗi cho mô hình, không gọi. Method vẫn từ chối tham số (`frappe.throw`) → lỗi "tham số không hợp lệ" cho
+  khoảng → trả lỗi cho mô hình, không gọi. `thang` sau tháng hiện tại cũng bị từ chối (các method theo tháng lặng lẽ
+  thay tháng tương lai bằng tháng này — mô hình sẽ đọc nhầm số). Method vẫn từ chối tham số (`frappe.throw`) → lỗi "tham số không hợp lệ" cho
   mô hình, không Error Log.
 - Vì job chạy dưới phiên người hỏi, `_guard` của từng method tự chặn mảng đang ẩn. Danh sách mảng trong mô tả công
   cụ gửi cho mô hình cũng chỉ gồm mảng người đó đang thấy.

@@ -68,6 +68,13 @@ export const sx = {
     dailyDetail:  (date)               => call('bc.api.sx.get_daily_detail', { date }),
 };
 
+// Báo cáo sản xuất: số hộp QC ghi theo ngày ở phần Ghi hộp của app sx (refresh = 1 → máy chủ bỏ cache).
+export const sxHop = {
+    overview: (thang, refresh) => call('bc.api.sx_hop.get_overview', { thang, refresh: refresh ? 1 : undefined }),
+    // since = meta.generated_at của overview đang hiện: bản cache của ngày cũ hơn thì máy chủ tính lại.
+    day:      (date, refresh, since) => call('bc.api.sx_hop.get_day', { date, refresh: refresh ? 1 : undefined, since: since || undefined }),
+};
+
 export const cn = {
     receivables: () => call('bc.api.cn.get_receivables'),
     payables:    () => call('bc.api.cn.get_payables'),
