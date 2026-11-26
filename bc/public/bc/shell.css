@@ -704,6 +704,7 @@
 .sh-cmp-zero { color: #059669; }
 #sh-cmp-lech { font-size: .92em; }
 .sh-cmp-word { display: block; font-size: .82rem; font-weight: 700; white-space: normal; }
+.sh-cmp-dot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .sh-now { margin-top: .9rem; padding: .65rem .7rem; border: 1px dashed var(--bc-border); border-radius: var(--bc-radius-sm); }
 .sh-now-title { font-size: .76rem; font-weight: 700; color: var(--bc-text-3); margin-bottom: .45rem; }
 .sh-now-grid { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
@@ -738,11 +739,15 @@ a.sh-now-tile:hover { box-shadow: var(--bc-shadow-md); }
     .sh-day-table tr.sh-detail-row { background: #faf8ff; }
     .sh-day-table tr.bc-row-total { background: var(--bc-surface-2); }
     .sh-day-table tr.bc-row-total td:last-child { display: none; }
-    /* Đối chiếu: 2 cột (4 cột làm số 6 chữ số có phần lẻ — 987.670,99 — đè sang cột bên); số dài vẫn xuống dòng, không đè. */
-    .sh-cmp-days tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .sh-cmp-days tr td { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-    .sh-cmp-days tr td[data-label]::before { white-space: nowrap; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
-    .sh-cmp-days tr.bc-row-total td:last-child { display: none; }
+    /* Đối chiếu: bốn số của một ngày nằm MỘT hàng khi vừa (thẻ thấp, đỡ cuộn), chia đều nên thẳng cột giữa các thẻ; ô
+       không co dưới bề rộng chữ của nó (min-width: max-content) nên số 6 chữ số có phần lẻ — 987.670,99 — không đè sang
+       ô bên mà cả ô xuống hàng dưới. Lưới 4 cột cố định thì đè, lưới 2 cột thì thẻ nào cũng cao gấp đôi. */
+    .sh-cmp-days tr { display: flex; flex-wrap: wrap; }
+    .sh-cmp-days tr td { flex: 1 1 0; min-width: max-content; max-width: 100%; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .sh-cmp-days tr td:first-child { flex: 0 0 100%; }
+    .sh-cmp-days tr td[data-label]::before { white-space: nowrap; letter-spacing: 0; }
+    /* "Cả tháng" không có luỹ kế: ô trống giữ chỗ cột thứ tư để ba số vẫn thẳng cột với các ngày. */
+    .sh-cmp-days tr.bc-row-total td.sh-cmp-pad { display: block; min-width: 0; }
     /* Bảng đối chiếu theo mã: thẻ như bảng ngày — tên ở hàng đầu, Ghi hộp · Nhập kho · Chênh lệch có nhãn, luôn thấy cột
        Chênh lệch (bảng 4 cột rộng hơn màn, cột đó bị đẩy khuất mà không có gì báo). */
     #sh-cmp-item-table .bc-table-scroll { overflow: visible; }

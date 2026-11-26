@@ -289,6 +289,17 @@ async function cmpCheck(page, c, f, tag, mobile = false) {
         check(`${tag} thẻ Chênh lệch "${lw}" (${lp}), chưa nhập ${cn} hộp (${mc} mã), nhập vượt ${nv} hộp (${mv} mã), khớp ${mk} mã`,
             (await txt(page, '#sh-cmp-lech')) === lw && (await txt(page, '#sh-cmp-pct')) === lp
             && k.includes(`Chưa nhập kho${cn} hộp (${mc} mã)`) && k.includes(`Nhập vượt số ghi${nv} hộp (${mv} mã)`) && k.includes(`Khớp${mk} mã`), k);
+        // Chữ của chênh lệch ở dòng riêng dưới con số: dấu "·" nối hai vế (còn trong textContent cho trình đọc màn hình)
+        // không được hiện ra ở đầu dòng đó.
+        const dot = await page.evaluate(() => {
+            const d = document.querySelector('#sh-cmp-lech .sh-cmp-dot'), w = document.querySelector('#sh-cmp-lech .sh-cmp-word');
+            const r = d?.getBoundingClientRect();
+            return { dot: r ? [Math.round(r.width), Math.round(r.height)] : null, word: (w?.innerText || '').trim(),
+                block: w ? getComputedStyle(w).display : '' };
+        });
+        check(`${tag} thẻ Chênh lệch: chữ ở dòng riêng, không mở đầu bằng dấu "·" (dấu chỉ còn cho trình đọc màn hình)`,
+            dot.block === 'block' && !!dot.word && !dot.word.startsWith('·') && !!dot.dot && dot.dot[0] <= 1 && dot.dot[1] <= 1,
+            JSON.stringify(dot));
         if (t.hop_chua_ma) {
             const [hc] = await f.num([t.hop_chua_ma]);
             check(`${tag} thẻ Ghi hộp: chưa chọn mã ${hc} hộp`, k.includes(`Chưa chọn mã${hc} hộp`), k);
@@ -319,9 +330,27 @@ async function cmpCheck(page, c, f, tag, mobile = false) {
         if (mobile) {
             const card = await page.evaluate(() => ({ thead: getComputedStyle(document.querySelector('#sh-cmp-day-table thead')).display,
                 tr: getComputedStyle(document.querySelector('#sh-cmp-day-table tr.sh-cmp-day')).display }));
-            check(`${tag} 390px: bảng ngày đối chiếu thành thẻ`, card.thead === 'none' && card.tr === 'grid', JSON.stringify(card));
+            check(`${tag} 390px: bảng ngày đối chiếu thành thẻ`, card.thead === 'none' && card.tr === 'flex', JSON.stringify(card));
             const bad = await cardBad(page, '#sh-cmp-day-table tbody tr');
             check(`${tag} 390px: thẻ ngày đối chiếu + Cả tháng — không số nào đè / tràn sang ô bên`, !bad.length, bad.slice(0, 4).join(' | '));
+            // Thẻ thấp: ngày nào bốn số đều ngắn (≤ 7 ký tự) thì bốn số nằm MỘT hàng và thẳng cột giữa các thẻ, "Cả tháng"
+            // thẳng theo ba cột đầu. Số dài (tháng 6: 987.670,99) được phép xuống hàng — kiểm đè / tràn ở trên lo phần đó.
+            const hang = await page.evaluate(() => {
+                const one = (tr) => {
+                    const tds = [...tr.querySelectorAll('td[data-label]')];
+                    const rs = tds.map((td) => td.getBoundingClientRect());
+                    return { dai: Math.max(...tds.map((td) => td.textContent.trim().length)), hang: new Set(rs.map((r) => Math.round(r.top))).size,
+                        trai: rs.map((r) => Math.round(r.left)) };
+                };
+                const tot = document.querySelector('#sh-cmp-day-table tr.sh-cmp-total');
+                return { ngay: [...document.querySelectorAll('#sh-cmp-day-table tr.sh-cmp-day')].map(one), tong: tot ? one(tot) : null };
+            });
+            const gon = hang.ngay.filter((h) => h.dai <= 7);
+            const lech1 = gon.find((h) => h.hang !== 1 || h.trai.join() !== gon[0].trai.join());
+            const tongOk = !gon.length || !hang.tong || hang.tong.dai > 7
+                || (hang.tong.hang === 1 && hang.tong.trai.join() === gon[0].trai.slice(0, 3).join());
+            check(`${tag} 390px: ${gon.length}/${hang.ngay.length} thẻ ngày số ngắn — bốn số một hàng, thẳng cột giữa các thẻ và với "Cả tháng"`,
+                !lech1 && tongOk, JSON.stringify({ lech1, mau: gon[0], tong: hang.tong }));
         }
         // Biểu đồ: ngày cũ bên trái, cột ghi hộp + nhập kho (không chồng) + đường luỹ kế, Chủ nhật đỏ
         await waitChart(page, 'sh-cmp-chart');

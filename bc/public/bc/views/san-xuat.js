@@ -288,10 +288,11 @@ function signedPct(v) {
     return `${x > 0 ? '+' : (x < 0 ? '−' : '')}${NUM1.format(Math.abs(x))}%`;
 }
 const lechCls = (v) => (v < -EPS ? 'sh-cmp-neg' : (v > EPS ? 'sh-cmp-pos' : 'sh-cmp-zero'));
-/** "−120 hộp · chưa nhập kho" / "+30 hộp · nhập vượt số ghi" / "0 · khớp" — chữ xuống dòng nhỏ để thẻ hẹp không cắt. */
+/** "−120 hộp · chưa nhập kho" / "+30 hộp · nhập vượt số ghi" / "0 · khớp" — chữ xuống dòng nhỏ để thẻ hẹp không cắt;
+ *  dấu "·" chỉ nối hai vế khi đọc liền (trình đọc màn hình, chép chữ), trên màn chữ đã ở dòng riêng nên dấu được ẩn. */
 function lechWords(v) {
     const [num, word] = v < -EPS ? [`${signed(v)} hộp`, 'chưa nhập kho'] : (v > EPS ? [`${signed(v)} hộp`, 'nhập vượt số ghi'] : ['0', 'khớp']);
-    return `${num}<span class="sh-cmp-word"> · ${word}</span>`;
+    return `${num}<span class="sh-cmp-dot"> · </span><span class="sh-cmp-word">${word}</span>`;
 }
 const cmpState = { c: null, chip: 'all' };
 const cmpCharts = chartRegistry();
@@ -356,7 +357,7 @@ function cmpDays(c) {
             ${cell('Ghi hộp', fmtNum(r.hop))}${cell('Nhập kho', qn(r.nhap))}
             ${cell('Chênh lệch', signed(r.lech), lechCls(r.lech))}${cell('Luỹ kế', signed(r.luy_ke), lechCls(r.luy_ke))}</tr>`).join('')}
             <tr class="bc-row-total sh-cmp-total"><td class="bc-left">Cả tháng</td>${cell('Ghi hộp', fmtNum(t.hop))}${cell('Nhập kho', qn(t.nhap))}
-                ${cell('Chênh lệch', signed(t.lech), lechCls(t.lech))}<td></td></tr>
+                ${cell('Chênh lệch', signed(t.lech), lechCls(t.lech))}<td class="sh-cmp-pad"></td></tr>
         </tbody></table></div>`;
 }
 

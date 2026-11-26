@@ -172,8 +172,10 @@ lai, xem dưới). Nhóm menu **Sản xuất**, đứng trước SX Hàng Tết.
     trên bảng: lệch 0,004 là "0 · khớp" ở thẻ, bảng lẫn chip (số mã ở thẻ = số đếm ở chip); mã không có hộp mà nhập làm
     tròn 0 không thành dòng. Mọi số lượng làm tròn 2 số lẻ một lần từ số gốc (cả hai số "hiện tại" lấy từ Nhập TP: Nhập TP
     hiện 3 số lẻ, ở đây 2 số lẻ từ cùng số gốc — 0,3749 là 0,37, không 0,38).
-  - Trên điện thoại bảng ngày đối chiếu là thẻ 2 cột (số 6 chữ số có phần lẻ không đè nhau), bảng theo mã cũng thành thẻ
-    (tên ở hàng đầu, Ghi hộp · Nhập kho · Chênh lệch có nhãn — cột chênh lệch không bị đẩy khuất).
+  - Trên điện thoại bảng ngày đối chiếu là thẻ: bốn số của một ngày nằm một hàng, thẳng cột giữa các thẻ; số dài (6 chữ
+    số có phần lẻ) không đè sang ô bên mà cả ô xuống hàng dưới. Bảng theo mã cũng thành thẻ (tên ở hàng đầu, Ghi hộp ·
+    Nhập kho · Chênh lệch có nhãn — cột chênh lệch không bị đẩy khuất). Ở thẻ Chênh lệch, chữ "chưa nhập kho" / "nhập
+    vượt số ghi" / "khớp" nằm dòng riêng dưới con số.
   - Dải **Hiện tại** (tới hôm nay, KHÔNG theo tháng chọn), mỗi số tính riêng (một số hỏng thì hiện "—"): **Đã ghi hộp,
     chưa nhập kho** = khối "đã vào hộp chưa nhập kho" của Nhập TP (`kho_nhap._vao_hop`, port `sx.api.khotp.tran_con_lai`
     / `cho_nhan`: 30 ngày gần nhất, trừ phần phiếu nháp Tết; khi xưởng đã đặt **mốc tính nợ vào hộp** (sx D230) và mốc nằm
@@ -648,7 +650,7 @@ bench): sản xuất 54 (gồm kiểm kê đưa về 0 rồi nhập lại), kên
 (so vi sai với cảnh báo của ns thật), ẩn / hiện mảng 40 + 30 giao diện (vai quản trị + người xem), **Kho**: tồn kho
 120, hạn dùng 88, kiểm kê 73, nhập TP 135, nền dùng chung 39 + giao diện 4 màn trên sổ kho gộp 113 / 70 (+ 72 / 66 / 52
 lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 111 (+ 115 lượt có mốc tính nợ vào hộp) và Thời gian thực trên sổ kho 14; **Báo cáo sản xuất** 163
-(so vi sai với lịch Ghi hộp và bảng đối chiếu kho của sx thật, với màn Nhập TP) + giao diện 756 (+ 12 lượt site không cài sx, + 20 lượt có mốc); giao diện Playwright chung 144
+(so vi sai với lịch Ghi hộp và bảng đối chiếu kho của sx thật, với màn Nhập TP) + giao diện 774 (+ 12 lượt site không cài sx, + 20 lượt có mốc); giao diện Playwright chung 144
 (desktop + điện thoại), tab mở trước deploy 6. **Trợ lý AI** (mô hình giả, không bộ nào ra mạng): dựng lời + soát số
 928, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
 kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
