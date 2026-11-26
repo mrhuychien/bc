@@ -73,6 +73,8 @@ export const sxHop = {
     overview: (thang, refresh) => call('bc.api.sx_hop.get_overview', { thang, refresh: refresh ? 1 : undefined }),
     // since = meta.generated_at của overview đang hiện: bản cache của ngày cũ hơn thì máy chủ tính lại.
     day:      (date, refresh, since) => call('bc.api.sx_hop.get_day', { date, refresh: refresh ? 1 : undefined, since: since || undefined }),
+    // Ghi hộp so với nhập kho của tháng (lech = nhập kho − ghi hộp) + tồn đọng đến hôm nay.
+    compare:  (thang, refresh) => call('bc.api.sx_hop.get_compare', { thang, refresh: refresh ? 1 : undefined }),
 };
 
 export const cn = {

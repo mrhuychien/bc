@@ -696,6 +696,24 @@
 .sh-group { font-size: .68rem; padding: 1px 7px; }
 .sh-item-name { font-weight: 600; }
 #sh-item-table .bc-table td:first-child { white-space: normal; min-width: 9rem; max-width: 16rem; }
+/* Ghi hộp so với nhập kho: 3 thẻ tháng chọn, dải "Hiện tại" (không theo tháng), bảng ngày + theo mã. Dấu +/− và chữ đi kèm màu. */
+.sh-cmp-kpis { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 641px) { .sh-cmp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sh-cmp-neg { color: #b45309; }
+.sh-cmp-pos { color: #1d4ed8; }
+.sh-cmp-zero { color: #059669; }
+#sh-cmp-lech { font-size: .92em; }
+.sh-cmp-word { display: block; font-size: .82rem; font-weight: 700; white-space: normal; }
+.sh-now { margin-top: .9rem; padding: .65rem .7rem; border: 1px dashed var(--bc-border); border-radius: var(--bc-radius-sm); }
+.sh-now-title { font-size: .76rem; font-weight: 700; color: var(--bc-text-3); margin-bottom: .45rem; }
+.sh-now-grid { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+@media (min-width: 641px) { .sh-now-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sh-now-tile { position: relative; display: block; color: inherit; text-decoration: none; }
+a.sh-now-tile:hover { box-shadow: var(--bc-shadow-md); }
+.sh-now-go { position: absolute; top: .65rem; right: .6rem; font-size: .7rem; color: var(--bc-text-3); }
+.sh-cmp-sub { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--bc-text-3); margin: 1rem 0 .4rem; }
+.sh-cmp-chips { margin-bottom: .5rem; flex-wrap: wrap; overflow: visible; }
+#sh-cmp-item-table .bc-table td:first-child { white-space: normal; min-width: 9rem; max-width: 16rem; }
 /* Điện thoại: bảng theo ngày thành thẻ — ngày + chốt ở hàng đầu, các số xếp lưới 3 cột có nhãn. */
 @media (max-width: 640px) {
     .sh-table-box { border: 0; overflow: visible; }
@@ -719,4 +737,7 @@
     .sh-day-table tr.sh-detail-row { background: #faf8ff; }
     .sh-day-table tr.bc-row-total { background: var(--bc-surface-2); }
     .sh-day-table tr.bc-row-total td:last-child { display: none; }
+    .sh-cmp-days tr { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sh-cmp-days tr td[data-label]::before { white-space: nowrap; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+    .sh-cmp-days tr.bc-row-total td:last-child { display: none; }
 }

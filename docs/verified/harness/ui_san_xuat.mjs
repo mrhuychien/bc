@@ -235,7 +235,7 @@ async function scenario(page, mobile, role) {
     check(`${tag} banner "Báo cáo sản xuất", tiêu đề trang`, banner.includes('Báo cáo sản xuất')
         && (await page.title()).startsWith('Báo cáo sản xuất'), banner);
     const build = await page.evaluate(() => window.BC?.build);
-    check(`${tag} dấu build shell = www/bc.py (${SHELL_BUILD})`, !!SHELL_BUILD && build === SHELL_BUILD && SHELL_BUILD === 'bc-p10-r1', `${build} / ${SHELL_BUILD}`);
+    check(`${tag} dấu build shell = www/bc.py (${SHELL_BUILD})`, !!SHELL_BUILD && build === SHELL_BUILD && SHELL_BUILD === 'bc-p10-r2', `${build} / ${SHELL_BUILD}`);
     const menu = await page.$('a[data-route="/san-xuat"]');
     check(`${tag} menu có "Báo cáo sản xuất" trong nhóm Sản xuất, trước SX Hàng Tết`, !!menu && await page.evaluate(() => {
         const a = [...document.querySelectorAll('#bc-sidebar .bc-side-link')].map((x) => x.dataset.route);
