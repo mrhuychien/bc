@@ -838,6 +838,26 @@ if __name__ == "__main__":
 		("2026-10-02", True), ("2026-10-03", False), ("2026-10-04", False), ("2026-10-05", False), ("2026-10-08", True)],
 		{d: xd[d] for d in ("2026-10-03", "2026-10-04", "2026-10-05")})
 
+	c("CMX: bất biến sau làm tròn lech = nhap_vuot − chua_nhap (gốc +0,005 / −0,3749: hai lần làm tròn độc lập ra −0,36)",
+		(xt["lech"], xt["nhap_vuot"], xt["chua_nhap"], round(xt["nhap_vuot"] - xt["chua_nhap"], 2)) == (-0.37, 0.0, 0.37, -0.37),
+		xt)
+
+	# Ba mã đơn vị Hộp lệch +0,004 / −0,004 (mỗi mã "khớp"): lệch tổng ±0,01 phải nằm trong nhập vượt / chưa nhập (0 mã)
+	for dau, nhap_ma in ((1, 10.004), (-1, 9.996)):
+		reset()
+		bc_settings()
+		ba = ("CMV-A", "CMV-B", "CMV-C")
+		for code in ba:
+			item(code, f"Bánh {code}", "Hàng truyền thống")
+		ngay("CMV-N10", "2026-10-10")
+		bang("CMV-N10", [(code, 10, "k") for code in ba])
+		cmp_slip("CMV-P11", "2026-10-11", 1, [(code, nhap_ma) for code in ba])
+		vt = cmp_run()["total"]
+		c(f"ba mã lệch {dau * 0.004:+} (khớp): lệch tổng {dau * 0.01:+} = nhap_vuot − chua_nhap, số mã vẫn theo lệch đã làm "
+			"tròn (0 mã lệch, 3 khớp)", (vt["lech"], round(vt["nhap_vuot"] - vt["chua_nhap"], 2), vt["nhap_vuot"],
+			vt["chua_nhap"], vt["so_ma_nhap_vuot"], vt["so_ma_chua_nhap"], vt["so_ma_khop"]) == (dau * 0.01, dau * 0.01,
+			0.01 if dau > 0 else 0.0, 0.01 if dau < 0 else 0.0, 0, 0, 3), vt)
+
 	# ── Riêng tư ──
 	full_cmp()
 	cp = cmp_run()

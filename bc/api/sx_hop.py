@@ -55,7 +55,9 @@ lương, phiếu nhập sinh tồn); ở đây chỉ đặt cạnh nhau, theo đ
   từ ngày nợ cũ nhất (đọc mềm — thiếu bảng / cột → khối đó available False). con_lai theo đơn vị kho của từng mã → số,
   số mã, số dòng, cũ nhất chỉ trên mã đơn vị Hộp; mã khác đơn vị đếm riêng (so_ma_khac_dvt), đứng cuối danh sách.
 - Làm tròn 2 số lẻ MỘT lần từ số gốc ở mọi số lượng (kể cả cho_nhap / cho_duyet: lấy số chưa làm tròn của kho_nhap, không
-  làm tròn 3 số lẻ rồi 2 số lẻ). Số đếm mã (chưa nhập / nhập vượt / khớp) xếp theo lệch ĐÃ làm tròn — cùng ngưỡng với màn;
+  làm tròn 3 số lẻ rồi 2 số lẻ). chua_nhap / nhap_vuot = Σ max(0, hop − nhap) / Σ max(0, nhap − hop) trên MỌI mã đơn
+  vị Hộp, nên lech = nhap_vuot − chua_nhap đúng cả sau làm tròn (_chia_lech dời 0,01 khi hai lần làm tròn lệch nhau).
+  Số đếm mã (chưa nhập / nhập vượt / khớp) xếp theo lệch ĐÃ làm tròn — cùng ngưỡng với màn;
   mã khác đơn vị có lech None (nhập theo Kg / Gói trừ số hộp không phải lệch hộp). Ngày chỉ có dòng không so được (mã khác
   đơn vị, dòng phiếu không mã) không "co".
 - Riêng tư như trên: chỉ mã, ngày, số lượng. Không đọc người lập / duyệt / xử lý, chú thích tự do, lý do, tên chứng
@@ -429,6 +431,21 @@ def _r2(v) -> float:
 	return round(flt(v), 2) + 0.0
 
 
+def _chia_lech(chua_nhap: float, nhap_vuot: float, lech2: float) -> tuple:
+	"""(chua_nhap, nhap_vuot) làm tròn 2 số lẻ sao cho nhap_vuot − chua_nhap = lech2 (lệch tổng đã làm tròn) ĐÚNG như
+	thẻ hiện. Mỗi số làm tròn một lần từ số gốc; hai lần làm tròn độc lập có thể lệch nhau 0,01 so với lech2 (gốc 0,005 −
+	0,3749 = −0,3699 → −0,37 mà 0,01 − 0,37 = −0,36) — khi đó dời 0,01 ở số có sai số làm tròn lớn hơn theo chiều cần dời
+	(mỗi số vẫn cách số gốc không quá 0,01, không âm)."""
+	c2, v2 = _r2(chua_nhap), _r2(nhap_vuot)
+	d = round(v2 - c2 - lech2, 2)
+	if not d:
+		return c2, v2
+	v_moi, c_moi = _r2(v2 - d), _r2(c2 + d)
+	if v_moi < 0 or (c_moi >= 0 and abs(c_moi - chua_nhap) < abs(v_moi - nhap_vuot)):
+		return c_moi, v2
+	return c2, v_moi
+
+
 def _nhap_by_day_item(f, t) -> list:
 	"""[{d, item, qty}] — Σ so_dem của phiếu nhập ĐÃ DUYỆT theo (ngày nhận, mã) trong [f, t] (như kho_nhap._nhap)."""
 	return frappe.db.sql(
@@ -487,20 +504,22 @@ def _compare(p: dict) -> dict:
 		if box(r.item):
 			day(r.d)["nhap"] += flt(r.qty)
 
-	# Tổng (gồm mã ẩn), cộng trên số CHƯA làm tròn, làm tròn một lần lúc trả. Mã xếp nhóm theo lệch ĐÃ làm tròn 2 số lẻ —
-	# đúng số màn hiện ở bảng / chip: mã lệch 0,004 là "0 · khớp" ở mọi chỗ (không vừa "khớp" trong bảng vừa "nhập vượt
-	# (1 mã)" ở thẻ); chua_nhap / nhap_vuot cộng lệch gốc của đúng các mã trong nhóm đó. Mã có hộp 0 và nhập làm tròn 0 không
-	# thành dòng, không vào số đếm (số nhập của nó vẫn trong tổng nhập kho như màn Nhập TP). Vì thế lech = nhap_vuot −
-	# chua_nhap chỉ lệch được phần lẻ dưới 0,005 của các mã "khớp".
+	# Tổng (gồm mã ẩn), cộng trên số CHƯA làm tròn, làm tròn một lần lúc trả. SỐ MÃ xếp nhóm theo lệch ĐÃ làm tròn 2 số lẻ
+	# — đúng số màn hiện ở bảng / chip: mã lệch 0,004 là "0 · khớp" ở mọi chỗ (không vừa "khớp" trong bảng vừa "nhập vượt
+	# (1 mã)" ở thẻ); mã có hộp 0 và nhập làm tròn 0 không thành dòng, không vào số đếm. SỐ LƯỢNG chua_nhap / nhap_vuot thì
+	# cộng max(0, ∓lệch gốc) của MỌI mã đơn vị Hộp (cả mã "khớp" lẫn mã không thành dòng) — nên lech = nhap_vuot − chua_nhap
+	# đúng trên số gốc (ba mã +0,004 → nhập vượt 0,01 hộp, 0 mã), và đúng cả sau làm tròn (xem _chia_lech).
 	tot = {"hop": hop_chua_ma, "nhap": 0.0, "chua_nhap": float(hop_chua_ma), "so_ma_chua_nhap": 0, "nhap_vuot": 0.0,
 		"so_ma_nhap_vuot": 0, "so_ma_khop": 0, "ma_khac_dvt": 0, "hop_khac_dvt": 0}
 	items = []
 	for code, g in g_items.items():
 		lech = g["nhap"] - g["hop"]
 		khac = not box(code)
-		if not khac:  # tổng số lượng: mọi dòng so được, kể cả mã không thành dòng
+		if not khac:  # tổng số lượng: mọi dòng so được, kể cả mã "khớp" và mã không thành dòng
 			tot["hop"] += g["hop"]
 			tot["nhap"] += g["nhap"]
+			tot["chua_nhap"] += max(0.0, -lech)
+			tot["nhap_vuot"] += max(0.0, lech)
 		if g["hop"] == 0 and _r2(g["nhap"]) == 0:
 			continue
 		l2 = _r2(lech)
@@ -509,10 +528,8 @@ def _compare(p: dict) -> dict:
 			tot["hop_khac_dvt"] += g["hop"]
 		elif l2 < 0:
 			tot["so_ma_chua_nhap"] += 1
-			tot["chua_nhap"] += -lech
 		elif l2 > 0:
 			tot["so_ma_nhap_vuot"] += 1
-			tot["nhap_vuot"] += lech
 		else:
 			tot["so_ma_khop"] += 1
 		# Mã khác đơn vị: nhập (Kg / Gói…) trừ hộp không phải số hộp lệch → lech None (màn "—", Trợ lý AI không trích được).
@@ -523,10 +540,11 @@ def _compare(p: dict) -> dict:
 	for x in items:
 		del x["_lech"]
 	lech = tot["nhap"] - tot["hop"]
+	chua_nhap, nhap_vuot = _chia_lech(tot["chua_nhap"], tot["nhap_vuot"], _r2(lech))
 	total = {"hop": tot["hop"], "nhap": _r2(tot["nhap"]), "lech": _r2(lech),
 		"lech_pct": round(lech / tot["hop"] * 100, 1) + 0.0 if tot["hop"] else None,
-		"chua_nhap": _r2(tot["chua_nhap"]), "so_ma_chua_nhap": tot["so_ma_chua_nhap"],
-		"nhap_vuot": _r2(tot["nhap_vuot"]), "so_ma_nhap_vuot": tot["so_ma_nhap_vuot"], "so_ma_khop": tot["so_ma_khop"],
+		"chua_nhap": chua_nhap, "so_ma_chua_nhap": tot["so_ma_chua_nhap"],
+		"nhap_vuot": nhap_vuot, "so_ma_nhap_vuot": tot["so_ma_nhap_vuot"], "so_ma_khop": tot["so_ma_khop"],
 		"hop_chua_ma": hop_chua_ma, "ma_khac_dvt": tot["ma_khac_dvt"], "hop_khac_dvt": tot["hop_khac_dvt"]}
 
 	# Từng ngày lịch, luỹ kế từ `from`; trả mới nhất trước (như get_overview.days)
@@ -608,7 +626,8 @@ def get_compare(thang=None, refresh=0):
 
 	{available, meta: {thang, from, to, as_of, sx, so_ngay_cho},
 	 total: {hop, nhap, lech, lech_pct, chua_nhap, so_ma_chua_nhap, nhap_vuot, so_ma_nhap_vuot, so_ma_khop, hop_chua_ma,
-	         ma_khac_dvt, hop_khac_dvt} — chỉ phần so được; lech = nhap − hop = nhap_vuot − chua_nhap,
+	         ma_khac_dvt, hop_khac_dvt} — chỉ phần so được; lech = nhap − hop = nhap_vuot − chua_nhap (đúng cả sau làm
+         tròn; số lượng cộng mọi mã, số mã theo lệch đã làm tròn),
 	 days: [{date, weekday (T2 = 0), hop, nhap, lech, luy_ke, co}] — mỗi ngày từ `to` lùi về `from` (mới nhất trước),
 	 items: [{item_code, item_name, short_name, group, uom, khac_dvt, hop, nhap, lech}] — khác đơn vị cuối (lech None),
         |lệch| giảm dần,

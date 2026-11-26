@@ -167,8 +167,8 @@ lai, xem dưới). Nhóm menu **Sản xuất**, đứng trước SX Hàng Tết.
     trong danh mục) vẫn liệt kê với nhãn **ĐVT khác** (cột chênh lệch "—"; API trả `lech: null` để Trợ lý AI không trích
     "Kg trừ hộp" như lệch hộp) nhưng ra khỏi cả hai vế của mọi tổng và mọi dòng ngày. Hộp **chưa chọn mã** vẫn vào ghi hộp, không phiếu nào khớp được nên nằm trong phần "chưa nhập kho"; dòng
     phiếu không mã không cộng. Ghi chú dưới bảng nói số hộp / số mã bị loại khi có.
-  - Thẻ **Chưa nhập kho** / **Nhập vượt số ghi** = cộng phần âm / phần dương theo từng mã (nên lệch tổng = nhập vượt −
-    chưa nhập), kèm số mã; chip lọc bảng theo mã theo hai nhóm đó. Mã xếp nhóm theo lệch **đã làm tròn 2 số lẻ** — đúng số
+  - Thẻ **Chưa nhập kho** / **Nhập vượt số ghi** = cộng phần âm / phần dương theo từng mã, mọi mã đơn vị Hộp kể cả mã
+    "khớp" (nên lệch tổng = nhập vượt − chưa nhập, đúng cả sau làm tròn: ba mã +0,004 → "nhập vượt 0,01 hộp (0 mã)"), kèm số mã; chip lọc bảng theo mã theo hai nhóm đó. Mã xếp nhóm theo lệch **đã làm tròn 2 số lẻ** — đúng số
     trên bảng: lệch 0,004 là "0 · khớp" ở thẻ, bảng lẫn chip (số mã ở thẻ = số đếm ở chip); mã không có hộp mà nhập làm
     tròn 0 không thành dòng. Mọi số lượng làm tròn 2 số lẻ một lần từ số gốc (cả hai số "hiện tại" lấy từ Nhập TP: Nhập TP
     hiện 3 số lẻ, ở đây 2 số lẻ từ cùng số gốc — 0,3749 là 0,37, không 0,38).
