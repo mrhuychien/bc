@@ -321,7 +321,9 @@ function cmpNow(c) {
             : `<div class="bc-kpi sh-now-tile" id="${id}">${inner}</div>`;
     };
     const na = (why) => [dash, why ? `<span class="bc-muted">${escapeHtml(why)}</span>` : ''];
-    const [v1, s1] = v.available ? [`${qn(v.qty)} hộp`, `${fmtNum(v.items)} mã · ${fmtNum(v.so_ngay ?? c.meta?.so_ngay_cho ?? 30)} ngày gần nhất`]
+    // Mốc tính nợ vào hộp của sx (D230) đang áp: số tính từ mốc, không phải 30 ngày gần nhất.
+    const [v1, s1] = v.available ? [`${qn(v.qty)} hộp`, `${fmtNum(v.items)} mã · ${v.moc ? `tính từ mốc ${escapeHtml(fmtDate(v.moc, true))}`
+        : `${fmtNum(v.so_ngay ?? c.meta?.so_ngay_cho ?? 30)} ngày gần nhất`}`]
         : na(v.error ? 'Không tính được' : '');
     // Phiếu nháp lẫn đơn vị kho (Hộp + Kg…): máy chủ trả qty null như màn Nhập TP — nói thẳng, không hiện "— hộp".
     const q2 = q.qty === null || q.qty === undefined ? 'nhiều đơn vị kho, không cộng' : `${qn(q.qty)} ${escapeHtml(q.uom || 'hộp')}`;

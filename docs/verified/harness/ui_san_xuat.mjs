@@ -400,8 +400,12 @@ async function nowCheck(page, c, f, tag) {
     const t1 = await txt(page, '#sh-now-chonhap'), t2 = await txt(page, '#sh-now-choduyet'), t3 = await txt(page, '#sh-now-novaohop');
     const [vq, q2, nq] = await f.q([v.qty, q.qty, n.qty]);
     const [vi, qc, qt, nm, na] = await f.num([v.items, q.count, q.count_tet, n.so_ma, n.oldest_age_days]);
-    check(`${tag} Đã ghi hộp, chưa nhập kho: ${vq} hộp · ${vi} mã · 30 ngày gần nhất`, v.available
-        && t1 === `Đã ghi hộp, chưa nhập kho${vq} hộp ${vi} mã · 30 ngày gần nhất`, t1);
+    // D230: mốc tính nợ vào hộp của sx đang áp (lượt `moc`) → "tính từ mốc dd/mm"; chưa đặt mốc → "30 ngày gần nhất"
+    check(MODE === 'moc' ? `${tag} D230 API cho_nhap có moc + mang_sang > 0` : `${tag} D230 API cho_nhap không mốc (moc / mang_sang null)`,
+        MODE === 'moc' ? !!v.moc && v.mang_sang > 0 : v.moc === null && v.mang_sang === null, JSON.stringify([v.moc, v.mang_sang]));
+    const sau = v.moc ? `tính từ mốc ${v.moc.slice(8, 10)}/${v.moc.slice(5, 7)}` : '30 ngày gần nhất';
+    check(`${tag} Đã ghi hộp, chưa nhập kho: ${vq} hộp · ${vi} mã · ${sau}`, v.available
+        && t1 === `Đã ghi hộp, chưa nhập kho${vq} hộp ${vi} mã · ${sau}`, t1);
     const qWant = q.qty === null ? 'nhiều đơn vị kho, không cộng' : `${q2} ${q.uom}`;
     check(`${tag} Phiếu nhập chờ thủ kho duyệt: ${qc} phiếu · ${qWant}`, q.available
         && t2 === `Phiếu nhập chờ thủ kho duyệt${qc} phiếu ${qWant}${q.count_tet ? ` · ${qt} phiếu Tết` : ''}`, t2);
@@ -425,6 +429,7 @@ async function nowCheck(page, c, f, tag) {
     {
         check(`${tag} = màn Nhập TP: đã vào hộp chưa nhập ${k.vao_hop.qty} (${k.vao_hop.items} mã), chờ duyệt ${k.cho_duyet?.count} phiếu`,
             !!k.vao_hop && k.vao_hop.qty === v.qty && k.vao_hop.items === v.items && k.cho_duyet.count === q.count && k.cho_duyet.qty === q.qty
+            && k.vao_hop.moc === v.moc && (v.mang_sang === null ? k.vao_hop.mang_sang === null : Math.abs(k.vao_hop.mang_sang - v.mang_sang) < 0.005)
             && k.cho_duyet.count_tet === q.count_tet, JSON.stringify([k.vao_hop.qty, k.cho_duyet.count, v.qty, q.count]));
     }
 }
@@ -469,7 +474,7 @@ async function scenario(page, mobile, role) {
     check(`${tag} banner "Báo cáo sản xuất", tiêu đề trang`, banner.includes('Báo cáo sản xuất')
         && (await page.title()).startsWith('Báo cáo sản xuất'), banner);
     const build = await page.evaluate(() => window.BC?.build);
-    check(`${tag} dấu build shell = www/bc.py (${SHELL_BUILD})`, !!SHELL_BUILD && build === SHELL_BUILD && SHELL_BUILD === 'bc-p10-r2', `${build} / ${SHELL_BUILD}`);
+    check(`${tag} dấu build shell = www/bc.py (${SHELL_BUILD})`, !!SHELL_BUILD && build === SHELL_BUILD && SHELL_BUILD === 'bc-p10-r3', `${build} / ${SHELL_BUILD}`);
     const menu = await page.$('a[data-route="/san-xuat"]');
     check(`${tag} menu có "Báo cáo sản xuất" trong nhóm Sản xuất, trước SX Hàng Tết`, !!menu && await page.evaluate(() => {
         const a = [...document.querySelectorAll('#bc-sidebar .bc-side-link')].map((x) => x.dataset.route);
@@ -593,7 +598,25 @@ const browser = await chromium.launch();
 const ctxOf = (mobile) => browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }
     : { viewport: { width: 1366, height: 900 } });
 
-if (MODE === 'nosx') {
+if (MODE === 'moc') {
+    // D230: seed có mốc tính nợ vào hộp (seed_ui_san_xuat.py moc) — dải "Hiện tại" hai khổ màn, số = API = màn Nhập TP
+    for (const mobile of [false, true]) {
+        const page = await (await ctxOf(mobile)).newPage();
+        const errors = [];
+        watch(page, errors);
+        await page.goto(`${viewer}/bc#/san-xuat`);
+        const tag = `[mốc${mobile ? ' 390' : ''}]`;
+        try {
+            await settle(page);
+            await page.waitForSelector('#sh-now-chonhap', { timeout: 15000 });
+            await nowCheck(page, await apiCmp(page), await F(page), tag);
+        } catch (e) { check(`${tag} kịch bản chạy hết`, false, e.message.split('\n')[0]); }
+        const o = await overflow(page);
+        check(`${tag} không cuộn ngang (${o}px)`, o <= 1);
+        check(`${tag} không lỗi JS / HTTP`, errors.length === 0, errors.join(' | '));
+        await page.context().close();
+    }
+} else if (MODE === 'nosx') {
     for (const mobile of [false, true]) {
         const page = await (await ctxOf(mobile)).newPage();
         const errors = [];

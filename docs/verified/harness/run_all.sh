@@ -37,6 +37,11 @@ if node -e "require('playwright')" 2>/dev/null; then
 	# Thời gian thực trên seed có sổ kho: số mã có tồn từng kho (danh sách kho rỗng thì trượt)
 	echo "═══ ui_check.mjs /thoi-gian-thuc (seed Kho)"; out=$(BC_UI_KHO=1 node ui_check.mjs http://127.0.0.1:8127 /thoi-gian-thuc 2>&1); rc=$?
 	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	# Nhập TP — lượt phụ "moc": mốc tính nợ vào hộp của sx (D230) trên seed gộp đang có, rồi xoá hai ô
+	BC_TEST_DB=bc_test_kho_ui python3 -B test_kho_nhap.py seed-moc >/dev/null || fail=1
+	echo "═══ ui_kho_nhap.mjs moc"; out=$(node ui_kho_nhap.mjs http://127.0.0.1:8127 moc 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	BC_TEST_DB=bc_test_kho_ui python3 -B test_kho_nhap.py seed-moc-off >/dev/null || fail=1
 	# Hạn dùng — lượt phụ (seed lại cùng DB, sau mọi kiểm trên seed gộp): bật cache, sổ chỉ còn lô thu hồi + phần âm, sổ rỗng
 	for pass in cache thu-hoi empty; do
 		BC_TEST_DB=bc_test_kho_ui python3 -B test_kho_han.py seed-$pass >/dev/null || fail=1
@@ -55,6 +60,10 @@ if node -e "require('playwright')" 2>/dev/null; then
 	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py nosx >/dev/null || fail=1
 	echo "═══ ui_san_xuat.mjs nosx"; out=$(node ui_san_xuat.mjs http://127.0.0.1:8160 http://127.0.0.1:8161 nosx 2>&1); rc=$?
+	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
+	# lượt phụ "moc": mốc tính nợ vào hộp của sx (D230) — ô "Đã ghi hộp, chưa nhập kho" ghi "tính từ mốc"
+	BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py moc >/dev/null || fail=1
+	echo "═══ ui_san_xuat.mjs moc"; out=$(node ui_san_xuat.mjs http://127.0.0.1:8160 http://127.0.0.1:8161 moc 2>&1); rc=$?
 	echo "$out" | tail -1; [ $rc -eq 0 ] || fail=1
 	pkill -f 'server.py 816[01]' || true
 	# Trợ lý AI: #/tro-ly + #/ai (LLM giả, hàng đợi giả, chặn mạng) — 2 lượt seed riêng (fresh / stale)

@@ -24,6 +24,7 @@ import datetime
 import json
 import os
 import re
+import sys
 
 from seed import Check, bc_settings, drop_column, drop_doctype, insert, reset, single
 from paths import BC_ROOT
@@ -441,6 +442,20 @@ def moc_cases(c):
 		and sqls[0].lstrip().upper().startswith("SELECT") and "tabSingles" in sqls[0] and not re.search(
 		r"get_single_value|get_cached_doc|get_single\(|get_doc|get_meta|has_column|get_value", code), (sqls, code[:300]))
 
+
+# Lượt giao diện có mốc (D230) trên seed gộp ĐANG CÓ (không reset), sau seed_ui_kho.py:
+#   BC_TEST_DB=<db> python3 -B test_kho_nhap.py seed-moc; node ui_kho_nhap.mjs <url> moc; … seed-moc-off (xoá hai ô).
+# Mốc 15/10 (trong cửa sổ 28/09 → 27/10); mang sang A 12 (01/10) + H 3 (mã ẩn) + Kg 1,5 (khác đơn vị) + A 9 chấm 20/09 (cũ hơn
+# đầu cửa sổ: không cộng) → mang_sang 15 hộp.
+UI_MOC = ("2026-10-15", {A: [["2026-09-20", 9], ["2026-10-01", 12]], H: [["2026-10-02", 3]], KG: [["2026-10-03", 1.5]]})
+if __name__ == "__main__" and sys.argv[1:] == ["seed-moc"]:
+	set_moc(*UI_MOC)
+	print("SX Settings: no_vh_tu_ngay = 2026-10-15 + no_vh_mang_sang")
+	sys.exit(0)
+if __name__ == "__main__" and sys.argv[1:] == ["seed-moc-off"]:
+	set_moc(None, None)
+	print("SX Settings: no_vh_tu_ngay / no_vh_mang_sang cleared")
+	sys.exit(0)
 
 if __name__ == "__main__":
 	c = Check()

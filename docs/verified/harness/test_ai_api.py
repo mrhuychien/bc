@@ -746,12 +746,12 @@ _src = open(ai.__file__, encoding="utf-8").read()
 c("run_brief chỉ nhận POST, guard quản trị ở dòng đầu", re.search(r'@frappe\.whitelist\(methods=\["POST"\]\)\ndef run_brief\(kind\):\n'
 	r'\t"""(?:(?!""")[\s\S])*"""\n\t_admin_guard\(\)', _src) is not None)
 
-print("17. Dấu build shell = www/bc.py = bc-p10-r2")
+print("17. Dấu build shell = www/bc.py = bc-p10-r3")
 PKG = os.path.dirname(os.path.dirname(bc.ai.__file__))
 js = open(os.path.join(PKG, "public", "bc", "shell.js"), encoding="utf-8").read()
 py = open(os.path.join(PKG, "www", "bc.py"), encoding="utf-8").read()
 mj, mp = re.search(r"const BUILD = '([^']+)'", js), re.search(r'SHELL_BUILD = "([^"]+)"', py)
-c("BUILD (shell.js) = SHELL_BUILD (www/bc.py) = bc-p10-r2", mj and mp and mj.group(1) == mp.group(1) == "bc-p10-r2",
+c("BUILD (shell.js) = SHELL_BUILD (www/bc.py) = bc-p10-r3", mj and mp and mj.group(1) == mp.group(1) == "bc-p10-r3",
 	(mj and mj.group(1), mp and mp.group(1)))
 
 llm.call = call_cam

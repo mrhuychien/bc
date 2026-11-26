@@ -100,7 +100,8 @@ function kpisHtml(d) {
         : na('Phiếu nhập chờ thủ kho duyệt', '⏳', q.error ? 'Không tính được' : noSx);
     let cv;
     if (v.available) {
-        const rows = [['Thùng', ct(v.cartons)], ['Số mã', fmtNum(v.items)], ['Vào hộp từ', escapeHtml(fmtDate(v.from))]];
+        const rows = [['Thùng', ct(v.cartons)], ['Số mã', fmtNum(v.items)],
+            v.moc ? ['Tính từ mốc', escapeHtml(fmtDate(v.moc))] : ['Vào hộp từ', escapeHtml(fmtDate(v.from))]];
         if (v.items_without_carton_factor) rows.splice(1, 0, ['Chưa khai thùng', noCarton(v).replace(' chưa khai quy cách thùng', '')]);
         cv = statCard({ label: 'Đã vào hộp, chưa nhập kho', icon: '📥', value: qu(v.qty, v.uom), rows });
     } else cv = na('Đã vào hộp, chưa nhập kho', '📥', v.error ? 'Không tính được' : noSx);
@@ -250,8 +251,19 @@ function vaoHopHtml(v, sx) {
             ] })}</div>
         ${other.length ? `<div class="bc-note">Mã không tính bằng hộp (không cộng vào tổng): ${other.map((r) =>
             `${escapeHtml(r.short_name)} ${qn(r.qty)}`).join(', ')}.</div>` : ''}
-        <div class="bc-note">Đã vào hộp từ ${escapeHtml(fmtDate(v.from))} đến ${escapeHtml(fmtDate(v.to))} trừ phần thủ kho đã nhận và phần
-            đã nằm trên phiếu nháp hàng Tết.</div>`;
+        <div class="bc-note" id="nt-vaohop-note">${vaoHopNote(v)}</div>`;
+}
+
+/** Câu cuối khối: không mốc → câu cũ; có mốc tính nợ vào hộp (sx D230, máy chủ trả v.moc khi mốc đang áp cho cửa sổ
+ *  này) → tính từ mốc, cộng phần mang sang (bỏ vế đó khi mang_sang = 0). */
+function vaoHopNote(v) {
+    if (!v.moc) {
+        return `Đã vào hộp từ ${escapeHtml(fmtDate(v.from))} đến ${escapeHtml(fmtDate(v.to))} trừ phần thủ kho đã nhận và phần
+            đã nằm trên phiếu nháp hàng Tết.`;
+    }
+    const cong = Number(v.mang_sang) > 0 ? `, cộng ${qn(v.mang_sang)} hộp đã vào hộp trước mốc mà lúc đặt mốc chưa nhập kho` : '';
+    return `Tính từ mốc ${escapeHtml(fmtDate(v.moc))} (sx chỉ tính nợ vào hộp từ mốc này) đến hôm nay ${escapeHtml(fmtDate(v.to))}${cong},
+            trừ phần thủ kho đã nhận và phần đã nằm trên phiếu nháp hàng Tết.`;
 }
 
 // ─── Giá vốn chưa thật ───────────────────────────────────────────────────────

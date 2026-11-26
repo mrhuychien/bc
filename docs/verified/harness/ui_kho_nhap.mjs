@@ -10,6 +10,9 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
 const base = process.argv[2] || 'http://127.0.0.1:8134';
+// Lượt `moc`: seed có mốc tính nợ vào hộp của sx (D230, test_kho_nhap.py seed-moc) — khối vào hộp phải ghi "tính từ mốc";
+// lượt mặc định: chưa đặt mốc — câu cũ giữ nguyên từng chữ.
+const MOC = process.argv[3] === 'moc';
 const SHOTS = process.env.SHOTS || '';
 let bad = 0, total = 0;
 function check(label, ok, detail = '') {
@@ -43,6 +46,15 @@ function chartVal(rows) {
     const mixed = rows.some((r) => r.qty === null || r.qty === undefined)
         || new Set(rows.filter((r) => r.qty).map((r) => r.uom || '')).size > 1;
     return (r) => (mixed ? r.cartons : r.qty);
+}
+
+/** Câu cuối khối "đã vào hộp chưa nhập kho" màn phải ghi cho payload v (CONTRACT3 §2). */
+async function noteWant(page, v) {
+    const tail = 'trừ phần thủ kho đã nhận và phần đã nằm trên phiếu nháp hàng Tết.';
+    if (!v.moc) return `Đã vào hộp từ ${fd(v.from)} đến ${fd(v.to)} ${tail}`;
+    const [m] = await fmt(page, 'qty', [v.mang_sang]);
+    return `Tính từ mốc ${fd(v.moc)} (sx chỉ tính nợ vào hộp từ mốc này) đến hôm nay ${fd(v.to)}${
+        v.mang_sang > 0 ? `, cộng ${m} hộp đã vào hộp trước mốc mà lúc đặt mốc chưa nhập kho` : ''}, ${tail}`;
 }
 
 async function settle(page) {
@@ -171,9 +183,10 @@ async function scenario(page, mobile) {
         const [vc] = await fmt(page, 'ct', [vh.cartons]);
         const ng = await txt(page, '#nt-kpi-nay');
         const plus = (await plusText(page, vh)).replace(/^\+ /, '');
-        check(`KPI đã vào hộp chưa nhập kho (hôm nay): ${vq} ${vh.uom}, ${vc} thùng${plus ? ` + chưa khai thùng ${plus}` : ''}, ${vh.items} mã, từ ${fd(vh.from)}`,
+        const tu = vh.moc ? `Tính từ mốc${fd(vh.moc)}` : `Vào hộp từ${fd(vh.from)}`;
+        check(`KPI đã vào hộp chưa nhập kho (hôm nay): ${vq} ${vh.uom}, ${vc} thùng${plus ? ` + chưa khai thùng ${plus}` : ''}, ${vh.items} mã, ${tu}`,
             ng.includes(`Đã vào hộp, chưa nhập kho ${vq} ${vh.uom}`) && ng.includes(`Thùng${vc}`) && (!plus || ng.includes(`Chưa khai thùng${plus}`))
-            && ng.includes(`Số mã${vh.items}`) && ng.includes(`Vào hộp từ${fd(vh.from)}`), ng);
+            && ng.includes(`Số mã${vh.items}`) && ng.includes(tu) && (!vh.moc || !ng.includes('Vào hộp từ')), ng);
     }
 
     // ── Nhập kho trong tháng: biểu đồ ngày, bảng mã, 12 tháng ──
@@ -273,8 +286,13 @@ async function scenario(page, mobile) {
     if (v.available) {
         const [vq] = await fmt(page, 'qty', [v.qty]);
         const vt = squash(await page.textContent('#nt-vaohop'));
-        check(`đã vào hộp chưa nhập kho: ${vq} hộp, ${v.items} mã`, vt.includes(`Hộp chưa nhập kho ${vq}`) && vt.includes(`${v.items} mã`)
-            && vt.includes(fd(v.from)), vt.slice(0, 200));
+        check(`đã vào hộp chưa nhập kho: ${vq} hộp, ${v.items} mã`, vt.includes(`Hộp chưa nhập kho ${vq}`) && vt.includes(`${v.items} mã`),
+            vt.slice(0, 200));
+        // D230: câu cuối khối — chưa đặt mốc: câu cũ từng chữ; mốc đang áp: tính từ mốc + phần mang sang (số = API)
+        check(MOC ? 'D230 lượt có mốc: API trả moc + mang_sang > 0' : 'D230 lượt không mốc: API trả moc / mang_sang null',
+            MOC ? !!v.moc && v.mang_sang > 0 : v.moc === null && v.mang_sang === null, JSON.stringify([v.moc, v.mang_sang]));
+        const note = await txt(page, '#nt-vaohop-note');
+        check(`D230 ghi chú khối vào hộp ${v.moc ? `tính từ mốc ${fd(v.moc)}` : 'như cũ'}`, note === await noteWant(page, v), note);
     }
 
     // ── Nợ BOM / NVL treo / giá vốn 0 ──
@@ -473,6 +491,21 @@ await variant('Tháng lẫn đơn vị → biểu đồ theo thùng (payload ch�
     check('khối lỗi tính: "Không tính được" ở khối và thẻ', (await txt(page, '#nt-vaohop')).includes('Không tính được bảng vào hộp lúc này')
         && /Đã vào hộp, chưa nhập kho\s*—\s*Không tính được/.test(kv), kv.slice(0, 300));
 });
+
+if (MOC) {
+    // D230: mốc đang áp mà không có phần mang sang (mang_sang 0) → bỏ vế "cộng …"; chuỗi máy chủ lạ vẫn qua escapeHtml.
+    await variant('Mốc tính nợ vào hộp, không mang sang (payload chặn tại trình duyệt)', (d) => ({ ...d,
+        vao_hop: { ...d.vao_hop, mang_sang: 0 } }), async (page, d) => {
+        const note = await txt(page, '#nt-vaohop-note');
+        check('D230 mang_sang 0: không có vế "cộng … hộp"', note === await noteWant(page, { ...d.vao_hop, mang_sang: 0 })
+            && !note.includes('cộng'), note);
+    });
+    await variant('Mốc tính nợ vào hộp: chuỗi ngày lạ từ máy chủ (payload chặn tại trình duyệt)', (d) => ({ ...d,
+        vao_hop: { ...d.vao_hop, moc: '2026-10-<b>x' } }), async (page) => {
+        const h = await page.evaluate(() => document.querySelector('#nt-vaohop-note')?.innerHTML || '');
+        check('D230 moc qua escapeHtml (không thành thẻ <b>)', !/<b[\s>/]/.test(h) && h.includes('&lt;b'), h);
+    });
+}
 
 await browser.close();
 console.log(`\n${total - bad} đạt, ${bad} trượt`);

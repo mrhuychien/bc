@@ -6,6 +6,8 @@ BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py [seed|nosx]
 	      khoán chung / công nhật, mã chưa khai thùng, mã ẩn, ngày chưa chốt), 13 mã (bảng theo mã sang trang 2), tháng 9 đủ
 	      tháng (so cùng kỳ), tháng 8 + tháng 3 (12 tháng), tháng 7 TRỐNG (tháng không có số).
 	nosx  như seed rồi bỏ SX Settings (site không cài sx → available False).
+	moc   như seed + mốc tính nợ vào hộp của sx (D230: SX Settings.no_vh_tu_ngay 15/10, no_vh_mang_sang HX-TT1 6 hộp chấm
+	      05/10 + HX-KG 2 Kg) — ô "Đã ghi hộp, chưa nhập kho" phải ghi "tính từ mốc 15/10".
 Dòng ghi hộp mang tên nhân viên / đơn giá / thành tiền giả có dấu hiệu riêng — màn không được hiện.
 
 Khối "Ghi hộp so với nhập kho" (get_compare): phiếu nhập TP THẬT (SX Phieu Nhap TP / Item) đủ trạng thái — đã duyệt cùng
@@ -161,5 +163,11 @@ if __name__ == "__main__":
 		from seed import drop_doctype
 		drop_doctype("SX Settings")
 		print("bỏ SX Settings")
+	elif cmd == "moc":
+		import json
+		seed()
+		single("SX Settings", no_vh_tu_ngay="2026-10-15", no_vh_mang_sang=json.dumps({"HX-TT1": [["2026-10-05", 6]],
+			"HX-KG": [["2026-10-05", 2]]}))
+		print("mốc tính nợ vào hộp 15/10")
 	else:
-		sys.exit("dùng: seed_ui_san_xuat.py [seed|nosx]")
+		sys.exit("dùng: seed_ui_san_xuat.py [seed|nosx|moc]")
