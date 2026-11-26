@@ -91,7 +91,7 @@ def system_prompt() -> str:
 	ghi = ("Khi note cần nhắc một con số, ngày hay tên: theo đúng luật placeholder dưới đây (path lấy trong "
 		"du_lieu.pack). Không tự viết, tự tính con số. Không viết thời hạn bằng chữ số hay bằng chữ (\"45 ngày\", "
 		"\"chín mươi ngày\", \"trong 7 ngày\" đều làm ghi chú bị bỏ) — số ngày chỉ lấy bằng placeholder.")
-	return "\n\n".join([_VAI_TRO, ghi, prompt._PLACEHOLDER, _DAU_RA])
+	return "\n\n".join([_VAI_TRO, ghi, prompt._PLACEHOLDER, _DAU_RA, prompt.CHU_GIAI])
 
 
 def _dung(state: dict, group: str, status: str, run_type: str, model: str, run, error=None, **f) -> None:

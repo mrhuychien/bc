@@ -241,7 +241,11 @@ giá trị theo sổ), đối chiếu phiếu ↔ phiếu kho, hàng nhập Kho 
 khi xưởng đã đặt **mốc tính nợ vào hộp** — sx D230, `SX Settings.no_vh_tu_ngay` — mà mốc nằm trong 30 ngày đó thì chấm,
 đã nhận và phiếu nháp Tết đều tính từ mốc, cộng phần đã vào hộp trước mốc mà lúc đặt mốc chưa nhập kho
 (`no_vh_mang_sang`, chỉ dòng chấm trong 30 ngày); màn ghi "Tính từ mốc dd/mm/yyyy (sx chỉ tính nợ vào hộp từ mốc này)…
-cộng X hộp…", API trả thêm `moc` / `mang_sang`), **nợ BOM đang mở** (giá tạm lúc nhập, tuổi, mã đã có BOM xử lý được
+cộng X hộp…", API trả thêm `moc` / `mang_sang`; phần mang sang của mã khác đơn vị Hộp (Kg…) không nằm trong X hộp mà
+ghi ngay trên dòng "Mã không tính bằng hộp" của mã đó — "(tính cả 1,5 Kg vào hộp trước mốc…)", API `rows[].mang_sang`;
+hai ô do lệnh sx ghi dạng ngày ISO — mốc không phải ngày thật thì như chưa đặt mốc, dòng mang sang có ngày hỏng
+(kể cả `0000-00-00`) chỉ bỏ mã đó, không lời nhắn lỗi nào theo phản hồi; Trợ lý AI được dặn: có `moc` thì số tính từ
+`moc`, `from` / `so_ngay` chỉ là cửa sổ 30 ngày gốc), **nợ BOM đang mở** (giá tạm lúc nhập, tuổi, mã đã có BOM xử lý được
 ngay), nguyên liệu còn treo trên sổ (ước tính), thành phẩm đang tồn giá vốn 0.
 
 ## Trợ lý AI (`#/tro-ly`, quản trị: `#/ai`)
@@ -663,7 +667,11 @@ bench --site a.rongvanghoanggia.com migrate && bench build --app bc && bench res
 ```
 
 Dấu build hiện tại **`bc-p10-r3`** ("đã vào hộp chưa nhập kho" theo mốc tính nợ vào hộp của sx — D230): sau `bench build` + `restart`, gõ `BC.build` trong
-Console của `/bc` phải ra đúng chuỗi này (khác là trình duyệt / CDN còn shell cũ). Màn mới không cần `migrate` (chỉ đọc
+Console của `/bc` phải ra đúng chuỗi này (khác là trình duyệt / CDN còn shell cũ). View tải kèm `?v=<assetVersion>` đổi
+mỗi lần mở trang nên trang mở mới luôn lấy view mới; riêng **tab đã mở trước deploy** (hoặc CDN bỏ qua query string) còn giữ
+view cũ mà gọi API mới: với r3, view r2 của Nhập TP / Báo cáo sản xuất vẫn chạy không lỗi nhưng ghi "Vào hộp từ 28/09 …" /
+"30 ngày gần nhất" cạnh số đã tính từ mốc (`from` giữ nghĩa cửa sổ gốc theo hợp đồng) — sau deploy bấm F5 tab đang mở; CDN
+có cache `/assets/bc/bc/views/*` bất kể query thì purge thư mục đó. Màn mới không cần `migrate` (chỉ đọc
 bảng sx có sẵn); site chưa cài sx thì màn báo "chưa có số liệu".
 
 Sau khi cài: mở `/app/bc-settings`, kiểm tra nhóm hàng + bảng ngày Tết (đã seed

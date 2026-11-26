@@ -1,6 +1,6 @@
 // Kiểm màn #/san-xuat (Báo cáo sản xuất — số ghi hộp theo ngày) thật: import map + view thật + bc.api.sx_hop thật trên MariaDB
 // (seed_ui_san_xuat.py, bảng Ghi hộp thật của sx). Hai server cùng DB: vai người xem (BC Viewer) và vai quản trị.
-// node ui_san_xuat.mjs <viewerBase> <adminBase> [nosx]
+// node ui_san_xuat.mjs <viewerBase> <adminBase> [nosx|moc]
 //   (mặc định) mỗi vai × desktop 1366px + điện thoại 390px: mọi số trên màn = payload API gọi trong trang (định dạng bằng
 //   lib/format.js thật + đúng Intl của view), biểu đồ ngày (khoán / công nhật chồng, Chủ nhật đỏ, đường TB tháng trước) + 12
 //   tháng, bảng theo ngày ("—" ngày không ghi), bấm ngày → chi tiết theo mã = get_day, bảng theo mã 10 dòng / trang, đổi tháng
@@ -11,6 +11,8 @@
 //   Nhập TP), biểu đồ ghi hộp / nhập kho / luỹ kế, bảng ngày có số, bảng theo mã + 3 chip lọc (đếm), ghi chú; đổi tháng + làm mới
 //   tải lại khối; khối hỏng (HTTP 500 / error: true) không xoá phần còn lại và ngược lại; khối chậm không chặn phần trên.
 //   nosx  site không cài sx (seed_ui_san_xuat.py nosx): màn báo chưa có số liệu, không lỗi; khối đối chiếu ẩn.
+//   moc   seed có mốc tính nợ vào hộp của sx (seed_ui_san_xuat.py moc, D230): ô "Đã ghi hộp, chưa nhập kho" ghi "tính từ
+//         mốc dd/mm" ở cả hai khổ màn, số = API = khối vào hộp của màn Nhập TP.
 import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';

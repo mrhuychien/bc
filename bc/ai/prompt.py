@@ -158,6 +158,18 @@ Mỗi tín hiệu nhiều nhất một nhận định. Tín hiệu không có g�
 Không có gì đáng viết thì trả {"insights": []}."""
 
 
+# Chú giải những khoá mà tên của chúng dễ đọc sai. Gửi ở MỌI đề bài có thể thấy các khối này (nhận định ngày, bản tin,
+# phản biện, hỏi đáp P3). D230: khi sx đặt mốc tính nợ vào hộp, số của khối "đã vào hộp chưa nhập kho" đếm từ mốc, còn
+# "from" / "so_ngay" (CONTRACT3 §1.3 giữ nguyên nghĩa: cửa sổ 30 ngày gốc) không còn là ngày bắt đầu của các số đó.
+CHU_GIAI = """CHÚ GIẢI SỐ LIỆU:
+- Khối "đã vào hộp, chưa nhập kho" — mảng nhap-tp khối overview, khoá vao_hop; mảng san-xuat khối compare, khoá \
+cho_nhap: khi khoá "moc" có giá trị (một ngày), mọi số của khối (qty, items, rows, cartons…) đếm TỪ ngày "moc" đến \
+"to", và đã cộng "mang_sang" hộp vào hộp trước mốc mà lúc đặt mốc chưa nhập kho (vao_hop.rows[].mang_sang: phần mang sang của \
+từng mã, theo đơn vị của mã). Khi đó "from" và "so_ngay" chỉ là cửa sổ gốc, KHÔNG phải ngày bắt đầu hay độ dài của các \
+số này: không viết "từ" ngày "from", không viết "trong" "so_ngay" ngày cho chúng — viết "từ" ngày "moc". "moc" null: \
+số đếm từ "from" đến "to"."""
+
+
 def _tet_line(today) -> str:
 	"""Dòng mùa Tết; thiếu ngày Tết trong BC Settings (tet_season ném lỗi) → chuỗi rỗng."""
 	try:
@@ -185,7 +197,7 @@ def system_prompt(today=None) -> str:
 	tet = _tet_line(today)
 	if tet:
 		moc.append(tet)
-	parts = [_VAI_TRO, _LUAT, _PLACEHOLDER, _DAU_RA]
+	parts = [_VAI_TRO, _LUAT, _PLACEHOLDER, _DAU_RA, CHU_GIAI]
 	ctx = str(get_settings().get("ai_context") or "").strip()[:MAX_CONTEXT]
 	if ctx:
 		parts.append("BỐI CẢNH CÔNG TY (do quản trị viết):\n" + ctx)

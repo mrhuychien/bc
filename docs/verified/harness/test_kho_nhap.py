@@ -472,6 +472,16 @@ def moc_cases(c):
 	c("D230 AI: lá số của vao_hop có mốc (gồm mang_sang) đều xếp kiểu so; moc không phải lá số",
 		"nhap-tp.overview.vao_hop.mang_sang" in las and "nhap-tp.overview.vao_hop.moc" not in las
 		and {p_: ai_render.kieu_theo_ten(p_) for p_ in las if ai_render.kieu_theo_ten(p_) != "so"} == {}, sorted(las))
+	# Trợ lý AI: `from` / `so_ngay` giữ nghĩa cửa sổ gốc (CONTRACT3 §1.3) nên mọi đề bài có thể thấy hai khối phải kèm chú
+	# giải "có moc → số đếm từ moc" — nhận định ngày, bản tin tuần / tháng, phản biện, hỏi đáp P3.
+	from bc.ai import brief as ai_brief, prompt as ai_prompt, qa as ai_qa, review as ai_review
+	cg = getattr(ai_prompt, "CHU_GIAI", "")
+	des = {"ngày": ai_prompt.system_prompt(HOM_NAY), "bản tin tuần": ai_brief.system_prompt("tuan", HOM_NAY),
+		"bản tin tháng": ai_brief.system_prompt("thang", HOM_NAY), "phản biện": ai_review.system_prompt(),
+		"hỏi đáp": ai_qa.system_prompt(frappe.utils.getdate(HOM_NAY))}
+	c("D230 AI: chú giải vao_hop / cho_nhap tính từ moc (không từ from / so_ngay) có trong mọi đề bài",
+		all(k_ in cg for k_ in ("vao_hop", "cho_nhap", '"moc"', '"from"', '"so_ngay"', "mang_sang", "nhap-tp", "san-xuat"))
+		and all(cg in d_ for d_ in des.values()), [k_ for k_, d_ in des.items() if not cg or cg not in d_])
 	# Mốc không áp: mọi khoá cũ đúng như khi chưa đặt mốc
 	set_moc(None, None)
 	v0 = run()["vao_hop"]

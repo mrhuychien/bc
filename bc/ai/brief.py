@@ -419,7 +419,7 @@ def system_prompt(kind: str, today) -> str:
 		moc.append(tet)
 	parts = [_VAI_TRO.format(ten_ky=ten_ky.lower(), ky_toi=ky_toi, khoi=BLOCK[kind], mo_ta=_MO_TA[kind], viec=VIEC),
 		prompt._PLACEHOLDER, _LUAT.format(ky_toi=ky_toi, viec=VIEC),
-		'ĐẦU RA — JSON {"title": "…", "dang_chu_y": ["…"], "viec_ton": ["…"], "uu_tien": ["…"]}.']
+		'ĐẦU RA — JSON {"title": "…", "dang_chu_y": ["…"], "viec_ton": ["…"], "uu_tien": ["…"]}.', prompt.CHU_GIAI]
 	ctx = cstr(get_settings().get("ai_context")).strip()[:prompt.MAX_CONTEXT]
 	if ctx:
 		parts.append("BỐI CẢNH CÔNG TY (do quản trị viết):\n" + ctx)

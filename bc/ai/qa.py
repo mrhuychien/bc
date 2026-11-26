@@ -307,7 +307,8 @@ def system_prompt(today, mask=None, nguoi=None, admin_sql: bool = False) -> str:
 	"""Vai trò + luật trả lời + bối cảnh công ty (đã che tên) + ngày hôm nay + năm tài chính."""
 	from bc.api._common import fmt_vn, fy_range, get_settings
 	fy = fy_range(today)
-	parts = [_VAI_TRO, _LUAT]
+	from bc.ai.prompt import CHU_GIAI
+	parts = [_VAI_TRO, _LUAT, CHU_GIAI]
 	if admin_sql:
 		parts.append("Người hỏi là quản trị: có thêm get_schema và run_select để tra thẳng CSDL (chỉ đọc). Ưu tiên "
 			"xem_mang khi khối báo cáo đã có số; dùng SQL cho câu hỏi màn báo cáo không trả lời được.")

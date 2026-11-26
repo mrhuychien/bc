@@ -1,7 +1,7 @@
 """Seed cho kiểm giao diện màn Báo cáo sản xuất (ui_san_xuat.mjs): bảng Ghi hộp THẬT của sx (SX Ngay San Xuat, SX Bang Vao
 Hop, SX Bang Vao Hop Item) — màn đọc qua bc.api.sx_hop thật.
 
-BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py [seed|nosx]
+BC_TEST_DB=bc_test_sxh_ui python3 -B seed_ui_san_xuat.py [seed|nosx|moc]
 	seed  (mặc định) hôm nay giả 27/10/2026: tháng 10 nhiều ngày (có Chủ nhật, hai bảng một ngày, bảng huỷ, ngày huỷ, khoán /
 	      khoán chung / công nhật, mã chưa khai thùng, mã ẩn, ngày chưa chốt), 13 mã (bảng theo mã sang trang 2), tháng 9 đủ
 	      tháng (so cùng kỳ), tháng 8 + tháng 3 (12 tháng), tháng 7 TRỐNG (tháng không có số).
