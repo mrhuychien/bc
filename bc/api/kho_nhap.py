@@ -475,8 +475,10 @@ def _vao_hop(p: dict, raw: dict | None = None) -> dict:
 	if raw is not None:
 		raw["box"] = dict(box)
 		raw["mang_sang"] = mang_box
+	# Dòng: `mang_sang` = phần mang sang trước mốc đang cộng vào mã này (đơn vị kho của mã; None khi không có) — màn ghi
+	# rõ cho mã khác đơn vị Hộp (không nằm trong `mang_sang` của khối, vốn chỉ đếm hộp).
 	rows = drop_hidden([_item_row(info, c, qty=_q(v), cartons=_cartons({c: v}, factors)["cartons"] if c in box else None,
-		khac_dvt=c not in box) for c, v in con.items()])
+		khac_dvt=c not in box, mang_sang=_q(cong[c]) if c in cong else None) for c, v in con.items()])
 	rows.sort(key=lambda r: (r["khac_dvt"], -r["qty"], r["item_code"]))
 	return {"available": True, "from": iso(tu0), "to": iso(den), "so_ngay": SO_NGAY_TRAN,
 		"qty": _q(sum(box.values())), "uom": BOX_UOM, **_cartons(box, factors, info), "items": len(box),

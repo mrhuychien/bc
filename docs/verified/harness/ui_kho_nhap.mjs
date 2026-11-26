@@ -1,5 +1,5 @@
 // Kiểm màn #/nhap-tp thật (import map + view thật + API Python thật trên MariaDB) ở desktop 1366px và điện thoại 390px.
-// node ui_kho_nhap.mjs <baseUrl>
+// node ui_kho_nhap.mjs <baseUrl> [moc]
 // Số trên màn so với CHÍNH payload API gọi trong trang (định dạng bằng lib/format.js thật + đúng Intl view dùng) — không cố
 // định số của seed, để chạy được trên seed gộp của cả nhóm Kho. Bắt pageerror, console error, response >= 400, cuộn ngang
 // ở 390px; đổi tháng phải tải lại số của tháng đó. Thêm (review chéo): thẻ tổng tách hàng "trong tháng" / "tình hình hôm nay"
@@ -55,6 +55,19 @@ async function noteWant(page, v) {
     const [m] = await fmt(page, 'qty', [v.mang_sang]);
     return `Tính từ mốc ${fd(v.moc)} (sx chỉ tính nợ vào hộp từ mốc này) đến hôm nay ${fd(v.to)}${
         v.mang_sang > 0 ? `, cộng ${m} hộp đã vào hộp trước mốc mà lúc đặt mốc chưa nhập kho` : ''}, ${tail}`;
+}
+
+/** Dòng "Mã không tính bằng hộp" màn phải ghi (mã khác đơn vị có phần mang sang trước mốc → ghi rõ phần đó). */
+async function otherWant(page, v) {
+    const other = v.rows.filter((r) => r.khac_dvt);
+    if (!other.length) return '';
+    const parts = [];
+    for (const r of other) {
+        const [q, m] = await fmt(page, 'qty', [r.qty, r.mang_sang]);
+        parts.push(`${r.short_name} ${q}${v.moc && r.mang_sang > 0
+            ? ` (tính cả ${m} ${r.uom || ''} vào hộp trước mốc, lúc đặt mốc chưa nhập kho)` : ''}`);
+    }
+    return `Mã không tính bằng hộp (không cộng vào tổng): ${parts.join(', ')}.`;
 }
 
 async function settle(page) {
@@ -293,6 +306,12 @@ async function scenario(page, mobile) {
             MOC ? !!v.moc && v.mang_sang > 0 : v.moc === null && v.mang_sang === null, JSON.stringify([v.moc, v.mang_sang]));
         const note = await txt(page, '#nt-vaohop-note');
         check(`D230 ghi chú khối vào hộp ${v.moc ? `tính từ mốc ${fd(v.moc)}` : 'như cũ'}`, note === await noteWant(page, v), note);
+        // Mã khác đơn vị Hộp: phần mang sang của mã đó (không nằm trong `mang_sang` hộp của khối) ghi ngay trên dòng của mã
+        const kh = await txt(page, '#nt-vaohop-khac');
+        const khW = await otherWant(page, v);
+        check(`D230 dòng mã không tính bằng hộp = API${MOC ? ' (ghi rõ phần mang sang trước mốc)' : ''}`, kh === khW
+            && (!MOC || v.rows.some((r) => r.khac_dvt && r.mang_sang > 0) && kh.includes('trước mốc'))
+            && (MOC || !kh.includes('trước mốc')), `${kh} ≠ ${khW}`);
     }
 
     // ── Nợ BOM / NVL treo / giá vốn 0 ──

@@ -249,8 +249,9 @@ function vaoHopHtml(v, sx) {
                 { key: 'qty', label: 'Hộp', render: (r) => qn(r.qty) },
                 { key: 'cartons', label: 'Thùng', render: (r) => (r.cartons ? ct(r.cartons) : '<span class="bc-muted">—</span>') },
             ] })}</div>
-        ${other.length ? `<div class="bc-note">Mã không tính bằng hộp (không cộng vào tổng): ${other.map((r) =>
-            `${escapeHtml(r.short_name)} ${qn(r.qty)}`).join(', ')}.</div>` : ''}
+        ${other.length ? `<div class="bc-note" id="nt-vaohop-khac">Mã không tính bằng hộp (không cộng vào tổng): ${other.map((r) =>
+            `${escapeHtml(r.short_name)} ${qn(r.qty)}${v.moc && Number(r.mang_sang) > 0
+                ? ` (tính cả ${qn(r.mang_sang)} ${escapeHtml(r.uom || '')} vào hộp trước mốc, lúc đặt mốc chưa nhập kho)` : ''}`).join(', ')}.</div>` : ''}
         <div class="bc-note" id="nt-vaohop-note">${vaoHopNote(v)}</div>`;
 }
 

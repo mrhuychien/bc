@@ -444,6 +444,16 @@ def moc_cases(c):
 	c("D230 mốc 15/10: dòng (ẩn MH, Kg cuối), items 4, khác đơn vị 1, thùng MA 4,1", ([(r["item_code"], r["qty"], r["khac_dvt"])
 		for r in v["rows"]], v["items"], v["items_khac_dvt"], v["cartons"]) == ([(MA, 41, False), (MO, 9, False), (MB, 2, False),
 		(MK, 2.5, True)], 4, 1, 4.1), v)
+	# Dòng ghi phần mang sang ĐANG CỘNG của chính mã đó (đơn vị kho của mã): MA chỉ 6 (dòng 20/09 cũ hơn tu0 không cộng),
+	# MK 2,5 Kg (khác đơn vị — `mang_sang` của khối chỉ đếm hộp nên dòng là nơi duy nhất nói nguồn số Kg), MB không có
+	c("D230 mốc 15/10: dòng ghi mang_sang của từng mã (MA 6, MO 9, MB None, MK 2,5 Kg)",
+		[(r["item_code"], r.get("mang_sang")) for r in v["rows"]] == [(MA, 6), (MO, 9), (MB, None), (MK, 2.5)],
+		[(r["item_code"], r.get("mang_sang")) for r in v["rows"]])
+	set_moc("2026-09-01", MANG)
+	v_ = run()["vao_hop"]
+	c("D230 mốc không áp: mọi dòng mang_sang None", v_.get("rows") and all("mang_sang" in r and r["mang_sang"] is None
+		for r in v_["rows"]), v_.get("rows"))
+	set_moc("2026-10-15", MANG)
 	# Trợ lý AI: mọi lá số của khối có mốc xếp kiểu "so" (mang_sang → so); moc là chuỗi ngày
 	from bc.ai import render as ai_render
 	las = set()
