@@ -222,9 +222,9 @@ c("không mạng khi dựng", not MANG, MANG)
 # ═══════════════════════════════════════════════════════════════════════════
 print("B. Danh mục công cụ, kiểm tham số, mô tả theo vai / mảng ẩn")
 cat = qa.catalog()
-eq("danh mục = collect.CALLS bỏ khối kỳ trước (24 khối, đúng method)", cat,
+eq("danh mục = collect.CALLS bỏ khối kỳ trước (25 khối, đúng method)", cat,
 	{(s, n): d for s, n, d, _f in collect.CALLS if (s, n) != ("van-chuyen", "overview_truoc")})
-eq("24 khối, 17 mảng", (len(cat), len({s for s, _ in cat})), (24, 17))
+eq("25 khối, 17 mảng", (len(cat), len({s for s, _ in cat})), (25, 17))
 SAI = [
 	(("cong-no", "receivables"), {"refresh": 1}), (("tong-quan", "summary"), {"refresh": 0}),
 	(("tong-quan", "top_customers"), {"limit": 0}), (("tong-quan", "top_customers"), {"limit": 21}),
@@ -241,6 +241,8 @@ SAI = [
 	(("sx-tet", "items"), {"from_date": "2026-03-01", "to_date": "2026-02-01"}),
 	(("kiem-ke", "overview"), {"thang": "2026-13"}), (("kiem-ke", "overview"), {"thang": "2026-1"}),
 	(("san-xuat", "overview"), {"thang": "2026-10-01"}), (("san-xuat", "overview"), {"date": "2026-10-01"}),
+	(("san-xuat", "compare"), {"thang": "2026-13"}), (("san-xuat", "compare"), {"refresh": 1}),
+	(("san-xuat", "compare"), {"date": "2026-10-01"}), (("san-xuat", "compare"), {"thang": "2099-01"}),
 	(("van-chuyen", "overview"), {"thang": 202610}), (("attp", "report"), {"thang": "10/2026"}),
 	(("tong-quan", "summary"), []), (("tong-quan", "summary"), "limit=5"), (("cong-no", "receivables"), {"thang": "2026-10"}),
 ]
@@ -257,6 +259,7 @@ DUNG = [
 	(("sx-tet", "items"), {"from_date": "2025-08-01", "to_date": "2026-02-28"}, {"from_date": "2025-08-01", "to_date": "2026-02-28"}),
 	(("kiem-ke", "overview"), {"thang": "2026-09"}, {"thang": "2026-09"}),
 	(("san-xuat", "overview"), {"thang": "2026-09"}, {"thang": "2026-09"}),
+	(("san-xuat", "compare"), {"thang": "2026-09"}, {"thang": "2026-09"}), (("san-xuat", "compare"), {}, {}),
 	(("attp", "report"), {"thang": "2026-10"}, {"thang": "2026-10"}),
 ]
 eq("tham số hợp lệ được nhận đúng (chuỗi đã gọt)", [qa.check_params(k, ts) for k, ts, _w in DUNG], [(w, "") for _k, _t, w in DUNG])

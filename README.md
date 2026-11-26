@@ -474,7 +474,7 @@ lấy được.
 
 **Hai tầng công cụ.**
 
-- `xem_mang(mang, ten, tham_so)` — mọi người: 24 khối của `bc.ai.collect.CALLS` (bỏ khối vận chuyển tháng trước) trên
+- `xem_mang(mang, ten, tham_so)` — mọi người: 25 khối của `bc.ai.collect.CALLS` (bỏ khối vận chuyển tháng trước) trên
   17 mảng; tham số theo bảng cố định (`limit` 1–20, `year` / `month`, `group` = `all` | `tet` | `traditional`,
   `from_date` + `to_date` đi cùng nhau ≤ 731 ngày, `thang`) — lạ, sai kiểu, ngoài khoảng → lỗi cho mô hình, không gọi;
   method vẫn từ chối tham số (`frappe.throw`) → lỗi "tham số không hợp lệ" cho mô hình, không Error Log; **không bao giờ** `refresh` (đọc cache như màn). Gọi thẳng

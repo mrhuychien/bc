@@ -619,6 +619,27 @@ if __name__ == "__main__":
 	c("so sánh: tổng tháng tính tay", ct == {"hop": 268, "nhap": 219.25, "lech": -48.75, "lech_pct": -18.2, "chua_nhap": 88.75,
 		"so_ma_chua_nhap": 3, "nhap_vuot": 40.0, "so_ma_nhap_vuot": 2, "so_ma_khop": 2, "hop_chua_ma": 6, "ma_khac_dvt": 2,
 		"hop_khac_dvt": 14}, ct)
+	# Trợ lý AI đọc khối này (san-xuat.compare): MỌI lá số của payload thật (gồm dòng của ba khối hiện tại) phải được
+	# render.kieu_theo_ten xếp đúng — lech_pct → pct, còn lại → so; không lá nào là tiền, không lá nào bỏ trống.
+	from bc.ai import render as ai_render
+
+	def la_so(v, path, out):
+		if isinstance(v, dict):
+			for k, x in v.items():
+				la_so(x, f"{path}.{k}", out)
+		elif isinstance(v, list):
+			for x in v:
+				la_so(x, path, out)
+		elif isinstance(v, (int, float)) and not isinstance(v, bool):
+			out.add(path)
+		return out
+
+	las = la_so(cp, "san-xuat.compare", set())
+	c("AI: payload thật có lá số ở mọi phần (tổng, ngày, mã, ba khối hiện tại gồm dòng)", {"san-xuat.compare.total.lech_pct",
+		"san-xuat.compare.days.luy_ke", "san-xuat.compare.items.lech", "san-xuat.compare.cho_nhap.rows.qty",
+		"san-xuat.compare.cho_duyet.oldest_age_days", "san-xuat.compare.no_vao_hop.rows.age_days"} <= las, sorted(las))
+	c("AI: mọi lá số của payload thật xếp kiểu đúng (lech_pct → pct, còn lại → so)", {p: ai_render.kieu_theo_ten(p)
+		for p in las if ai_render.kieu_theo_ten(p) != ("pct" if p.endswith(".lech_pct") else "so")} == {}, sorted(las))
 	c("so sánh: bất biến lech = nhap − hop = nhap_vuot − chua_nhap", round(ct["nhap"] - ct["hop"], 2) == ct["lech"] ==
 		round(ct["nhap_vuot"] - ct["chua_nhap"], 2), ct)
 	c("so sánh: kiểu số — hộp int, nhập / lệch float", isinstance(ct["hop"], int) and not isinstance(ct["hop"], bool)

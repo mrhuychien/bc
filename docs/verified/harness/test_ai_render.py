@@ -998,6 +998,23 @@ SX_HOP = {f"san-xuat.overview.{p}": k for k, ds in (
 	("pct", ("kpis.cong_nhat_pct", "kpis.growth_pct", "items.pct", "groups.pct"))) for p in ds}
 eq("D8: mọi lá số của san-xuat.overview xếp đúng kiểu (hộp / thùng / đếm → so, tỷ lệ → pct)",
 	{p: render.kieu_theo_ten(p) for p in SX_HOP if render.kieu_theo_ten(p) != SX_HOP[p]}, {})
+# Ghi hộp so với nhập kho (sx_hop.get_compare): MỌI lá số của payload, kể cả dòng của ba khối "hiện tại" — chỉ
+# lech_pct là tỷ lệ; hộp, số nhập (đơn vị kho), chênh lệch, luỹ kế, số mã / phiếu / dòng, tuổi ngày → so; không lá nào là
+# tiền. (Bộ test_sx_hop.py đi khắp payload THẬT và so với đúng luật này.)
+SX_CMP = {f"san-xuat.compare.{p}": k for k, ds in (
+	("so", ("meta.so_ngay_cho", "total.hop", "total.nhap", "total.lech", "total.chua_nhap", "total.so_ma_chua_nhap",
+		"total.nhap_vuot", "total.so_ma_nhap_vuot", "total.so_ma_khop", "total.hop_chua_ma", "total.ma_khac_dvt",
+		"total.hop_khac_dvt", "days.weekday", "days.hop", "days.nhap", "days.lech", "days.luy_ke", "items.hop", "items.nhap",
+		"items.lech", "cho_nhap.so_ngay", "cho_nhap.qty", "cho_nhap.items", "cho_nhap.rows.qty", "cho_duyet.count",
+		"cho_duyet.count_tet", "cho_duyet.qty", "cho_duyet.oldest_age_days", "no_vao_hop.count", "no_vao_hop.so_ma",
+		"no_vao_hop.qty", "no_vao_hop.oldest_age_days", "no_vao_hop.rows.qty", "no_vao_hop.rows.so_dong",
+		"no_vao_hop.rows.age_days")),
+	("pct", ("total.lech_pct",))) for p in ds}
+eq("D8: mọi lá số của san-xuat.compare xếp đúng kiểu (lech_pct → pct, còn lại → so, không tiền)",
+	{p: render.kieu_theo_ten(p) for p in SX_CMP if render.kieu_theo_ten(p) != SX_CMP[p]}, {})
+eq("D8: san-xuat.compare có chỉ số — [i] bỏ đi trước khi xếp (dòng nợ vào hộp thứ 3 vẫn là so)",
+	[render.kieu_theo_ten(x) for x in ("san-xuat.compare.no_vao_hop.rows[2].qty", "san-xuat.compare.days[0].luy_ke")],
+	["so", "so"])
 kpi_lech = [(p, k) for p, k, _l in registry.KPIS if getattr(render, "kieu_theo_ten", lambda x: k)(p) not in (None, k)]
 eq("D8: luật tên khoá không trái với kiểu khai trong registry.KPIS", kpi_lech, [])
 

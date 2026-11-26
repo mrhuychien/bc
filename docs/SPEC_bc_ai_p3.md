@@ -55,6 +55,7 @@ Danh mục cố định, lấy từ `bc.ai.collect.CALLS` (bỏ khối kỳ trư
 | tinh-thanh · provinces | `kd.get_provinces` | — |
 | san-pham · top_products | `kd.get_top_products` | `group`: `all` \| `tet` \| `traditional` |
 | san-xuat · overview | `sx_hop.get_overview` | `thang` (`YYYY-MM`) |
+| san-xuat · compare | `sx_hop.get_compare` | `thang` (`YYYY-MM`) |
 | sx-tet · items | `sx.get_items` | `from_date` + `to_date` (`YYYY-MM-DD`, đi cùng nhau, cách nhau ≤ 731 ngày) |
 | sx-tet · daily | `sx.get_daily_summary` | `year`, `month` |
 | ton-kho · overview / trend | `kho_ton.get_overview` / `get_trend` | — |

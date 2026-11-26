@@ -81,7 +81,7 @@ bc/api/ai.py          whitelisted
 | `tet` | `npp_growth` ← `tet.get_npp_growth` · `items` ← `tet.get_items` |
 | `tinh-thanh` | `provinces` ← `kd.get_provinces` |
 | `san-pham` | `top_products` ← `kd.get_top_products("all")` |
-| `san-xuat` | `overview` ← `sx_hop.get_overview()` (tháng này — số hộp ghi ở phần Ghi hộp của sx) |
+| `san-xuat` | `overview` ← `sx_hop.get_overview()` (tháng này — số hộp ghi ở phần Ghi hộp của sx) · `compare` ← `sx_hop.get_compare()` (tháng này — ghi hộp so với nhập kho + ba số tồn đọng tới hôm nay; mọi lá số là `so`, riêng `total.lech_pct` là `pct`) |
 | `sx-tet` | `items` ← `sx.get_items()` · `daily` ← `sx.get_daily_summary(năm, tháng)` |
 | `ton-kho` | `overview` ← `kho_ton.get_overview` · `trend` ← `kho_ton.get_trend` |
 | `han-dung` | `overview` ← `kho_han.get_overview` |
