@@ -829,8 +829,9 @@ if __name__ == "__main__":
 	full_cmp()
 	drop_doctype("SX Phieu Nhap TP Item")
 	u = cmp_run()
-	c("thiếu bảng dòng phiếu nhập: available False (meta.sx False), không lỗi, không Error Log", (u["available"],
-		u["meta"]["sx"], u.get("error"), u["total"], u["cho_nhap"], frappe.LOGGED) == (False, False, None, {}, off, []),
+	c("thiếu bảng dòng phiếu nhập: available False (meta.sx True như get_overview — màn báo chưa đối chiếu được), không lỗi,"
+		" không Error Log", (u["available"],
+		u["meta"]["sx"], u.get("error"), u["total"], u["cho_nhap"], frappe.LOGGED) == (False, True, None, {}, off, []),
 		(u, frappe.LOGGED))
 	full_cmp()
 	drop_column("SX Bang Vao Hop Item", "khoan_chung")

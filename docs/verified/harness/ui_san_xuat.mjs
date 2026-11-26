@@ -740,6 +740,11 @@ if (MODE === 'nosx') {
             async (P) => (await txt(P, '#sh-now-novaohop')) === 'Kho nhận vượt số ghi hộp0 hộp Không có khoản nào đang chờ chấm'],
         ['sx False', (m) => { m.available = false; m.meta.sx = false; },
             async (P) => await P.$eval('#sh-cmp-sec', (e) => e.hidden) && !(await txt(P, '#sh-cmp')) && await restIntact(P)],
+        // Máy chủ: phần tháng hỏng vẫn tính riêng ba khối hiện tại (safe_block từng khối) → báo lỗi + dải hiện tại vẫn có số.
+        ['phần tháng hỏng, hiện tại còn', (m) => { Object.assign(m, { available: false, error: true, total: {}, days: [], items: [] }); },
+            async (P) => (await txt(P, '#sh-cmp')).includes('Không tải được phần đối chiếu — quản trị xem Error Log')
+                && !(await P.$('#sh-cmp-kpis')) && !(await P.$('#sh-cmp-day-table'))
+                && /^Đã ghi hộp, chưa nhập kho[\d.,]+ hộp/.test(await txt(P, '#sh-now-chonhap')) && await restIntact(P)],
         ['bảng thiếu', (m) => { m.available = false; },
             async (P) => (await txt(P, '#sh-cmp')).includes('Chưa đối chiếu được') && await restIntact(P)],
     ]) {

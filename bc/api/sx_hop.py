@@ -598,9 +598,11 @@ def get_compare(thang=None, refresh=0):
 	today = kho.today()
 
 	def build():
-		sx = _on_compare()
+		# meta.sx cùng nghĩa với get_overview (sx + ba bảng Ghi hộp): màn chỉ ẩn khối khi phần trên đã báo "chưa cài sx";
+		# thiếu riêng bảng phiếu nhập → available False, meta.sx True (màn báo "chưa đối chiếu được").
+		sx = _on()
 		meta = {"thang": label, "from": iso(f), "to": iso(t), "as_of": iso(today), "sx": sx, "so_ngay_cho": SO_NGAY_TRAN}
-		if not sx:
+		if not sx or not _on_compare():
 			return _empty_compare(meta)
 		p = {"f": f, "t": t, "today": today}
 		r = safe_block("sx_hop.get_compare", _compare, p)

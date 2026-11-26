@@ -456,7 +456,13 @@ async function loadCmp(isCurrent, thang, refresh) {
         const c = await api.sxHop.compare(thang || undefined, refresh);
         if (!alive()) return;
         if (sec) sec.hidden = false;
-        if (c?.error) { cmpState.c = null; fill('sh-cmp', errorState(null, 'Không tải được phần đối chiếu — quản trị xem Error Log')); return; }
+        if (c?.error) {
+            // Phần tháng hỏng; ba số "hiện tại" máy chủ vẫn tính riêng (safe_block từng khối) → còn khối nào có số thì vẫn hiện dải.
+            cmpState.c = null;
+            const now = ['cho_nhap', 'cho_duyet', 'no_vao_hop'].some((k) => c[k]?.available) ? cmpNow(c) : '';
+            fill('sh-cmp', `${errorState(null, 'Không tải được phần đối chiếu — quản trị xem Error Log')}${now}`);
+            return;
+        }
         if (!c || !c.available) {
             cmpState.c = null;
             // sx chưa cài: phần trên đã nói — khối này không thêm gì.
