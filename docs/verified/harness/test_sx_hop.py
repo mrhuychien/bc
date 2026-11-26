@@ -154,6 +154,105 @@ def chip_so(ra, prefix):
 	return int(m.group(1)) if m else 0
 
 
+# ═══ Ghi hộp so với nhập kho (get_compare) — seed riêng, mọi tên CMP- ═══
+CA, CB, CC, CD, CE, CF, CH, CK, CZ = ("CMP-A", "CMP-B", "CMP-C", "CMP-D", "CMP-E", "CMP-F", "CMP-H", "CMP-K", "CMP-Z")
+# Chuỗi giả ở MỌI cột người / chữ tự do của phiếu nhập, dòng phiếu, sổ nợ vào hộp — không được ra payload
+CMP_PRIVATE = ["Trần Thị Thủ Kho CMP", "thukho.cmp@hgc.vn", "quanly.cmp@hgc.vn", "GHI CHÚ PHIẾU CMP", "GHI CHÚ DÒNG CMP",
+	"LÝ DO BỎ QUA CMP", "Lê Văn Xử Lý CMP", "VAO HOP TET CMP", "DS SE CMP", "TÊN DÒNG PHIẾU CMP", "TÊN NỢ CMP"]
+CMP_FORBIDDEN = ("nguoi_lap", "nguoi_duyet", "duyet_luc", "xu_ly_boi", "xu_ly_luc", "ghi_chu", "ly_do", "phieu_nhap",
+	"vao_hop_tet", "ds_se", "owner", "modified_by")
+
+
+def cmp_slip(name, ngay, docstatus, rows, nguon=None, creation=None):
+	"""Phiếu nhập TP. rows: [(mã | None, so_dem)] — mọi cột người / chữ tự do điền chuỗi giả."""
+	insert("SX Phieu Nhap TP", name=name, ngay=ngay, docstatus=docstatus, nguon=nguon,
+		trang_thai={0: "Nháp", 1: "Đã duyệt", 2: "Đã huỷ"}[docstatus], creation=creation or f"{ngay} 07:30:00",
+		owner=CMP_PRIVATE[1], modified_by=CMP_PRIVATE[2], nguoi_lap=CMP_PRIVATE[1], nguoi_duyet=CMP_PRIVATE[2],
+		duyet_luc=f"{ngay} 17:00:00", ghi_chu=CMP_PRIVATE[3], vao_hop_tet=CMP_PRIVATE[7], ds_se=CMP_PRIVATE[8],
+		tong_dem=sum(r[1] for r in rows))
+	for i, (it, dem) in enumerate(rows, 1):
+		insert("SX Phieu Nhap TP Item", name=f"{name}-{i}", parent=name, parenttype="SX Phieu Nhap TP", parentfield="dong",
+			idx=i, docstatus=docstatus, item=it, ten=CMP_PRIVATE[9], dvt=CMP_PRIVATE[0], so_lap=dem, so_dem=dem, lech=0,
+			ghi_chu=CMP_PRIVATE[4], lap_uom=CMP_PRIVATE[0], dem_uom=CMP_PRIVATE[0], owner=CMP_PRIVATE[1])
+
+
+def cmp_no(name, it, con_lai, ngay, tt="Chờ chấm"):
+	insert("SX No Vao Hop", name=name, item=it, ten=CMP_PRIVATE[10], so_luong=con_lai or 5, con_lai=con_lai, trang_thai=tt,
+		ngay=ngay, phieu_nhap="CMP-PN-01", ly_do=CMP_PRIVATE[5], xu_ly_boi=CMP_PRIVATE[1], owner=CMP_PRIVATE[2],
+		xu_ly_luc=f"{ngay} 09:00:00", modified_by=CMP_PRIVATE[6])
+
+
+def cmp_seed():
+	"""Kịch bản so sánh (hôm nay 27/10/2026). Hộp: đơn vị kho Hộp trừ K (Kg); Z không còn trong danh mục; H ẩn."""
+	item(CA, "Bánh đậu xanh CMP A", "Hàng truyền thống", carton=20)
+	for code, name in ((CB, "Bánh CMP B"), (CC, "Bánh CMP C"), (CD, "Bánh CMP D"), (CE, "Bánh CMP E"), (CF, "Bánh CMP F lẻ"),
+			(CH, "Bánh CMP H ẩn")):
+		item(code, name, "Hàng truyền thống")
+	insert("Item", name=CK, item_code=CK, item_name="Kẹo cân CMP K", item_group="Hàng truyền thống", stock_uom="Kg",
+		is_stock_item=1)
+	insert("BC Hidden Item", name="CMP-HID-1", parent="BC Settings", parenttype="BC Settings", parentfield="hidden_items",
+		idx=3, item_code=CH)
+	# ── Ghi hộp ──
+	for nm, d, rows, st in (
+			("CMP-N0929", "2026-09-29", [(CB, 8, "k")], 0),
+			("CMP-N0930", "2026-09-30", [(CC, 25, "k")], 0),                       # ghi tháng 9, nhập 01/10
+			("CMP-N1001", "2026-10-01", [(CA, 100, "k"), (CB, 40, "cn"), (None, 6, "kc"), (CK, 10, "k")], 0),
+			("CMP-N1002", "2026-10-02", [(CA, 20, "kc"), (CE, 30, "k"), (CH, 12, "k")], 1),
+			("CMP-N1005", "2026-10-05", [(CF, 10, "k"), (CZ, 4, "k")], 0),
+			("CMP-N1009", "2026-10-09", [(CA, 999, "k")], 2),                      # ngày SX đã huỷ
+			("CMP-N1027", "2026-10-27", [(CA, 50, "cn")], 0),                      # hôm nay
+			("CMP-N1028", "2026-10-28", [(CA, 500, "k")], 0)):                     # sau hôm nay
+		ngay(nm, d, docstatus=st)
+		bang(nm, rows, docstatus=min(st, 1))
+	# ── Phiếu nhập ──
+	cmp_slip("CMP-PN-01", "2026-10-01", 1, [(CA, 90), (CC, 25)])                  # cùng ngày (A) + hộp tháng trước (C)
+	cmp_slip("CMP-PN-02", "2026-10-03", 1, [(CA, 25), (CB, 40)])                  # ngày sau
+	cmp_slip("CMP-PN-03", "2026-10-03", 1, [(CA, 5)])                             # hai phiếu một ngày
+	cmp_slip("CMP-PN-04", "2026-10-04", 1, [(CD, 15)])                            # mã chỉ có phiếu
+	cmp_slip("CMP-PN-05", "2026-10-05", 1, [(CF, 7.25), (CK, 3.5), (None, 9)])    # số lẻ, mã Kg, dòng không mã
+	cmp_slip("CMP-PN-06", "2026-10-06", 1, [(CH, 12)])                            # mã ẩn
+	cmp_slip("CMP-PN-07", "2026-10-06", 0, [(CA, 1000)], creation="2026-10-06 08:00:00")   # nháp
+	cmp_slip("CMP-PN-08", "2026-10-06", 2, [(CA, 2000)])                          # đã huỷ
+	cmp_slip("CMP-PN-09", "2026-10-07", 0, [(CE, 30)], nguon="Tết", creation="2026-10-07 08:00:00")   # nháp Tết
+	cmp_slip("CMP-PN-10", "2026-10-28", 1, [(CA, 50)])                            # sau hôm nay
+	# ── Sổ nợ vào hộp ──
+	cmp_no("CMP-NV-01", CC, 25, "2026-10-01")
+	cmp_no("CMP-NV-02", CD, 10, "2026-10-04")
+	cmp_no("CMP-NV-03", CD, 5, "2026-10-20")
+	cmp_no("CMP-NV-04", CA, 0, "2026-09-30", tt="Đã chấm bù")
+	cmp_no("CMP-NV-05", CA, 7, "2026-09-29", tt="Bỏ qua")
+	cmp_no("CMP-NV-06", CA, 9, "2026-09-28", tt="Đã huỷ")
+	cmp_no("CMP-NV-07", CB, 0, "2026-09-28")                                       # 'Chờ chấm' mà đã về 0
+	cmp_no("CMP-NV-08", CH, 3, "2026-10-10")                                       # mã ẩn
+	cmp_no("CMP-NV-09", CF, 1.5, "2026-10-26")
+	cmp_no("CMP-NV-10", CE, 4, "2026-10-01")                                       # cùng tuổi với C, ít hơn
+
+
+def full_cmp():
+	reset()
+	bc_settings()
+	cmp_seed()
+
+
+def cmp_run(thang=None, refresh=1):
+	from bc.api import sx_hop
+	frappe.local.__dict__.pop("sx_nho", None)
+	return sx_hop.get_compare(thang=thang, refresh=refresh)
+
+
+def sx_doi_chieu(tu, den):
+	"""sx.api.portal._vao_hop_vs_nhap_kho THẬT, dòng vào hộp lấy đúng như sx.api.portal.dashboard."""
+	from sx.api import portal
+	phieu = frappe.get_all("SX Ngay San Xuat", filters={"ngay": ("between", (tu, den)), "docstatus": ("<", 2)}, pluck="name")
+	rows = []
+	if phieu:
+		bang_ = frappe.get_all("SX Bang Vao Hop", filters={"ngay_sx": ("in", phieu), "docstatus": ("<", 2)}, pluck="name")
+		if bang_:
+			rows = frappe.get_all("SX Bang Vao Hop Item", filters={"parent": ("in", bang_), "parenttype": "SX Bang Vao Hop"},
+				fields=["san_pham", "so_hop"])
+	return portal._vao_hop_vs_nhap_kho(rows, tu, den)
+
+
 if __name__ == "__main__":
 	c = Check()
 	full()
@@ -502,4 +601,261 @@ if __name__ == "__main__":
 	finally:
 		fu.FAKE_NOW_TIME = gio
 		single("BC Settings", cache_ttl=0)
+	# ════════════════════════════ GHI HỘP SO VỚI NHẬP KHO (get_compare) ════════════════════════════
+	# Seed riêng (mọi tên CMP-), số kỳ vọng tính tay ở cmp_seed().
+	full_cmp()
+	from bc.api import kho_nhap
+	cp = cmp_run()
+	cm = cp["meta"]
+	c("so sánh: có dữ liệu; meta = tháng này cắt ở hôm nay, cửa sổ chờ 30 ngày", cp["available"] is True and pick(cm, "thang",
+		"from", "to", "as_of", "sx", "so_ngay_cho") == {"thang": "2026-10", "from": "2026-10-01", "to": "2026-10-27",
+		"as_of": "2026-10-27", "sx": True, "so_ngay_cho": 30} and not cp.get("error"), cm)
+	ct = cp["total"]
+	# Ghi hộp (so được) = A 170 + B 40 + E 30 + F 10 + H 12 (ẩn) + dòng chưa chọn mã 6 = 268 (K Kg 10, Z ngoài danh mục 4: ra)
+	# Nhập kho = A 90 + 25 + 5 · B 40 · C 25 (hộp ghi 30/09) · D 15 (chỉ có phiếu) · F 7,25 · H 12 = 219,25 (K 3,5 Kg ra; dòng
+	#   phiếu không mã 9 ra; phiếu nháp A 1000, phiếu huỷ A 2000, phiếu nháp Tết E 30, phiếu 28/10 A 50: ra)
+	# Lệch −48,75 = −18,2 % · chưa nhập A 50 + E 30 + F 2,75 + chưa mã 6 = 88,75 (3 mã) · nhập vượt C 25 + D 15 = 40 (2 mã)
+	# Khớp B, H (2) · khác đơn vị K, Z (2 mã, 14 hộp)
+	c("so sánh: tổng tháng tính tay", ct == {"hop": 268, "nhap": 219.25, "lech": -48.75, "lech_pct": -18.2, "chua_nhap": 88.75,
+		"so_ma_chua_nhap": 3, "nhap_vuot": 40.0, "so_ma_nhap_vuot": 2, "so_ma_khop": 2, "hop_chua_ma": 6, "ma_khac_dvt": 2,
+		"hop_khac_dvt": 14}, ct)
+	c("so sánh: bất biến lech = nhap − hop = nhap_vuot − chua_nhap", round(ct["nhap"] - ct["hop"], 2) == ct["lech"] ==
+		round(ct["nhap_vuot"] - ct["chua_nhap"], 2), ct)
+	c("so sánh: kiểu số — hộp int, nhập / lệch float", isinstance(ct["hop"], int) and not isinstance(ct["hop"], bool)
+		and all(isinstance(ct[x], float) for x in ("nhap", "lech", "chua_nhap", "nhap_vuot", "lech_pct"))
+		and all(isinstance(x["hop"], int) and isinstance(x["nhap"], float) for x in cp["days"] + cp["items"]), ct)
+	cd = {x["date"]: x for x in cp["days"]}
+	c("so sánh: mỗi ngày lịch một dòng 27 → 01/10 (mới nhất trước), 28/10 (sau hôm nay) không có", [x["date"] for x in cp["days"]]
+		== [f"2026-10-{i:02d}" for i in range(27, 0, -1)] and cd["2026-10-05"]["weekday"] == 0, [x["date"] for x in cp["days"]][:3])
+	want_days = {  # (hộp, nhập, lệch, luỹ kế, co)
+		"2026-10-01": (146, 115.0, -31.0, -31.0, True),    # A 100 + B 40 + chưa mã 6 (K Kg ra) · A 90 cùng ngày + C 25 (hộp 30/09)
+		"2026-10-02": (62, 0.0, -62.0, -93.0, True),       # A 20 + E 30 + H 12 (ẩn vẫn tính)
+		"2026-10-03": (0, 70.0, 70.0, -23.0, True),        # hai phiếu một ngày: A 25 + B 40, A 5 (nhập ngày sau)
+		"2026-10-04": (0, 15.0, 15.0, -8.0, True),         # D chỉ có phiếu
+		"2026-10-05": (10, 7.25, -2.75, -10.75, True),     # F lẻ; Z, K, dòng phiếu không mã ra
+		"2026-10-06": (0, 12.0, 12.0, 1.25, True),         # H 12; phiếu nháp / huỷ cùng ngày ra
+		"2026-10-07": (0, 0.0, 0.0, 1.25, False),          # chỉ phiếu nháp Tết → không có gì
+		"2026-10-09": (0, 0.0, 0.0, 1.25, False),          # ngày SX đã huỷ
+		"2026-10-26": (0, 0.0, 0.0, 1.25, False),
+		"2026-10-27": (50, 0.0, -50.0, -48.75, True),      # hôm nay
+	}
+	got_days = {k_: (cd[k_]["hop"], cd[k_]["nhap"], cd[k_]["lech"], cd[k_]["luy_ke"], cd[k_]["co"]) for k_ in want_days}
+	c("so sánh: từng ngày (cùng ngày / ngày sau / hai phiếu một ngày / nháp, huỷ, Tết ra / ngày SX huỷ / luỹ kế)",
+		got_days == want_days, {k_: v for k_, v in got_days.items() if v != want_days[k_]})
+	c("so sánh: luỹ kế ngày mới nhất = lệch cả tháng; Σ cột = tổng", cp["days"][0]["luy_ke"] == ct["lech"]
+		and sum(x["hop"] for x in cp["days"]) == ct["hop"] and round(sum(x["nhap"] for x in cp["days"]), 2) == ct["nhap"],
+		cp["days"][0])
+	ci = cp["items"]
+	c("so sánh: theo mã — mã ẩn H bỏ, khác đơn vị cuối, |lệch| giảm dần (thứ tự sx)", [x["item_code"] for x in ci] ==
+		[CA, CE, CC, CD, CF, CB, CK, CZ], [x["item_code"] for x in ci])
+	c("so sánh: dòng mã đủ trường", set(ci[0]) == {"item_code", "item_name", "short_name", "group", "uom", "khac_dvt", "hop",
+		"nhap", "lech"}, sorted(ci[0]))
+	c("so sánh: A ghi 170 nhập 120 (cùng ngày + ngày sau, hai phiếu một ngày) lệch −50", by(ci, "item_code", CA) == {
+		"item_code": CA, "item_name": "Bánh đậu xanh CMP A", "short_name": "CMP A", "group": "traditional", "uom": "Hộp",
+		"khac_dvt": False, "hop": 170, "nhap": 120.0, "lech": -50.0}, by(ci, "item_code", CA))
+	c("so sánh: C (hộp ghi tháng trước, nhập đầu tháng này) +25 · D chỉ có phiếu +15 · E chỉ có hộp −30 · F lẻ −2,75 · B khớp",
+		[pick(by(ci, "item_code", x), "hop", "nhap", "lech", "khac_dvt") for x in (CC, CD, CE, CF, CB)] == [
+		{"hop": 0, "nhap": 25.0, "lech": 25.0, "khac_dvt": False}, {"hop": 0, "nhap": 15.0, "lech": 15.0, "khac_dvt": False},
+		{"hop": 30, "nhap": 0.0, "lech": -30.0, "khac_dvt": False}, {"hop": 10, "nhap": 7.25, "lech": -2.75, "khac_dvt": False},
+		{"hop": 40, "nhap": 40.0, "lech": 0.0, "khac_dvt": False}], [by(ci, "item_code", x) for x in (CC, CD, CE, CF, CB)])
+	c("so sánh: K (đơn vị Kg) và Z (không còn trong danh mục) liệt kê với khac_dvt, tên Z lấy trên dòng",
+		[pick(by(ci, "item_code", x), "uom", "khac_dvt", "hop", "nhap", "lech", "item_name") for x in (CK, CZ)] == [
+		{"uom": "Kg", "khac_dvt": True, "hop": 10, "nhap": 3.5, "lech": -6.5, "item_name": "Kẹo cân CMP K"},
+		{"uom": None, "khac_dvt": True, "hop": 4, "nhap": 0.0, "lech": -4.0, "item_name": f"tên dòng {CZ}"}],
+		[by(ci, "item_code", x) for x in (CK, CZ)])
+
+	# ── Hộp ghi cuối tháng trước, nhập tháng sau: tháng 9 ──
+	c9 = cmp_run("2026-09")
+	c("so sánh tháng 9: B 8 + C 25 ghi 29–30/09, nhập ở tháng 10 → −33 (−100 %); 30 ngày, luỹ kế cuối = −33",
+		(pick(c9["total"], "hop", "nhap", "lech", "lech_pct", "chua_nhap", "so_ma_chua_nhap", "nhap_vuot"), len(c9["days"]),
+		c9["days"][0]["date"], c9["days"][0]["luy_ke"], c9["days"][1]["luy_ke"], c9["days"][2]["luy_ke"]) == ({"hop": 33,
+		"nhap": 0.0, "lech": -33.0, "lech_pct": -100.0, "chua_nhap": 33.0, "so_ma_chua_nhap": 2, "nhap_vuot": 0.0}, 30,
+		"2026-09-30", -33.0, -8.0, 0.0), (c9["total"], c9["days"][:3]))
+	c7 = cmp_run("2026-07")
+	c("so sánh tháng trống: số 0, lech_pct None (không chia 0), danh sách rỗng, 31 ngày không co", (c7["available"],
+		pick(c7["total"], "hop", "nhap", "lech", "lech_pct", "chua_nhap", "so_ma_khop", "ma_khac_dvt"), c7["items"],
+		len(c7["days"]), any(x["co"] for x in c7["days"])) == (True, {"hop": 0, "nhap": 0.0, "lech": 0.0, "lech_pct": None,
+		"chua_nhap": 0.0, "so_ma_khop": 0, "ma_khac_dvt": 0}, [], 31, False), c7["total"])
+	for bad in ("2026-11", "abc", None, "x' OR 1", "0001-01"):
+		try:
+			got = cmp_run(bad)["meta"]["thang"]
+		except Exception as e:  # noqa: BLE001
+			got = repr(e)
+		c(f"so sánh: tháng {bad!r} → tháng này, không lỗi", got == "2026-10", got)
+
+	# ── "Hiện tại" ──
+	cn_ = cp["cho_nhap"]
+	# Cửa sổ 28/09 → 27/10: chấm A 170 · B 48 · C 25 · E 30 · F 10 · H 12 · K 10 · Z 4; đã nhận (đã duyệt từ 28/09, không chặn
+	#   trên: A 120 + 50 của phiếu 28/10) + phiếu nháp Tết E 30 → còn B 8, F 2,75 (hộp) + K 6,5, Z 4 (khác đơn vị: không cộng)
+	c("cho_nhap: = khotp.tran_con_lai qua kho_nhap._vao_hop (hộp B 8 + F 2,75; K, Z không cộng; nháp Tết trừ)", cn_ == {
+		"available": True, "from": "2026-09-28", "to": "2026-10-27", "so_ngay": 30, "qty": 10.75, "items": 2, "rows": [
+		{"item_code": CB, "item_name": "Bánh CMP B", "short_name": "Bánh CMP B", "qty": 8.0},
+		{"item_code": CF, "item_name": "Bánh CMP F lẻ", "short_name": "Bánh CMP F lẻ", "qty": 2.75}]}, cn_)
+	kn = kho_nhap.get_overview(refresh=1)
+	vh = kn["vao_hop"]
+	c("cho_nhap = khối 'đã vào hộp chưa nhập kho' của màn Nhập TP (số, số mã, dòng hộp)", (cn_["qty"], cn_["items"], cn_["from"],
+		cn_["to"], [(r["item_code"], r["qty"]) for r in cn_["rows"]]) == (round(vh["qty"], 2), vh["items"], vh["from"], vh["to"],
+		[(r["item_code"], round(r["qty"], 2)) for r in vh["rows"] if not r["khac_dvt"]]), (cn_, vh))
+	cq = cp["cho_duyet"]
+	# Phiếu nháp: A 1000 (tạo 06/10 → 21 ngày) + phiếu nháp Tết E 30 (tạo 07/10) = 2 phiếu, 1 Tết, 1030 hộp
+	c("cho_duyet: 2 phiếu nháp (1 Tết), 1030 hộp, cũ nhất 21 ngày; không danh sách / tên phiếu", cq == {"available": True,
+		"count": 2, "count_tet": 1, "qty": 1030, "uom": "Hộp", "oldest_age_days": 21}, cq)
+	c("cho_duyet = khối phiếu chờ duyệt của màn Nhập TP", cq == {"available": True, **{k_: kn["cho_duyet"][k_] for k_ in ("count",
+		"count_tet", "qty", "uom", "oldest_age_days")}}, kn["cho_duyet"])
+	nv = cp["no_vao_hop"]
+	# Mở ('Chờ chấm', còn > 0): C 25 (01/10) · E 4 (01/10) · D 10 (04/10) + 5 (20/10) · H 3 (ẩn) · F 1,5 (26/10) = 6 dòng, 5 mã,
+	#   48,5; không tính: 'Đã chấm bù', 'Bỏ qua', 'Đã huỷ', 'Chờ chấm' còn 0
+	c("no_vao_hop: dòng đang mở gom theo mã, tuổi từ ngày nợ cũ nhất; mã ẩn chỉ mất khỏi dòng", nv == {"available": True,
+		"count": 6, "so_ma": 5, "qty": 48.5, "oldest_date": "2026-10-01", "oldest_age_days": 26, "rows": [
+		{"item_code": CC, "item_name": "Bánh CMP C", "short_name": "Bánh CMP C", "qty": 25.0, "so_dong": 1, "ngay": "2026-10-01",
+		"age_days": 26},
+		{"item_code": CE, "item_name": "Bánh CMP E", "short_name": "Bánh CMP E", "qty": 4.0, "so_dong": 1, "ngay": "2026-10-01",
+		"age_days": 26},
+		{"item_code": CD, "item_name": "Bánh CMP D", "short_name": "Bánh CMP D", "qty": 15.0, "so_dong": 2, "ngay": "2026-10-04",
+		"age_days": 23},
+		{"item_code": CF, "item_name": "Bánh CMP F lẻ", "short_name": "Bánh CMP F lẻ", "qty": 1.5, "so_dong": 1,
+		"ngay": "2026-10-26", "age_days": 1}]}, nv)
+	c("hiện tại không theo tháng chọn (tháng 9 cùng ba khối)", all(c9[x] == cp[x] for x in ("cho_nhap", "cho_duyet",
+		"no_vao_hop")))
+
+	# ── So vi sai theo mã với sx.api.portal._vao_hop_vs_nhap_kho THẬT (bảng đối chiếu kho của Quản lý) ──
+	for thang_, tu, den, dd in (("10", "2026-10-01", "2026-10-27", cp), ("09", "2026-09-01", "2026-09-30", c9)):
+		ref = {g["item"]: g for g in sx_doi_chieu(tu, den) if g["item"]}
+		mine = {x["item_code"]: x for x in dd["items"]}
+		lech_ = []
+		for code, x in mine.items():
+			g = ref.get(code)
+			# sx cắt so_dem bằng cint, bc giữ số lẻ: so trên phần nguyên (F 7,25 → 7) — số nguyên thì phải bằng hẳn
+			if not g or (g["vao_hop"], g["nhap_kho"], g["lech"]) != (x["hop"], int(x["nhap"]), x["hop"] * -1 + int(x["nhap"])):
+				lech_.append((code, g, x))
+		thua = [k_ for k_ in ref if k_ not in mine and k_ != CH]
+		c(f"vi sai {thang_}/2026 theo mã: (ghi hộp, nhập kho, lệch) = sx.api.portal._vao_hop_vs_nhap_kho (cùng dấu)", not lech_
+			and not thua and mine, (lech_, thua))
+		so_duoc = [k_ for k_ in [g["item"] for g in sx_doi_chieu(tu, den)] if k_ in mine and not mine[k_]["khac_dvt"]]
+		c(f"vi sai {thang_}/2026: thứ tự mã so được = thứ tự của sx (|lệch| lớn trước)", so_duoc ==
+			[x["item_code"] for x in dd["items"] if not x["khac_dvt"]], so_duoc)
+	c("vi sai: phần lẻ là chỗ khác duy nhất (sx 7, bc 7,25)", next(g["nhap_kho"] for g in sx_doi_chieu("2026-10-01",
+		"2026-10-27") if g["item"] == CF) == 7 and by(cp["items"], "item_code", CF)["nhap"] == 7.25)
+
+	# ── So vi sai số nhập kho với màn Nhập TP (bc.api.kho_nhap) ──
+	kd = {r["date"]: r for r in kn["nhap"]["by_day"]}
+	hop_uom = [r for r in kn["nhap"]["total"]["by_uom"] if r["uom"] == "Hộp"]
+	c("vi sai Nhập TP: nhập kho tháng = phần đơn vị Hộp của tổng tháng màn Nhập TP", hop_uom and hop_uom[0]["qty"] == ct["nhap"],
+		(kn["nhap"]["total"]["by_uom"], ct["nhap"]))
+	khac = [x for x in kd if kd[x]["qty"] is None]
+	c("vi sai Nhập TP: từng ngày (trừ ngày lẫn đơn vị 05/10) = số nhập của màn Nhập TP", khac == ["2026-10-05"] and all(
+		cd[x]["nhap"] == round(kd[x]["qty"], 2) for x in kd if x not in khac) and set(kd) == set(cd),
+		[(x, cd[x]["nhap"], kd[x]["qty"]) for x in kd if x not in khac and cd[x]["nhap"] != kd[x]["qty"]])
+	frappe.db.sql("DELETE FROM `tabSX Phieu Nhap TP Item` WHERE item = %s OR item IS NULL", (CK,))
+	kn2 = kho_nhap.get_overview(refresh=1)
+	cp2 = cmp_run()
+	c("vi sai Nhập TP sau khi bỏ dòng Kg / không mã: tổng tháng và MỌI ngày bằng nhau", kn2["nhap"]["total"]["qty"] ==
+		cp2["total"]["nhap"] == 219.25 and all({x["date"]: x for x in cp2["days"]}[r["date"]]["nhap"] == r["qty"]
+		for r in kn2["nhap"]["by_day"]), (kn2["nhap"]["total"]["qty"], cp2["total"]["nhap"]))
+
+	# ── Riêng tư ──
+	full_cmp()
+	cp = cmp_run()
+	dump = json.dumps([cp, cmp_run("2026-09")], ensure_ascii=False, default=str)
+	c("so sánh riêng tư: không người lập / duyệt / xử lý, ghi chú, lý do, tên phiếu, tên dòng nợ, @", not [x for x in CMP_PRIVATE
+		if x in dump] and "@" not in dump and "CMP-PN" not in dump and "CMP-NV" not in dump,
+		[x for x in CMP_PRIVATE if x in dump] + [x for x in ("CMP-PN", "CMP-NV") if x in dump])
+
+	# ── Quyền / ẩn mảng ──
+	frappe.session.user = "nobody@example.com"
+	try:
+		cmp_run()
+		c("get_compare: người không có quyền bị chặn", False)
+	except frappe.PermissionError:
+		c("get_compare: người không có quyền bị chặn", True)
+	finally:
+		frappe.session.user = "viewer@example.com"
+	single("BC Settings", hidden_sections="san-xuat")
+	try:
+		cmp_run()
+		c("get_compare: mảng san-xuat đang ẩn → người xem bị chặn", False)
+	except frappe.PermissionError as e:
+		c("get_compare: mảng san-xuat đang ẩn → người xem bị chặn", "quản trị ẩn" in str(e), str(e))
+	frappe.session.user = "Administrator"
+	try:
+		c("get_compare: mảng ẩn — quản trị vẫn xem được", cmp_run()["total"]["hop"] == 268)
+	finally:
+		frappe.session.user = "viewer@example.com"
+	single("BC Settings", hidden_sections="")
+
+	# ── Cache ──
+	single("BC Settings", cache_ttl=300)
+	frappe.cache().store.clear()
+	try:
+		k1 = cmp_run(refresh=0)
+		cmp_slip("CMP-PN-40", "2026-10-26", 1, [(CA, 50)])
+		k2 = cmp_run(refresh=0)
+		k3 = cmp_run(refresh=1)
+		k4 = cmp_run("2026-09", refresh=0)
+		c("get_compare cache: lần 2 bản cache (số cũ), refresh=1 tính lại, khoá theo tháng", (k1["meta"]["cached"],
+			k2["meta"]["cached"], k2["total"]["nhap"], k3["meta"]["cached"], k3["total"]["nhap"], k4["meta"]["cached"],
+			k4["total"]["hop"]) == (False, True, 219.25, False, 269.25, False, 33), (k2["total"]["nhap"], k3["total"]["nhap"]))
+		c("get_compare cache: khoá riêng của method", any(k_.startswith("bc:sx_hop.get_compare:") for k_ in frappe.cache().store))
+		single("BC Settings", hidden_sections="san-xuat")
+		try:
+			cmp_run(refresh=0)
+			c("get_compare: ẩn rồi thì bản cache cũng không trả", False)
+		except frappe.PermissionError:
+			c("get_compare: ẩn rồi thì bản cache cũng không trả", True)
+	finally:
+		single("BC Settings", hidden_sections="", cache_ttl=0)
+
+	# ── Không có sx / thiếu bảng / lỗi bất ngờ ──
+	frappe.LOGGED.clear()
+	off = {"available": False}
+	frappe.INSTALLED_APPS.remove("sx")
+	try:
+		u = cmp_run()
+		c("get_compare không cài sx: available False, meta có, mọi khối rỗng / tắt, không Error Log", (u["available"],
+			u["meta"]["sx"], u["meta"]["thang"], u["total"], u["days"], u["items"], u["cho_nhap"], u["cho_duyet"],
+			u["no_vao_hop"], u.get("error"), frappe.LOGGED) == (False, False, "2026-10", {}, [], [], off, off, off, None, []),
+			(u, frappe.LOGGED))
+	finally:
+		frappe.INSTALLED_APPS.append("sx")
+	drop_doctype("SX No Vao Hop")
+	u = cmp_run()
+	c("thiếu bảng SX No Vao Hop: chỉ khối nợ tắt, phần còn lại có số, không Error Log", (u["available"], u["total"]["hop"],
+		u["cho_nhap"]["available"], u["no_vao_hop"], frappe.LOGGED) == (True, 268, True, off, []), (u["no_vao_hop"], frappe.LOGGED))
+	full_cmp()
+	drop_column("SX No Vao Hop", "con_lai")
+	u = cmp_run()
+	c("SX No Vao Hop thiếu cột con_lai: khối nợ tắt, không Error Log", (u["no_vao_hop"], u["total"]["hop"], frappe.LOGGED) ==
+		(off, 268, []), (u["no_vao_hop"], frappe.LOGGED))
+	full_cmp()
+	drop_doctype("SX Phieu Nhap TP Item")
+	u = cmp_run()
+	c("thiếu bảng dòng phiếu nhập: available False (meta.sx False), không lỗi, không Error Log", (u["available"],
+		u["meta"]["sx"], u.get("error"), u["total"], u["cho_nhap"], frappe.LOGGED) == (False, False, None, {}, off, []),
+		(u, frappe.LOGGED))
+	full_cmp()
+	drop_column("SX Bang Vao Hop Item", "khoan_chung")
+	u = cmp_run()
+	c("lỗi bất ngờ ở phần tháng: available False + error, Error Log; ba khối hiện tại vẫn tính riêng", (u["available"],
+		u.get("error"), u["total"], u["days"], u["items"], u["cho_nhap"]["qty"], u["cho_duyet"]["count"], u["no_vao_hop"]["qty"])
+		== (False, True, {}, [], [], 10.75, 2, 48.5) and any("bc.sx_hop.get_compare" in str(x) for x in frappe.LOGGED),
+		(u.get("error"), frappe.LOGGED[-1:]))
+	frappe.LOGGED.clear()
+	full_cmp()
+	frappe.db.sql("DROP TABLE `tabSX Phieu Nhap TP`")
+	frappe.db.sql("CREATE TABLE `tabSX Phieu Nhap TP` (name VARCHAR(140))")    # bảng còn, cột mất → lỗi khối
+	u = cmp_run()
+	c("lỗi bất ngờ ở khối phiếu: khối đó error True, không 500", u.get("error") is True and u["cho_duyet"] == {"available": False,
+		"error": True} and any("bc.sx_hop.get_compare.cho_duyet" in str(x) for x in frappe.LOGGED), (u.get("error"),
+		u["cho_duyet"]))
+	frappe.LOGGED.clear()
+
+	# ── Tĩnh: get_compare ──
+	fn = next(x for x in tree.body if isinstance(x, ast.FunctionDef) and x.name == "get_compare")
+	c('get_compare: docstring rồi _guard("san-xuat") ở dòng đầu, @frappe.whitelist', isinstance(fn.body[0], ast.Expr)
+		and isinstance(fn.body[0].value, ast.Constant) and ast.unparse(fn.body[1]) == "_guard('san-xuat')"
+		and any("whitelist" in ast.unparse(x) for x in fn.decorator_list), ast.unparse(fn.body[1]))
+	c("tĩnh: sx_hop.py không nhắc tới người lập / duyệt / xử lý, ghi chú, lý do, phiếu gốc của nợ", not [x for x in
+		CMP_FORBIDDEN if x in src], [x for x in CMP_FORBIDDEN if x in src])
+	c("tĩnh: phiếu nhập chỉ đọc phiếu ĐÃ DUYỆT, dòng 'dong'; nợ chỉ 'Chờ chấm'", "p.docstatus = 1" in src
+		and "i.parentfield = 'dong'" in src and 'CHO_CHAM = "Chờ chấm"' in src)
 	c.done()
