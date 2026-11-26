@@ -301,6 +301,147 @@ def pick(d, *keys):
 	return {k_: d.get(k_) for k_ in keys}
 
 
+# ══ D230: mốc tính nợ vào hộp (SX Settings.no_vh_tu_ngay + no_vh_mang_sang) — vi sai với sx.api.khotp.tran_con_lai THẬT ══
+MA, MB, MC, MO, MK, MH = "MOC-A", "MOC-B", "MOC-C", "MOC-O", "MOC-K", "MOC-H"
+TU0, HOM_NAY = "2026-09-28", "2026-10-27"
+OLD_KEYS = {"available", "from", "to", "so_ngay", "qty", "uom", "cartons", "boxes_without_carton_factor",
+	"items_without_carton_factor", "uom_without", "items", "items_khac_dvt", "rows"}
+MANG = {MA: [["2026-09-20", 7], ["2026-10-10", 6]], MO: [["2026-10-12", 9]], MK: [["2026-10-11", 2.5]],
+	MH: [["2026-10-13", 4]], MC: [["2026-10-14", 1]]}
+
+
+def moc_seed():
+	"""Hôm nay 27/10, cửa sổ 28/09 → 27/10. Vào hộp: 25/09 MA 100 (ngoài cửa sổ) · 05/10 MA 40 MB 30 MC 20 · 20/10 MA 50
+	MB 10 · 27/10 MA 5. Đã duyệt: 03/10 MA 70 (trước mốc 15/10, nhận VƯỢT số chấm sau mốc) · 18/10 MA 20 MB 5 · 30/10 MB 3
+	(sau hôm nay). Nháp Tết: 10/10 MC 8 MA 3 (trước mốc) · 22/10 MC 4. MK đơn vị Kg, MH bị ẩn, MO chỉ có trong mang sang."""
+	reset()
+	bc_settings()
+	k = K()
+	base(k)
+	tp = {"custom_sx_nhom": "TP"}
+	k.item(MA, "Bánh MOC A", G_TRAD, carton=10, **tp)
+	for code, name in ((MB, "Bánh MOC B"), (MC, "Bánh MOC C"), (MO, "Bánh MOC O"), (MH, "Bánh MOC ẩn")):
+		k.item(code, name, G_TRAD, **tp)
+	k.item(MK, "Kẹo MOC cân", G_TRAD, uom="Kg", **tp)
+	insert("BC Hidden Item", name="MOC-HID-1", parent="BC Settings", parenttype="BC Settings", parentfield="hidden_items",
+		idx=9, item_code=MH)
+	_vh("MOC-NSX-0", "2026-09-25", 1, [("MOC-VH-0", 1, [(MA, 100)])])
+	_vh("MOC-NSX-1", "2026-10-05", 1, [("MOC-VH-1", 1, [(MA, 40), (MB, 30), (MC, 20)])])
+	_vh("MOC-NSX-2", "2026-10-20", 1, [("MOC-VH-2", 0, [(MA, 50), (MB, 10)])])
+	_vh("MOC-NSX-3", "2026-10-27", 0, [("MOC-VH-3", 0, [(MA, 5)])])
+	_slip("MOC-P1", "2026-10-03", 1, [(MA, 70, 70)])
+	_slip("MOC-P2", "2026-10-18", 1, [(MA, 20, 20), (MB, 5, 5)])
+	_slip("MOC-P3", "2026-10-30", 1, [(MB, 3, 3)])
+	_slip("MOC-T1", "2026-10-10", 0, [(MC, 8, 8), (MA, 3, 3)], nguon=NGUON_TET_)
+	_slip("MOC-T2", "2026-10-22", 0, [(MC, 4, 4)], nguon=NGUON_TET_)
+	k.finalize()
+
+
+NGUON_TET_ = "Tết"
+
+
+def set_moc(moc=None, mang=None):
+	"""Ghi hai ô D230 như lệnh sx bo_no_vh_truoc; None → xoá dòng (site sx cũ / chưa đặt mốc)."""
+	for f, v in (("no_vh_tu_ngay", moc), ("no_vh_mang_sang", mang)):
+		if v is None:
+			frappe.db.sql("DELETE FROM `tabSingles` WHERE doctype = 'SX Settings' AND field = %s", (f,))
+		else:
+			single("SX Settings", **{f: v if isinstance(v, str) else json.dumps(v)})
+
+
+def sx_tran():
+	"""sx.api.khotp.tran_con_lai THẬT (tu0, hôm nay) → {mã: còn > 0, 3 số lẻ}."""
+	from sx.api import khotp as sx_khotp
+	frappe.local.__dict__.pop("sx_nho", None)
+	return {k_: round(v, 3) for k_, v in sx_khotp.tran_con_lai(TU0, HOM_NAY).items() if v > 1e-6}
+
+
+def bc_tran():
+	"""(khối vao_hop của get_overview, {mã: còn} gồm cả mã ẩn đơn vị Hộp qua `raw`)."""
+	from bc.api import kho_nhap
+	v = run()["vao_hop"]
+	raw: dict = {}
+	kho_nhap._vao_hop({"today": frappe.utils.getdate(HOM_NAY)}, raw)
+	allc = {r["item_code"]: r["qty"] for r in v.get("rows") or []}
+	allc.update({k_: round(q, 3) for k_, q in (raw.get("box") or {}).items()})
+	return v, allc
+
+
+def moc_cases(c):
+	moc_seed()
+	ca = [
+		# (tên, mốc, mang sang, kỳ vọng tính tay {mã: còn}, qty Hộp, moc trả ra, mang_sang trả ra, so vi sai với sx?)
+		("không mốc", None, None, {MA: 2, MB: 32, MC: 8}, 42, None, None, True),
+		("mốc 15/10 trong cửa sổ, có mang sang", "2026-10-15", MANG, {MA: 41, MB: 2, MO: 9, MK: 2.5, MH: 4}, 56,
+			"2026-10-15", 20, True),
+		("mốc = hôm nay (vẫn áp)", HOM_NAY, MANG, {MA: 11, MO: 9, MK: 2.5, MH: 4, MC: 1}, 25, HOM_NAY, 20, True),
+		("mốc = đầu cửa sổ tu0 (không áp)", TU0, MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None, True),
+		("mốc trước cửa sổ (không áp)", "2026-09-01", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None, True),
+		("mốc sau hôm nay (không áp)", "2026-10-28", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None, True),
+		("JSON hỏng: mốc vẫn áp, không mang sang", "2026-10-15", "{không phải json", {MA: 35, MB: 2}, 37, "2026-10-15", 0,
+			True),
+		("JSON không phải dict", "2026-10-15", "[1, 2]", {MA: 35, MB: 2}, 37, "2026-10-15", 0, True),
+		("dòng hỏng của một mã: bỏ mã đó, mã khác giữ", "2026-10-15",
+			{MA: [["xx", 1], ["2026-10-10", 6]], MO: [["2026-10-12", 9]]}, {MA: 35, MB: 2, MO: 9}, 46, "2026-10-15", 9, True),
+		("giá trị mốc rác → như chưa đặt mốc", "rác-không-phải-ngày", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None, False),
+		("site sx cũ: không có hai ô", None, None, {MA: 2, MB: 32, MC: 8}, 42, None, None, True),
+	]
+	for ten, moc, mang, mong, qty, moc_ra, mang_ra, vs in ca:
+		set_moc(moc, mang)
+		v, allc = bc_tran()
+		ok_keys = set(v) == OLD_KEYS | {"moc", "mang_sang"}
+		c(f"D230 {ten}: từng mã = tính tay", allc == mong, (allc, mong))
+		if vs:
+			sx = sx_tran()
+			c(f"D230 {ten}: từng mã = sx.api.khotp.tran_con_lai THẬT", allc == sx, (allc, sx))
+		c(f"D230 {ten}: qty / moc / mang_sang / from / to / khoá", (v.get("qty"), v.get("moc"), v.get("mang_sang"), v.get("from"),
+			v.get("to"), v.get("so_ngay"), ok_keys) == (qty, moc_ra, mang_ra, TU0, HOM_NAY, 30, True),
+			(v.get("qty"), v.get("moc"), v.get("mang_sang"), v.get("from"), sorted(set(v) ^ (OLD_KEYS | {"moc", "mang_sang"}))))
+	# Mốc 15/10: hàng hiển thị (mã ẩn không thành dòng), Kg riêng cuối; tổng hộp kể cả mã ẩn; items đếm cả mã ẩn
+	set_moc("2026-10-15", MANG)
+	v, _a = bc_tran()
+	c("D230 mốc 15/10: dòng (ẩn MH, Kg cuối), items 4, khác đơn vị 1, thùng MA 4,1", ([(r["item_code"], r["qty"], r["khac_dvt"])
+		for r in v["rows"]], v["items"], v["items_khac_dvt"], v["cartons"]) == ([(MA, 41, False), (MO, 9, False), (MB, 2, False),
+		(MK, 2.5, True)], 4, 1, 4.1), v)
+	# Trợ lý AI: mọi lá số của khối có mốc xếp kiểu "so" (mang_sang → so); moc là chuỗi ngày
+	from bc.ai import render as ai_render
+	las = set()
+
+	def la_so(x, path):
+		if isinstance(x, dict):
+			for k_, y in x.items():
+				la_so(y, f"{path}.{k_}")
+		elif isinstance(x, list):
+			for y in x:
+				la_so(y, path)
+		elif isinstance(x, (int, float)) and not isinstance(x, bool):
+			las.add(path)
+
+	la_so(v, "nhap-tp.overview.vao_hop")
+	c("D230 AI: lá số của vao_hop có mốc (gồm mang_sang) đều xếp kiểu so; moc không phải lá số",
+		"nhap-tp.overview.vao_hop.mang_sang" in las and "nhap-tp.overview.vao_hop.moc" not in las
+		and {p_: ai_render.kieu_theo_ten(p_) for p_ in las if ai_render.kieu_theo_ten(p_) != "so"} == {}, sorted(las))
+	# Mốc không áp: mọi khoá cũ đúng như khi chưa đặt mốc
+	set_moc(None, None)
+	v0 = run()["vao_hop"]
+	set_moc("2026-09-01", MANG)
+	v1 = run()["vao_hop"]
+	c("D230 mốc không áp: mọi khoá cũ y như chưa đặt mốc", v0 == v1 and "moc" in v0 and v0.get("moc") is None and v0.get("mang_sang") is None, (v0, v1))
+	# Đọc mốc: một câu SELECT thẳng tabSingles — không qua meta / get_single_value / get_doc (site sx cũ không throw)
+	from bc.api import kho_nhap
+	import inspect
+	src = inspect.getsource(kho_nhap._moc_vh) if hasattr(kho_nhap, "_moc_vh") else ""
+	fn_ = ast.parse(src).body[0] if src else None
+	if fn_ is not None and ast.get_docstring(fn_):
+		fn_.body = fn_.body[1:]   # bỏ docstring: chỉ xét code
+	code = ast.unparse(fn_) if fn_ is not None else ""
+	sqls = [n.args[0].value for n in ast.walk(fn_) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+		and n.func.attr == "sql" and n.args and isinstance(n.args[0], ast.Constant)] if fn_ is not None else []
+	c("D230 _moc_vh: đúng MỘT câu SELECT thẳng tabSingles, không qua meta / get_single_value / get_doc", len(sqls) == 1
+		and sqls[0].lstrip().upper().startswith("SELECT") and "tabSingles" in sqls[0] and not re.search(
+		r"get_single_value|get_cached_doc|get_single\(|get_doc|get_meta|has_column|get_value", code), (sqls, code[:300]))
+
+
 if __name__ == "__main__":
 	c = Check()
 	k = full()
@@ -706,4 +847,6 @@ if __name__ == "__main__":
 		and d8["no_bom"]["qty"] == 0 and d8["no_bom"]["oldest"] is None and d8["nvl_treo"]["value"] == 0
 		and d8["gia_von_0"]["ton"]["rows"] == 0 and d8["gia_von_0"]["nhap_ky"]["qty"] == 0,
 		pick(d8, "nhap", "cho_duyet"))
+
+	moc_cases(c)
 	c.done()

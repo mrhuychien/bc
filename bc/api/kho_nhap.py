@@ -18,9 +18,12 @@ Một lượt get_overview(thang) trả 6 khối, mỗi khối một safe_block 
 - cho_duyet (K11): phiếu nháp (docstatus 0) — số phiếu, Σ so_dem (phiếu chưa đếm thì Σ so_lap), tuổi phiếu cũ nhất
   (từ ngày tạo), phần sẽ thành nợ BOM khi duyệt (mã chưa có BOM đang dùng: is_active + is_default + docstatus 1 như
   sx get_bom_active), phiếu Tết (nguon = 'Tết', cột có từ D122 — đọc mềm).
-- vao_hop (K11): "đã vào hộp chưa nhập kho" — port sx.api.khotp.tran_con_lai, cửa sổ 30 ngày tới hôm nay: Σ so_hop bảng
-  vào hộp (ngày SX docstatus < 2, bảng < 2) − Σ so_dem phiếu đã duyệt từ đầu cửa sổ (không chặn trên, như sx) − Σ so_dem
-  phiếu nháp Tết; chỉ mã còn > 0. so_hop là số HỘP: mã có đơn vị kho khác Hộp liệt kê riêng, không cộng vào tổng.
+- vao_hop (K11): "đã vào hộp chưa nhập kho" — port sx.api.khotp.tran_con_lai (D230), cửa sổ 30 ngày tới hôm nay: Σ so_hop
+  bảng vào hộp (ngày SX docstatus < 2, bảng < 2) − Σ so_dem phiếu đã duyệt từ đầu cửa sổ (không chặn trên, như sx) − Σ
+  so_dem phiếu nháp Tết; chỉ mã còn > 0. so_hop là số HỘP: mã có đơn vị kho khác Hộp liệt kê riêng, không cộng vào tổng.
+  Mốc tính nợ vào hộp (SX Settings.no_vh_tu_ngay, sx khotp._cua_so): mốc nằm trong (đầu cửa sổ, hôm nay] → cửa sổ bắt đầu
+  ĐÚNG mốc (chấm, đã nhận, nháp Tết đều từ mốc) và cộng phần mang sang (no_vh_mang_sang: hàng chấm trước mốc mà lúc đặt
+  mốc chưa nhập kho, chỉ dòng có ngày chấm từ đầu cửa sổ 30 ngày). Trả `moc` (ISO khi đang áp) + `mang_sang`.
 - no_bom (K12a): SX No BOM trang_thai = 'Chờ BOM' (KHÔNG nộp được — không bao giờ dùng docstatus): số lượng + thùng,
   value_tam = Σ so_luong × gia_tam ("giá tạm lúc nhập" — sx không định giá lại thành phẩm khi hạch toán bù), phần giá 0,
   tuổi theo ngày nhập (0-7 / 8-30 / > 30 ngày, NGAY_NO_LAU = 7 như sx), mã đã có BOM ("xử lý được ngay").
@@ -51,6 +54,7 @@ CHO_BOM = "Chờ BOM"      # SX No BOM.trang_thai đang mở (sx_no_bom.json)
 NGUON_TET = "Tết"        # SX Phieu Nhap TP.nguon của phiếu từ màn vào hộp Tết (sx api/tet.py NGUON)
 NGAY_NO_LAU = 7          # = sx khotp.NGAY_NO_LAU — nợ quá chừng này ngày sx tô đỏ
 SO_NGAY_TRAN = 30        # = sx khotp.SO_NGAY_TRAN — cửa sổ "đã vào hộp, chưa nhập kho"
+MOC_VH, MANG_SANG = "no_vh_tu_ngay", "no_vh_mang_sang"   # = sx khotp.TRUONG_MOC_VH / TRUONG_MANG_SANG (D230, SX Settings)
 BOX_UOM = "Hộp"          # so_hop của bảng vào hộp là số hộp
 BUCKETS = (("0-7", "0–7 ngày", NGAY_NO_LAU), ("8-30", "8–30 ngày", 30), (">30", "Trên 30 ngày", None))
 EPS = kho.EPS
@@ -361,6 +365,46 @@ def _cho_duyet(p: dict, raw: dict | None = None) -> dict:
 
 
 # ─── K11 · Đã vào hộp, chưa nhập kho (port khotp.tran_con_lai) ───────────────
+def _moc_vh() -> tuple:
+	"""(mốc tính nợ vào hộp: date | None, {mã: [(ngày chấm, số)]}) — port sx khotp._moc_vh (D230), đọc MỀM.
+
+	Một câu SELECT thẳng tabSingles, không qua meta / get_single_value: site sx cũ chưa có hai ô → (None, {}), không throw.
+	Mốc rỗng / không phải ngày → (None, {}); JSON hỏng hoặc không phải dict → {}; dòng hỏng của một mã → bỏ mã đó."""
+	vals = dict(frappe.db.sql("SELECT field, value FROM `tabSingles` WHERE doctype = 'SX Settings' AND field IN (%s, %s)",
+		(MOC_VH, MANG_SANG)))
+	try:
+		moc = getdate(vals.get(MOC_VH)) if vals.get(MOC_VH) else None
+	except Exception:
+		moc = None
+	if not isinstance(moc, datetime.date):
+		return None, {}
+	try:
+		mang = json.loads(vals.get(MANG_SANG) or "{}")
+	except (TypeError, ValueError):
+		mang = {}
+	ra = {}
+	for item, ds in (mang.items() if isinstance(mang, dict) else []):
+		try:
+			ra[item] = [(getdate(d), flt(q)) for d, q in ds]
+		except Exception:
+			continue
+	return moc, ra
+
+
+def _cua_so(tu0: datetime.date, den: datetime.date) -> tuple:
+	"""(moc đang áp | None, từ ngày, {mã: số chấm mang sang}) — như sx khotp._cua_so: mốc trong (tu0, den] → từ mốc, cộng
+	phần mang sang có ngày chấm >= tu0; ngược lại cửa sổ cũ, không cộng gì."""
+	moc, mang = _moc_vh()
+	if moc and tu0 < moc <= den:
+		cong = {}
+		for item, ds in mang.items():
+			q = sum(q for d, q in ds if d >= tu0)
+			if q > 1e-6:
+				cong[item] = flt(q, 3)
+		return moc, moc, cong
+	return None, tu0, {}
+
+
 def _vao_hop(p: dict, raw: dict | None = None) -> dict:
 	"""`raw` (tuỳ chọn): nhận {"box": {mã: số còn lại CHƯA làm tròn}} của phần đơn vị Hộp — cho nơi tự làm tròn một lần
 	(sx_hop: 2 số lẻ thẳng từ số gốc, không qua 3 số lẻ rồi 2 số lẻ)."""
@@ -368,7 +412,8 @@ def _vao_hop(p: dict, raw: dict | None = None) -> dict:
 			"SX Ngay San Xuat"):
 		return {"available": False}
 	den = p["today"]
-	tu = getdate(add_days(den, -SO_NGAY_TRAN + 1))
+	tu0 = getdate(add_days(den, -SO_NGAY_TRAN + 1))
+	moc, tu, cong = _cua_so(tu0, den)   # D230: từ mốc tính nợ vào hộp khi mốc nằm trong cửa sổ
 	q = {"tu": tu, "den": den, "tet": NGUON_TET}
 	boxed = {r.item: flt(r.boxed) for r in frappe.db.sql(
 		"""SELECT vi.san_pham AS item, SUM(vi.so_hop) AS boxed
@@ -378,6 +423,8 @@ def _vao_hop(p: dict, raw: dict | None = None) -> dict:
 		WHERE n.ngay BETWEEN %(tu)s AND %(den)s AND n.docstatus < 2 AND b.docstatus < 2
 			AND IFNULL(vi.san_pham, '') != ''
 		GROUP BY vi.san_pham""", q, as_dict=True)}
+	for c, v in cong.items():   # mã chỉ có trong phần mang sang vẫn thành dòng (như sx)
+		_add(boxed, c, v)
 	# Đã nhận: phiếu đã duyệt từ đầu cửa sổ, KHÔNG chặn trên (như sx _da_nhan_theo_ma).
 	nhan = {r.item: flt(r.qty) for r in frappe.db.sql(
 		"""SELECT i.item, SUM(IFNULL(i.so_dem, 0)) AS qty
@@ -395,19 +442,23 @@ def _vao_hop(p: dict, raw: dict | None = None) -> dict:
 			_add(nhan, r.item, r.qty)
 	con = {c: b - flt(nhan.get(c)) for c, b in boxed.items()}
 	con = {c: v for c, v in con.items() if v > EPS}
-	info = kho.item_info(con)
+	info = kho.item_info(set(con) | set(cong))
 	factors = carton_factors(con)
 	box = {c: v for c, v in con.items() if (info.get(c) or {}).get("stock_uom") == BOX_UOM}
 	other = {c: v for c, v in con.items() if c not in box}
+	# Phần mang sang đang cộng: chỉ mã đơn vị Hộp (kể cả mã ẩn, kể cả mã đã nhận hết) — None khi không áp mốc
+	mang_box = sum(v for c, v in cong.items() if (info.get(c) or {}).get("stock_uom") == BOX_UOM) if moc else None
 	if raw is not None:
 		raw["box"] = dict(box)
+		raw["mang_sang"] = mang_box
 	rows = drop_hidden([_item_row(info, c, qty=_q(v), cartons=_cartons({c: v}, factors)["cartons"] if c in box else None,
 		khac_dvt=c not in box) for c, v in con.items()])
 	rows.sort(key=lambda r: (r["khac_dvt"], -r["qty"], r["item_code"]))
-	return {"available": True, "from": iso(tu), "to": iso(den), "so_ngay": SO_NGAY_TRAN,
+	return {"available": True, "from": iso(tu0), "to": iso(den), "so_ngay": SO_NGAY_TRAN,
 		"qty": _q(sum(box.values())), "uom": BOX_UOM, **_cartons(box, factors, info), "items": len(box),
 		"items_khac_dvt": len(other),
-		"rows": rows[:LIST_MAX]}
+		"rows": rows[:LIST_MAX],
+		"moc": iso(moc) if moc else None, "mang_sang": _q(mang_box) if moc else None}
 
 
 # ─── K12a · Nợ BOM đang mở ──────────────────────────────────────────────────

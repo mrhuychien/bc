@@ -710,7 +710,8 @@ if __name__ == "__main__":
 	# Cửa sổ 28/09 → 27/10: chấm A 170 · B 48 · C 25 · E 30 · F 10 · H 12 · K 10 · Z 4; đã nhận (đã duyệt từ 28/09, không chặn
 	#   trên: A 120 + 50 của phiếu 28/10) + phiếu nháp Tết E 30 → còn B 8, F 2,75 (hộp) + K 6,5, Z 4 (khác đơn vị: không cộng)
 	c("cho_nhap: = khotp.tran_con_lai qua kho_nhap._vao_hop (hộp B 8 + F 2,75; K, Z không cộng; nháp Tết trừ)", cn_ == {
-		"available": True, "from": "2026-09-28", "to": "2026-10-27", "so_ngay": 30, "qty": 10.75, "items": 2, "rows": [
+		"available": True, "from": "2026-09-28", "to": "2026-10-27", "so_ngay": 30, "qty": 10.75, "items": 2, "moc": None,
+		"mang_sang": None, "rows": [
 		{"item_code": CB, "item_name": "Bánh CMP B", "short_name": "Bánh CMP B", "qty": 8.0},
 		{"item_code": CF, "item_name": "Bánh CMP F lẻ", "short_name": "Bánh CMP F lẻ", "qty": 2.75}]}, cn_)
 	kn = kho_nhap.get_overview(refresh=1)
@@ -820,6 +821,30 @@ if __name__ == "__main__":
 		kn["vao_hop"]["qty"]))
 	c("cho_duyet.qty làm tròn MỘT lần từ số gốc (0,3749 → 0,37); số phiếu = màn Nhập TP", (cx["cho_duyet"]["qty"],
 		cx["cho_duyet"]["count"], kn["cho_duyet"]["count"]) == (0.37, 1, 1), (cx["cho_duyet"], kn["cho_duyet"]["qty"]))
+	# D230: mốc tính nợ vào hộp 15/10 (SX Settings) — cửa sổ từ mốc + phần mang sang (XA 2,5 chấm 12/10; dòng 01/09 cũ hơn
+	#   đầu cửa sổ 28/09 không cộng; XK 3 Kg không vào số hộp). Chấm từ 15/10: XR 1; nhận từ 15/10: XR 0,6251 → còn XA 2,5 +
+	#   XR 0,3749 = 2,8749 → 2,87 (một lần từ số gốc); mang_sang 2,5
+	single("SX Settings", no_vh_tu_ngay="2026-10-15", no_vh_mang_sang=json.dumps({XA: [["2026-09-01", 5], ["2026-10-12", 2.5]],
+		XK: [["2026-10-12", 3]]}))
+	cm = cmp_run()["cho_nhap"]
+	km = kho_nhap.get_overview(refresh=1)["vao_hop"]
+	c("D230 cho_nhap: mốc 15/10 đang áp → moc ISO, mang_sang 2,5 (chỉ mã Hộp), qty 2,87 một lần từ số gốc, from vẫn 28/09",
+		(cm["moc"], cm["mang_sang"], cm["qty"], cm["items"], cm["from"], [(r["item_code"], r["qty"]) for r in cm["rows"]]) == (
+		"2026-10-15", 2.5, 2.87, 2, "2026-09-28", [(XA, 2.5), (XR, 0.37)]), cm)
+	# (số lượng: màn Nhập TP 3 số lẻ 2,875 — ở đây 2,87 làm tròn một lần từ số gốc 2,8749, xem ca trên)
+	c("D230 cho_nhap = khối 'đã vào hộp chưa nhập kho' của màn Nhập TP (moc, mang_sang, from, số mã, mã dòng hộp)", (cm["moc"],
+		cm["mang_sang"], cm["from"], cm["items"], [r["item_code"] for r in cm["rows"]]) == (km["moc"], round(km["mang_sang"], 2),
+		km["from"], km["items"], [r["item_code"] for r in km["rows"] if not r["khac_dvt"]]), (cm, km))
+	las_m = la_so(cmp_run(), "san-xuat.compare", set())
+	c("D230 AI: payload có mốc có lá cho_nhap.mang_sang, mọi lá số xếp đúng kiểu (moc là chuỗi, không phải lá số)",
+		"san-xuat.compare.cho_nhap.mang_sang" in las_m and "san-xuat.compare.cho_nhap.moc" not in las_m and {
+		p: ai_render.kieu_theo_ten(p) for p in las_m if ai_render.kieu_theo_ten(p) != ("pct" if p.endswith(".lech_pct")
+		else "so")} == {}, sorted(las_m))
+	single("SX Settings", no_vh_tu_ngay="2026-09-28")   # mốc = đầu cửa sổ → không áp: như chưa đặt mốc
+	cm0 = cmp_run()["cho_nhap"]
+	c("D230 cho_nhap: mốc không áp → moc / mang_sang None, số như cũ", (cm0["moc"], cm0["mang_sang"], cm0["qty"]) == (
+		None, None, 0.37), cm0)
+	frappe.db.sql("DELETE FROM `tabSingles` WHERE doctype = 'SX Settings' AND field IN ('no_vh_tu_ngay', 'no_vh_mang_sang')")
 	xi = {x["item_code"]: x for x in cx["items"]}
 	xt = cx["total"]
 	c("ngưỡng lệch một chỗ: XT +0,004 là khớp ở thẻ lẫn bảng; XC nhập 0,001 không thành dòng, không đếm",

@@ -48,8 +48,9 @@ lương, phiếu nhập sinh tồn); ở đây chỉ đặt cạnh nhau, theo đ
   trong chua_nhap). Dòng phiếu không mã: không đối chiếu được, không cộng (như mã khác đơn vị).
 - Mã ẩn: chỉ mất khỏi danh sách theo mã; mọi tổng và số đếm mã giữ nguyên.
 - "Hiện tại" (tính tới HÔM NAY, không theo tháng chọn), mỗi khối một safe_block:
-  cho_nhap = kho_nhap._vao_hop (port khotp.tran_con_lai / cho_nhan: 30 ngày tới hôm nay, trừ phiếu nháp Tết) — cùng số
-  với khối "đã vào hộp chưa nhập kho" của màn Nhập TP; cho_duyet = kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ
+  cho_nhap = kho_nhap._vao_hop (port khotp.tran_con_lai / cho_nhan: 30 ngày tới hôm nay, trừ phiếu nháp Tết; mốc tính nợ
+  vào hộp D230 đang áp → từ mốc + phần mang sang, kèm moc / mang_sang) — cùng số với khối "đã vào hộp chưa nhập kho" của
+  màn Nhập TP; cho_duyet = kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ
   kho); no_vao_hop = sổ SX No Vao Hop sx tự ghi khi phiếu nhận vượt số ghi (khotp.ghi_no_vao_hop /
   doi_soat_no_vao_hop / so_no_vao_hop): dòng đang mở trang_thai 'Chờ chấm' còn con_lai > EPS, gom theo mã, tuổi tính
   từ ngày nợ cũ nhất (đọc mềm — thiếu bảng / cột → khối đó available False). con_lai theo đơn vị kho của từng mã → số,
@@ -571,6 +572,8 @@ def _cho_nhap(p: dict) -> dict:
 	info = kho.item_info([r["item_code"] for r in rows])
 	return {"available": True, "from": v["from"], "to": v["to"], "so_ngay": v["so_ngay"], "qty": _r2(sum(box.values())),
 		"items": v["items"],
+		# D230: mốc tính nợ vào hộp đang áp (ISO | None) + phần mang sang (2 số lẻ từ số gốc; None khi không áp mốc)
+		"moc": v.get("moc"), "mang_sang": _r2(raw["mang_sang"]) if v.get("moc") else None,
 		"rows": [{"item_code": r["item_code"], "item_name": (info.get(r["item_code"]) or {}).get("item_name") or r["item_code"],
 			"short_name": r["short_name"], "qty": _r2(box.get(r["item_code"], r["qty"]))} for r in rows]}
 
@@ -631,7 +634,7 @@ def get_compare(thang=None, refresh=0):
 	 days: [{date, weekday (T2 = 0), hop, nhap, lech, luy_ke, co}] — mỗi ngày từ `to` lùi về `from` (mới nhất trước),
 	 items: [{item_code, item_name, short_name, group, uom, khac_dvt, hop, nhap, lech}] — khác đơn vị cuối (lech None),
         |lệch| giảm dần,
-	 cho_nhap: {available, from, to, so_ngay, qty, items, rows: [{item_code, item_name, short_name, qty}]},
+	 cho_nhap: {available, from, to, so_ngay, qty, items, moc, mang_sang, rows: [{item_code, item_name, short_name, qty}]},
 	 cho_duyet: {available, count, count_tet, qty, uom, oldest_age_days},
 	 no_vao_hop: {available, count, so_ma, qty, so_ma_khac_dvt, oldest_date, oldest_age_days — chỉ mã đơn vị Hộp,
 	              rows: [{item_code, item_name, short_name, qty, so_dong, ngay, age_days, khac_dvt}] — khác đơn vị cuối}}"""

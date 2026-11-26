@@ -273,7 +273,9 @@ _SO_DUNG = {"count", "n", "so", "over_limit", "qua_n", "dso", "produced", "stock
 	"lech", "chenh", "ngoai_phieu", "nhap_lai", "carton_factor", "chua_dem", "lau", "cu", "im_lang", "uoc_tinh_qua_han",
 	"kho_ban_duoc", "lo_ttl_giay", "pending_reposts", "unknown_term", "due_ahead", "limit", "k", "nam", "year", "month",
 	"fy_month", "tet_year", "canh_bao", "nguy", "lan", "max_lan", "het_credit", "that_bai", "con_trong_gb",
-	"failed_reposts", "pos_unconsolidated"}
+	"failed_reposts", "pos_unconsolidated",
+	# số hộp đã vào hộp trước mốc tính nợ vào hộp mà chưa nhập kho (D230: nhap-tp…vao_hop / san-xuat…cho_nhap)
+	"mang_sang"}
 _SO_DAU = {"so", "n", "count", "qty", "items", "rows", "lots", "slips", "entries", "warehouses", "days", "ngay",
 	"boxes", "cartons"}
 _SO_CUOI = {"count", "items", "rows", "lots", "customers", "days", "ngay", "qty", "slips", "entries", "orders",

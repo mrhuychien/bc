@@ -1005,13 +1005,21 @@ SX_CMP = {f"san-xuat.compare.{p}": k for k, ds in (
 	("so", ("meta.so_ngay_cho", "total.hop", "total.nhap", "total.lech", "total.chua_nhap", "total.so_ma_chua_nhap",
 		"total.nhap_vuot", "total.so_ma_nhap_vuot", "total.so_ma_khop", "total.hop_chua_ma", "total.ma_khac_dvt",
 		"total.hop_khac_dvt", "days.weekday", "days.hop", "days.nhap", "days.lech", "days.luy_ke", "items.hop", "items.nhap",
-		"items.lech", "cho_nhap.so_ngay", "cho_nhap.qty", "cho_nhap.items", "cho_nhap.rows.qty", "cho_duyet.count",
+		"items.lech", "cho_nhap.so_ngay", "cho_nhap.qty", "cho_nhap.items", "cho_nhap.mang_sang", "cho_nhap.rows.qty", "cho_duyet.count",
 		"cho_duyet.count_tet", "cho_duyet.qty", "cho_duyet.oldest_age_days", "no_vao_hop.count", "no_vao_hop.so_ma",
 		"no_vao_hop.qty", "no_vao_hop.oldest_age_days", "no_vao_hop.rows.qty", "no_vao_hop.rows.so_dong",
 		"no_vao_hop.rows.age_days")),
 	("pct", ("total.lech_pct",))) for p in ds}
 eq("D8: mọi lá số của san-xuat.compare xếp đúng kiểu (lech_pct → pct, còn lại → so, không tiền)",
 	{p: render.kieu_theo_ten(p) for p in SX_CMP if render.kieu_theo_ten(p) != SX_CMP[p]}, {})
+# Nhập TP — khối "đã vào hộp chưa nhập kho" (kho_nhap._vao_hop): MỌI lá số (D230 thêm mang_sang; moc là chuỗi ngày)
+NTP_VH = {f"nhap-tp.overview.vao_hop.{p}": "so" for p in ("so_ngay", "qty", "cartons", "boxes_without_carton_factor",
+	"items_without_carton_factor", "items", "items_khac_dvt", "mang_sang", "rows.qty", "rows.cartons")}
+eq("D8: mọi lá số của nhap-tp.overview.vao_hop xếp đúng kiểu (số hộp / thùng / mã / mang sang → so)",
+	{p: render.kieu_theo_ten(p) for p in NTP_VH if render.kieu_theo_ten(p) != NTP_VH[p]}, {})
+eq("D8: mang_sang (D230) là số ở cả hai khối, kể cả overview_truoc",
+	[render.kieu_theo_ten(x) for x in ("nhap-tp.overview.vao_hop.mang_sang", "nhap-tp.overview_truoc.vao_hop.mang_sang",
+	"san-xuat.compare.cho_nhap.mang_sang")], ["so", "so", "so"])
 eq("D8: san-xuat.compare có chỉ số — [i] bỏ đi trước khi xếp (dòng nợ vào hộp thứ 3 vẫn là so)",
 	[render.kieu_theo_ten(x) for x in ("san-xuat.compare.no_vao_hop.rows[2].qty", "san-xuat.compare.days[0].luy_ke")],
 	["so", "so"])
