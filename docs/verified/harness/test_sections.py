@@ -26,7 +26,7 @@ EXPECTED = {
 	"kd.get_top_customers": "tong-quan", "kd.get_daily": "ngay", "kd.get_orders": "ngay", "kd.get_monthly": "thang",
 	"kd.get_provinces": "tinh-thanh", "kd.get_top_products": "san-pham",
 	"tet.get_npp_growth": "tet", "tet.get_npp_detail": "tet", "tet.get_mt_detail": "tet", "tet.get_items": "tet",
-	"sx_hop.get_overview": "san-xuat", "sx_hop.get_day": "san-xuat",
+	"sx_hop.get_overview": "san-xuat", "sx_hop.get_day": "san-xuat", "sx_hop.get_compare": "san-xuat",
 	"sx.get_items": "sx-tet", "sx.get_daily_summary": "sx-tet", "sx.get_daily_detail": "sx-tet",
 	"cn.get_receivables": "cong-no", "cn.get_payables": "phai-tra",
 	"attp.get_overview": "attp", "attp.get_report": "attp",

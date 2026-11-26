@@ -32,6 +32,29 @@ này — như mọi màn theo tháng; Hỏi đáp chặn tháng tương lai ngay
 bảng trên màn): gói số của Trợ lý AI cắt mọi danh sách còn 30 phần tử đầu (prompt.MAX_LIST) — tháng 31 ngày thì ngày bị
 cắt là ngày 1, không phải hôm nay. Mốc ngày truyền từ Python (không CURDATE / NOW trong SQL). Site không cài sx / thiếu bảng → available False, mọi
 khối rỗng, không Error Log; lỗi bất ngờ khác → safe_block (Error Log, available False, error True).
+
+GHI HỘP SO VỚI NHẬP KHO (get_compare, cùng tháng `thang`) — sx coi hai chứng từ là độc lập (khotp, D62: ghi hộp trả
+lương, phiếu nhập sinh tồn); ở đây chỉ đặt cạnh nhau, theo đúng ba chỗ sx tự đối chiếu, không thêm luật thứ tư:
+- Ghi hộp = đúng số hộp ở trên (_FROM / _by_day_item), theo NGÀY SẢN XUẤT.
+- Nhập kho = phiếu SX Phieu Nhap TP thủ kho ĐÃ DUYỆT (docstatus 1) theo NGÀY NHẬN `ngay`, số = Σ so_dem của dòng
+  (parenttype 'SX Phieu Nhap TP', parentfield 'dong') — đúng K11 của bc.api.kho_nhap (_nhap): tổng tháng và từng ngày
+  bằng màn Nhập TP (bộ thử so vi sai). Phiếu nháp (kể cả phiếu nháp Tết) và phiếu huỷ không phải nhập kho.
+- Chênh lệch = nhập kho − ghi hộp, theo mã — đúng dấu của sx.api.portal._vao_hop_vs_nhap_kho (bảng đối chiếu kho của
+  Quản lý): âm = đã ghi hộp mà chưa nhập kho (bình thường khi hàng còn ở xưởng), dương = kho nhận vượt số ghi (thường
+  ghi sót). sx cắt so_dem bằng cint; bc giữ số lẻ (flt, làm tròn 2 số lẻ MỘT lần lúc trả) — số nguyên thì trùng khớp.
+- Đơn vị: so_hop là HỘP, so_dem theo đơn vị kho của mã. Mã có đơn vị kho khác "Hộp" (kho_nhap.BOX_UOM; mã không còn
+  trong danh mục cũng tính là khác) vẫn liệt kê (khac_dvt) nhưng ra khỏi CẢ HAI vế của mọi tổng và mọi dòng ngày.
+- Dòng ghi hộp chưa chọn mã: vẫn là hộp → vào ghi hộp của ngày / tháng, không phiếu nào khớp được → hop_chua_ma (nằm
+  trong chua_nhap). Dòng phiếu không mã: không đối chiếu được, không cộng (như mã khác đơn vị).
+- Mã ẩn: chỉ mất khỏi danh sách theo mã; mọi tổng và số đếm mã giữ nguyên.
+- "Hiện tại" (tính tới HÔM NAY, không theo tháng chọn), mỗi khối một safe_block:
+  cho_nhap = kho_nhap._vao_hop (port khotp.tran_con_lai / cho_nhan: 30 ngày tới hôm nay, trừ phiếu nháp Tết) — cùng số
+  với khối "đã vào hộp chưa nhập kho" của màn Nhập TP; cho_duyet = kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ
+  kho); no_vao_hop = sổ SX No Vao Hop sx tự ghi khi phiếu nhận vượt số ghi (khotp.ghi_no_vao_hop /
+  doi_soat_no_vao_hop / so_no_vao_hop): dòng đang mở trang_thai 'Chờ chấm' còn con_lai > EPS, gom theo mã, tuổi tính
+  từ ngày nợ cũ nhất (đọc mềm — thiếu bảng / cột → khối đó available False).
+- Riêng tư như trên: chỉ mã, ngày, số lượng. Không đọc người lập / duyệt / xử lý, chú thích tự do, lý do, tên chứng
+  từ; không trả tên phiếu hay tên dòng nợ.
 """
 
 from __future__ import annotations
@@ -59,10 +82,13 @@ from bc.api._common import (
 	to_cartons,
 	traditional_group,
 )
-from bc.api.kho_nhap import _months_back, _ym
+from bc.api.kho_nhap import BOX_UOM, EPS, LIST_MAX, SO_NGAY_TRAN, _cho_duyet, _months_back, _vao_hop, _ym
 from bc.api.sx import _group_key
 
 DOCTYPES = ("SX Ngay San Xuat", "SX Bang Vao Hop", "SX Bang Vao Hop Item")
+NHAP_DOCTYPES = ("SX Phieu Nhap TP", "SX Phieu Nhap TP Item")   # phiếu nhập kho thành phẩm của sx
+NO_VH = "SX No Vao Hop"                                         # sổ nợ vào hộp của sx (khotp, D101)
+CHO_CHAM = "Chờ chấm"                                           # SX No Vao Hop.trang_thai đang mở
 GROUP_ORDER = ("tet", "traditional", "khac")
 MIN_DATE = datetime.date(2000, 1, 1)
 _NGAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -385,3 +411,204 @@ def get_day(date=None, refresh=0, since=None):
 		return r if r.get("available") else {**empty, "error": True}
 
 	return run_cached("sx_hop.get_day", params, build, refresh)
+
+
+# ─── Ghi hộp so với nhập kho (get_compare) — xem docstring module ───────────
+def _on_compare() -> bool:
+	"""sx có mặt, đủ ba bảng Ghi hộp và hai bảng phiếu nhập kho thành phẩm."""
+	return _on() and all(frappe.db.table_exists(d) for d in NHAP_DOCTYPES)
+
+
+def _r2(v) -> float:
+	"""Làm tròn 2 số lẻ một lần lúc trả (+ 0.0: không bao giờ trả −0.0)."""
+	return round(flt(v), 2) + 0.0
+
+
+def _nhap_by_day_item(f, t) -> list:
+	"""[{d, item, qty}] — Σ so_dem của phiếu nhập ĐÃ DUYỆT theo (ngày nhận, mã) trong [f, t] (như kho_nhap._nhap)."""
+	return frappe.db.sql(
+		"""SELECT p.ngay AS d, IFNULL(i.item, '') AS item, SUM(IFNULL(i.so_dem, 0)) AS qty
+		FROM `tabSX Phieu Nhap TP` p
+		JOIN `tabSX Phieu Nhap TP Item` i
+			ON i.parent = p.name AND i.parenttype = 'SX Phieu Nhap TP' AND i.parentfield = 'dong'
+		WHERE p.docstatus = 1 AND p.ngay BETWEEN %(f)s AND %(t)s
+		GROUP BY p.ngay, IFNULL(i.item, '')""", {"f": f, "t": t}, as_dict=True)
+
+
+def _empty_compare(meta: dict, error: bool = False) -> dict:
+	off = {"available": False}
+	out = {"available": False, "meta": meta, "total": {}, "days": [], "items": [], "cho_nhap": dict(off),
+		"cho_duyet": dict(off), "no_vao_hop": dict(off)}
+	if error:
+		out["error"] = True
+	return out
+
+
+def _compare(p: dict) -> dict:
+	f, t = p["f"], p["t"]
+	hop_raw = _by_day_item(f, t)
+	nhap_raw = _nhap_by_day_item(f, t)
+	codes = {r.item for r in hop_raw if r.item} | {r.item for r in nhap_raw if r.item}
+	info = _items(codes)
+	uoms = {c: x.stock_uom for c, x in kho.item_info(codes).items()}
+
+	def box(code) -> bool:
+		return uoms.get(code) == BOX_UOM
+
+	# Theo mã (mọi mã, kể cả mã ẩn / khác đơn vị) và theo ngày (chỉ phần so được: mã đơn vị Hộp + dòng chưa chọn mã)
+	g_items: dict = {}
+	per_day: dict = {}
+	hop_chua_ma = 0
+	for r in hop_raw:
+		d = _as_date(r.d)
+		x = per_day.setdefault(d, {"hop": 0, "nhap": 0.0})
+		if not r.item:
+			hop_chua_ma += _int(r.hop)
+			x["hop"] += _int(r.hop)
+			continue
+		g = g_items.setdefault(r.item, {"hop": 0, "nhap": 0.0, "ten": None})
+		g["hop"] += _int(r.hop)
+		g["ten"] = g["ten"] or r.ten
+		if box(r.item):
+			x["hop"] += _int(r.hop)
+	for r in nhap_raw:
+		d = _as_date(r.d)
+		x = per_day.setdefault(d, {"hop": 0, "nhap": 0.0})
+		if not r.item:
+			continue  # dòng phiếu không mã: không đối chiếu được
+		g = g_items.setdefault(r.item, {"hop": 0, "nhap": 0.0, "ten": None})
+		g["nhap"] += flt(r.qty)
+		if box(r.item):
+			x["nhap"] += flt(r.qty)
+
+	# Tổng (gồm mã ẩn) — số đếm mã chỉ trên mã có số
+	tot = {"hop": hop_chua_ma, "nhap": 0.0, "chua_nhap": float(hop_chua_ma), "so_ma_chua_nhap": 0, "nhap_vuot": 0.0,
+		"so_ma_nhap_vuot": 0, "so_ma_khop": 0, "ma_khac_dvt": 0, "hop_khac_dvt": 0}
+	items = []
+	for code, g in g_items.items():
+		if g["hop"] == 0 and abs(g["nhap"]) <= EPS:
+			continue
+		lech = g["nhap"] - g["hop"]
+		khac = not box(code)
+		if khac:
+			tot["ma_khac_dvt"] += 1
+			tot["hop_khac_dvt"] += g["hop"]
+		else:
+			tot["hop"] += g["hop"]
+			tot["nhap"] += g["nhap"]
+			if lech < -EPS:
+				tot["chua_nhap"] += -lech
+				tot["so_ma_chua_nhap"] += 1
+			elif lech > EPS:
+				tot["nhap_vuot"] += lech
+				tot["so_ma_nhap_vuot"] += 1
+			else:
+				tot["so_ma_khop"] += 1
+		items.append({**_describe(code, g, info), "uom": uoms.get(code), "khac_dvt": khac, "hop": g["hop"],
+			"nhap": _r2(g["nhap"]), "lech": _r2(lech), "_lech": lech})
+	items = drop_hidden(items)
+	items.sort(key=lambda x: (x["khac_dvt"], -abs(x["_lech"]), -x["hop"], x["item_code"]))  # thứ tự sx: |lệch| lớn trước
+	for x in items:
+		del x["_lech"]
+	lech = tot["nhap"] - tot["hop"]
+	total = {"hop": tot["hop"], "nhap": _r2(tot["nhap"]), "lech": _r2(lech),
+		"lech_pct": round(lech / tot["hop"] * 100, 1) + 0.0 if tot["hop"] else None,
+		"chua_nhap": _r2(tot["chua_nhap"]), "so_ma_chua_nhap": tot["so_ma_chua_nhap"],
+		"nhap_vuot": _r2(tot["nhap_vuot"]), "so_ma_nhap_vuot": tot["so_ma_nhap_vuot"], "so_ma_khop": tot["so_ma_khop"],
+		"hop_chua_ma": hop_chua_ma, "ma_khac_dvt": tot["ma_khac_dvt"], "hop_khac_dvt": tot["hop_khac_dvt"]}
+
+	# Từng ngày lịch, luỹ kế từ `from`; trả mới nhất trước (như get_overview.days)
+	days, luy_ke = [], 0.0
+	for d in _days(f, t):
+		x = per_day.get(d)
+		hop = x["hop"] if x else 0
+		nhap = x["nhap"] if x else 0.0
+		luy_ke += nhap - hop
+		days.append({"date": iso(d), "weekday": d.weekday(), "hop": hop, "nhap": _r2(nhap), "lech": _r2(nhap - hop),
+			"luy_ke": _r2(luy_ke), "co": x is not None})
+	days.reverse()
+	return {"available": True, "total": total, "days": days, "items": items}
+
+
+def _cho_nhap(p: dict) -> dict:
+	"""kho_nhap._vao_hop rút gọn: cùng con số với khối "đã vào hộp chưa nhập kho" của màn Nhập TP; chỉ dòng đơn vị Hộp."""
+	v = _vao_hop(p)
+	if not v.get("available"):
+		return {"available": False}
+	rows = [r for r in v["rows"] if not r.get("khac_dvt")][:LIST_MAX]
+	info = kho.item_info([r["item_code"] for r in rows])
+	return {"available": True, "from": v["from"], "to": v["to"], "so_ngay": v["so_ngay"], "qty": _r2(v["qty"]),
+		"items": v["items"],
+		"rows": [{"item_code": r["item_code"], "item_name": (info.get(r["item_code"]) or {}).get("item_name") or r["item_code"],
+			"short_name": r["short_name"], "qty": _r2(r["qty"])} for r in rows]}
+
+
+def _cho_duyet_gon(p: dict) -> dict:
+	"""kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ kho duyệt) — chỉ số đếm, không danh sách, không tên phiếu."""
+	v = _cho_duyet(p)
+	if not v.get("available"):
+		return {"available": False}
+	return {"available": True, **{k: v[k] for k in ("count", "count_tet", "qty", "uom", "oldest_age_days")}}
+
+
+def _no_vao_hop(p: dict) -> dict:
+	"""Nợ vào hộp đang mở (SX No Vao Hop 'Chờ chấm', con_lai > EPS) gom theo mã — như sx khotp.so_no_vao_hop."""
+	if not frappe.db.table_exists(NO_VH) or not all(frappe.db.has_column(NO_VH, c) for c in
+			("item", "con_lai", "ngay", "trang_thai")):
+		return {"available": False}
+	today = p["today"]
+	raw = frappe.db.sql(
+		"""SELECT IFNULL(nv.item, '') AS item, SUM(IFNULL(nv.con_lai, 0)) AS qty, COUNT(*) AS so_dong, MIN(nv.ngay) AS ngay
+		FROM `tabSX No Vao Hop` nv
+		WHERE nv.trang_thai = %(cho)s AND IFNULL(nv.con_lai, 0) > %(eps)s
+		GROUP BY IFNULL(nv.item, '')""", {"cho": CHO_CHAM, "eps": EPS}, as_dict=True)
+	info = kho.item_info({r.item for r in raw if r.item})
+	rows = []
+	for r in raw:
+		ngay = _as_date(r.ngay) if r.ngay else today
+		it = info.get(r.item) or {}
+		rows.append({"item_code": r.item, "item_name": it.get("item_name") or r.item,
+			"short_name": it.get("short_name") or r.item, "qty": flt(r.qty), "so_dong": cint(r.so_dong), "ngay": ngay,
+			"age_days": max((today - ngay).days, 0)})
+	oldest = min((x["ngay"] for x in rows), default=None)
+	qty = sum(x["qty"] for x in rows)
+	lst = drop_hidden(rows)
+	lst.sort(key=lambda x: (-x["age_days"], -x["qty"], x["item_code"]))
+	return {"available": True, "count": sum(x["so_dong"] for x in rows), "so_ma": len(rows), "qty": _r2(qty),
+		"oldest_date": iso(oldest), "oldest_age_days": max((today - oldest).days, 0) if oldest else None,
+		"rows": [{**x, "qty": _r2(x["qty"]), "ngay": iso(x["ngay"])} for x in lst[:LIST_MAX]]}
+
+
+@frappe.whitelist()
+def get_compare(thang=None, refresh=0):
+	"""Ghi hộp so với nhập kho của tháng `thang` ('YYYY-MM', mặc định tháng này, cắt ở hôm nay) + ba số tồn đọng tính
+	tới hôm nay — xem docstring module (phần GHI HỘP SO VỚI NHẬP KHO).
+
+	{available, meta: {thang, from, to, as_of, sx, so_ngay_cho},
+	 total: {hop, nhap, lech, lech_pct, chua_nhap, so_ma_chua_nhap, nhap_vuot, so_ma_nhap_vuot, so_ma_khop, hop_chua_ma,
+	         ma_khac_dvt, hop_khac_dvt} — chỉ phần so được; lech = nhap − hop = nhap_vuot − chua_nhap,
+	 days: [{date, weekday (T2 = 0), hop, nhap, lech, luy_ke, co}] — mỗi ngày từ `to` lùi về `from` (mới nhất trước),
+	 items: [{item_code, item_name, short_name, group, uom, khac_dvt, hop, nhap, lech}] — khác đơn vị cuối, |lệch| giảm dần,
+	 cho_nhap: {available, from, to, so_ngay, qty, items, rows: [{item_code, item_name, short_name, qty}]},
+	 cho_duyet: {available, count, count_tet, qty, uom, oldest_age_days},
+	 no_vao_hop: {available, count, so_ma, qty, oldest_date, oldest_age_days,
+	              rows: [{item_code, item_name, short_name, qty, so_dong, ngay, age_days}]}}"""
+	_guard("san-xuat")
+	f, t, label = kho.month_period(thang)
+	today = kho.today()
+
+	def build():
+		sx = _on_compare()
+		meta = {"thang": label, "from": iso(f), "to": iso(t), "as_of": iso(today), "sx": sx, "so_ngay_cho": SO_NGAY_TRAN}
+		if not sx:
+			return _empty_compare(meta)
+		p = {"f": f, "t": t, "today": today}
+		r = safe_block("sx_hop.get_compare", _compare, p)
+		out = {"available": True, "meta": meta, **{k: r[k] for k in ("total", "days", "items")}} if r.get("available") \
+			else _empty_compare(meta, error=True)
+		out["cho_nhap"] = safe_block("sx_hop.get_compare.cho_nhap", _cho_nhap, p)
+		out["cho_duyet"] = safe_block("sx_hop.get_compare.cho_duyet", _cho_duyet_gon, p)
+		out["no_vao_hop"] = safe_block("sx_hop.get_compare.no_vao_hop", _no_vao_hop, p)
+		return out
+
+	return run_cached("sx_hop.get_compare", {"t": label, "d": iso(today)}, build, refresh)
