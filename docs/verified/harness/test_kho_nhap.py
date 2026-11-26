@@ -362,7 +362,10 @@ def bc_tran():
 	from bc.api import kho_nhap
 	v = run()["vao_hop"]
 	raw: dict = {}
-	kho_nhap._vao_hop({"today": frappe.utils.getdate(HOM_NAY)}, raw)
+	try:
+		kho_nhap._vao_hop({"today": frappe.utils.getdate(HOM_NAY)}, raw)
+	except Exception as e:  # noqa: BLE001 — khối lỗi: kiểm bên dưới đỏ (không làm gãy cả bộ thử)
+		raw = {"box": {"<lỗi>": 0.0}, "loi": repr(e)}
 	allc = {r["item_code"]: r["qty"] for r in v.get("rows") or []}
 	allc.update({k_: round(q, 3) for k_, q in (raw.get("box") or {}).items()})
 	return v, allc
