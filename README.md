@@ -148,9 +148,35 @@ lai, xem dưới). Nhóm menu **Sản xuất**, đứng trước SX Hàng Tết.
   thể mai mới nhập kho, hộp chưa nhập vẫn nằm ở "đã vào hộp chưa nhập kho" của Nhập TP).
 - **Riêng tư**: chỉ số hộp theo ngày × mã × loại dòng. Không đọc người làm, người ghi, đơn giá, thành tiền, bảng ăn ca,
   người chốt (bộ thử tĩnh chặn trên SQL của module).
+- **Ghi hộp so với nhập kho** (khối giữa "Theo ngày" và "Theo mã", `get_compare`, cùng tháng chọn; tải song song, hỏng
+  riêng — khối này lỗi không xoá phần trên và ngược lại):
+  - **Ghi hộp** = đúng số hộp ở trên, theo **ngày sản xuất**. **Nhập kho** = phiếu nhập thành phẩm **thủ kho đã duyệt**
+    (`SX Phieu Nhap TP` docstatus 1) theo **ngày nhận**, số = Σ số đếm của dòng — tổng tháng và từng ngày bằng đúng màn
+    Kho › Nhập TP (bộ thử so vi sai). Phiếu nháp (kể cả phiếu nháp Tết đang giữ hàng) và phiếu huỷ chưa phải nhập kho.
+  - **Chênh lệch = nhập kho − ghi hộp**, cùng dấu với bảng đối chiếu kho của Quản lý trên app sx
+    (`sx.api.portal._vao_hop_vs_nhap_kho`, bộ thử so vi sai từng mã). Âm = đã ghi hộp mà chưa nhập kho (bình thường khi
+    hàng còn ở xưởng); dương = kho nhận nhiều hơn số ghi (thường là ghi sót). Màn luôn ghi dấu + chữ ("−120 hộp · chưa
+    nhập kho", "+30 hộp · nhập vượt số ghi", "0 · khớp"), không chỉ tô màu. sx cắt số đếm lẻ thành số nguyên; bc giữ 2
+    số lẻ — số nguyên thì hai bên trùng.
+  - **Từng ngày lệch là thường**: hàng ghi hôm nay mai mới nhập, hàng ghi cuối tháng trước nhập đầu tháng này — xem cột
+    **Luỹ kế** (cộng dồn chênh lệch từ ngày 1). Bảng theo ngày chỉ hiện ngày có ghi hộp hoặc có phiếu.
+  - **Đơn vị**: ghi hộp đếm hộp, phiếu nhập đếm theo đơn vị kho của mã. Mã có đơn vị kho khác "Hộp" (hoặc không còn
+    trong danh mục) vẫn liệt kê với nhãn **ĐVT khác** (cột chênh lệch "—") nhưng ra khỏi cả hai vế của mọi tổng và mọi
+    dòng ngày. Hộp **chưa chọn mã** vẫn vào ghi hộp, không phiếu nào khớp được nên nằm trong phần "chưa nhập kho"; dòng
+    phiếu không mã không cộng. Ghi chú dưới bảng nói số hộp / số mã bị loại khi có.
+  - Thẻ **Chưa nhập kho** / **Nhập vượt số ghi** = cộng phần âm / phần dương theo từng mã (nên lệch tổng = nhập vượt −
+    chưa nhập), kèm số mã; chip lọc bảng theo mã theo hai nhóm đó.
+  - Dải **Hiện tại** (tới hôm nay, KHÔNG theo tháng chọn), mỗi số tính riêng (một số hỏng thì hiện "—"): **Đã ghi hộp,
+    chưa nhập kho** = khối "đã vào hộp chưa nhập kho" của Nhập TP (`kho_nhap._vao_hop`, port `sx.api.khotp.tran_con_lai`
+    / `cho_nhan`: 30 ngày gần nhất, trừ phần phiếu nháp Tết), **Phiếu nhập chờ thủ kho duyệt** = khối phiếu chờ duyệt của
+    Nhập TP (`kho_nhap._cho_duyet`), **Kho nhận vượt số ghi hộp** = sổ nợ vào hộp sx tự ghi khi phiếu nhận vượt số chấm
+    (`SX No Vao Hop` đang "Chờ chấm", như `khotp.so_no_vao_hop`; thiếu bảng → "—"). Hai số đầu bấm sang Nhập TP. Phần
+    tháng hỏng (`error: true`) thì vẫn hiện dải này.
+  - Site không cài sx → khối ẩn (phần trên đã báo); có sx mà thiếu bảng phiếu nhập → "Chưa đối chiếu được"; tháng không
+    có cả hai → "Tháng này chưa có số ghi hộp lẫn nhập kho". Không đọc người lập / duyệt, ghi chú, lý do, tên phiếu.
 - Site không cài sx / thiếu bảng → "Chưa có số liệu ghi hộp" (không lỗi, không Error Log); tháng không có số → "Chưa có
-  số ghi hộp trong tháng này". Ẩn / hiện được như mọi mảng (`_guard("san-xuat")`). Trợ lý AI đọc khối tháng này
-  (`san-xuat.overview`, nhóm "Kho & SX"; hỏi đáp nhận `thang`), chưa có quy tắc riêng. Gói số cắt danh sách còn 30
+  số ghi hộp trong tháng này". Ẩn / hiện được như mọi mảng (`_guard("san-xuat")`). Trợ lý AI đọc hai khối tháng này
+  (`san-xuat.overview` và `san-xuat.compare`, nhóm "Kho & SX"; hỏi đáp nhận `thang` ở cả hai), chưa có quy tắc riêng. Gói số cắt danh sách còn 30
   phần tử đầu — vì `days` mới nhất trước, tháng 31 ngày chỉ mất ngày 1, không mất hôm nay. Hỏi đáp từ chối `thang` sau
   tháng này (mọi khối theo tháng: Báo cáo sản xuất, Kiểm kê, Nhập TP, Vận chuyển, ATTP báo cáo) — các khối đó lặng lẽ trả
   tháng này nên mô hình sẽ đọc nhầm số tháng này thành số tháng hỏi.
@@ -566,7 +592,7 @@ vẫn hỏi được bằng `xem_mang`, chỉ không có SQL.
 
 **Deploy P3.** `migrate` thêm ba field trên (điền `ai_qa_per_day` = 20, `ai_qa_enabled` để tắt) — không đổi gì trên site
 cho tới khi quản trị bật; `bench build --app bc && bench restart` (dấu build lúc giao P3 là `bc-p9-r1`; bản hiện tại
-`bc-p10-r1` — gõ `BC.build` trong Console phải ra đúng chuỗi của bản đang chạy). Bật: đặt `ai_qa_model` nếu muốn model khác lượt ngày, khai giá model đó ở `ai_prices`, tick
+`bc-p10-r2` — gõ `BC.build` trong Console phải ra đúng chuỗi của bản đang chạy). Bật: đặt `ai_qa_model` nếu muốn model khác lượt ngày, khai giá model đó ở `ai_prices`, tick
 `ai_qa_enabled`; người xem thấy nút "Hỏi trợ lý" ở `#/tro-ly`. Worker hàng `default` phải đang chạy (`bench doctor`).
 
 **Khác `docs/SPEC_bc_ai_p3.md`** (đã cân nhắc): `get_qa.enabled` chỉ đúng khi bật **và** có khoá Claude dùng được;
@@ -601,10 +627,10 @@ bench): sản xuất 54 (gồm kiểm kê đưa về 0 rồi nhập lại), kên
 / `so_lieu` của sx thật), ngày Tết 6 + 5, vận chuyển 65 (lịch xe gọi code vanchuyen thật), nhân sự 58
 (so vi sai với cảnh báo của ns thật), ẩn / hiện mảng 40 + 30 giao diện (vai quản trị + người xem), **Kho**: tồn kho
 120, hạn dùng 88, kiểm kê 73, nhập TP 99, nền dùng chung 39 + giao diện 4 màn trên sổ kho gộp 113 / 70 (+ 72 / 66 / 52
-lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gian thực trên sổ kho 14; **Báo cáo sản xuất** 97
-(so vi sai với lịch Ghi hộp của sx thật) + giao diện 268 (+ 10 lượt site không cài sx); giao diện Playwright chung 144
+lượt cache, chỉ còn lô thu hồi, sổ rỗng) / 126 / 107 và Thời gian thực trên sổ kho 14; **Báo cáo sản xuất** 148
+(so vi sai với lịch Ghi hộp và bảng đối chiếu kho của sx thật, với màn Nhập TP) + giao diện 576 (+ 12 lượt site không cài sx); giao diện Playwright chung 144
 (desktop + điện thoại), tab mở trước deploy 6. **Trợ lý AI** (mô hình giả, không bộ nào ra mạng): dựng lời + soát số
-924, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
+926, mã giả khách / NCC 58, cửa gọi Claude + trần chi + đề bài 346, lưu trữ + thu số 175, quy tắc 675 (kinh doanh 189,
 kho 182, công nợ 126, vận chuyển 116, nhân sự + ATTP 62), bộ dò hệ thống 75, API 174, một lượt chạy trọn vẹn 274, luật
 tĩnh 65, giao diện hai màn 268 + 183 (lượt "đã cũ"); P2: nền dùng chung 123, cửa gọi OpenAI 140, phản biện 84, nhóm
 Kiểm soát 98, chỉ số lệch chuẩn 69, bản tin tuần / tháng 157, đầu-cuối P2 (Claude + OpenAI giả, ẩn mảng, AI tắt) 58; P3 hỏi đáp: `llm.chat` 120, bộ soát SQL + kết nối chỉ đọc trên MariaDB thật 141, máy hỏi đáp 183, đầu-cuối P3 (request thật, cửa HTTP giả, tài khoản chỉ đọc thật, ẩn mảng, lỗi, giới hạn, tắt) 105, giao diện `#/hoi-dap` 65. Mỗi bản sửa đều đã thử phá (đưa code về bản lỗi → test phải đỏ). Chạy:
@@ -620,7 +646,7 @@ bench --site a.rongvanghoanggia.com install-app bc
 bench --site a.rongvanghoanggia.com migrate && bench build --app bc && bench restart
 ```
 
-Dấu build hiện tại **`bc-p10-r1`** (thêm màn Báo cáo sản xuất): sau `bench build` + `restart`, gõ `BC.build` trong
+Dấu build hiện tại **`bc-p10-r2`** (Báo cáo sản xuất thêm khối Ghi hộp so với nhập kho): sau `bench build` + `restart`, gõ `BC.build` trong
 Console của `/bc` phải ra đúng chuỗi này (khác là trình duyệt / CDN còn shell cũ). Màn mới không cần `migrate` (chỉ đọc
 bảng sx có sẵn); site chưa cài sx thì màn báo "chưa có số liệu".
 
