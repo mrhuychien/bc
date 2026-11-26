@@ -836,7 +836,7 @@ if __name__ == "__main__":
 	drop_column("SX Bang Vao Hop Item", "khoan_chung")
 	u = cmp_run()
 	c("lỗi bất ngờ ở phần tháng: available False + error, Error Log; ba khối hiện tại vẫn tính riêng", (u["available"],
-		u.get("error"), u["total"], u["days"], u["items"], u["cho_nhap"]["qty"], u["cho_duyet"]["count"], u["no_vao_hop"]["qty"])
+		u.get("error"), u["total"], u["days"], u["items"], u["cho_nhap"].get("qty"), u["cho_duyet"].get("count"), u["no_vao_hop"].get("qty"))
 		== (False, True, {}, [], [], 10.75, 2, 48.5) and any("bc.sx_hop.get_compare" in str(x) for x in frappe.LOGGED),
 		(u.get("error"), frappe.LOGGED[-1:]))
 	frappe.LOGGED.clear()
