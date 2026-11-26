@@ -711,6 +711,7 @@
 .sh-now-tile { position: relative; display: block; color: inherit; text-decoration: none; }
 a.sh-now-tile:hover { box-shadow: var(--bc-shadow-md); }
 .sh-now-go { position: absolute; top: .65rem; right: .6rem; font-size: .7rem; color: var(--bc-text-3); }
+.sh-cmp-month { font-size: .8rem; font-weight: 700; color: var(--bc-text-2); margin-bottom: .45rem; }
 .sh-cmp-sub { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--bc-text-3); margin: 1rem 0 .4rem; }
 .sh-cmp-chips { margin-bottom: .5rem; flex-wrap: wrap; overflow: visible; }
 #sh-cmp-item-table .bc-table td:first-child { white-space: normal; min-width: 9rem; max-width: 16rem; }
@@ -737,7 +738,26 @@ a.sh-now-tile:hover { box-shadow: var(--bc-shadow-md); }
     .sh-day-table tr.sh-detail-row { background: #faf8ff; }
     .sh-day-table tr.bc-row-total { background: var(--bc-surface-2); }
     .sh-day-table tr.bc-row-total td:last-child { display: none; }
-    .sh-cmp-days tr { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* Đối chiếu: 2 cột (4 cột làm số 6 chữ số có phần lẻ — 987.670,99 — đè sang cột bên); số dài vẫn xuống dòng, không đè. */
+    .sh-cmp-days tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sh-cmp-days tr td { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     .sh-cmp-days tr td[data-label]::before { white-space: nowrap; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
     .sh-cmp-days tr.bc-row-total td:last-child { display: none; }
+    /* Bảng đối chiếu theo mã: thẻ như bảng ngày — tên ở hàng đầu, Ghi hộp · Nhập kho · Chênh lệch có nhãn, luôn thấy cột
+       Chênh lệch (bảng 4 cột rộng hơn màn, cột đó bị đẩy khuất mà không có gì báo). */
+    #sh-cmp-item-table .bc-table-scroll { overflow: visible; }
+    #sh-cmp-item-table .bc-table, #sh-cmp-item-table .bc-table tbody { display: block; width: 100%; min-width: 0; }
+    #sh-cmp-item-table .bc-table thead { display: none; }
+    #sh-cmp-item-table .bc-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem .5rem;
+        padding: .55rem .65rem; border: 1px solid var(--bc-border); border-radius: var(--bc-radius-sm); margin-bottom: .45rem;
+        background: var(--bc-surface); }
+    #sh-cmp-item-table .bc-table tr td { display: block; position: static; border: 0; padding: 0; text-align: left;
+        white-space: normal; overflow-wrap: anywhere; background: transparent; min-width: 0; max-width: none; box-shadow: none;
+        font-variant-numeric: tabular-nums; }
+    #sh-cmp-item-table .bc-table tr td:first-child { grid-column: 1 / -1; min-width: 0; max-width: none; }
+    #sh-cmp-item-table .bc-table tr td:nth-child(n+2)::before { display: block; font-size: .66rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0; color: var(--bc-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #sh-cmp-item-table .bc-table tr td:nth-child(2)::before { content: "Ghi hộp"; }
+    #sh-cmp-item-table .bc-table tr td:nth-child(3)::before { content: "Nhập kho"; }
+    #sh-cmp-item-table .bc-table tr td:nth-child(4)::before { content: "Chênh lệch"; }
 }

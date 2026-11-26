@@ -159,19 +159,29 @@ lai, xem dưới). Nhóm menu **Sản xuất**, đứng trước SX Hàng Tết.
     nhập kho", "+30 hộp · nhập vượt số ghi", "0 · khớp"), không chỉ tô màu. sx cắt số đếm lẻ thành số nguyên; bc giữ 2
     số lẻ — số nguyên thì hai bên trùng.
   - **Từng ngày lệch là thường**: hàng ghi hôm nay mai mới nhập, hàng ghi cuối tháng trước nhập đầu tháng này — xem cột
-    **Luỹ kế** (cộng dồn chênh lệch từ ngày 1). Bảng theo ngày chỉ hiện ngày có ghi hộp hoặc có phiếu.
+    **Luỹ kế** (cộng dồn chênh lệch từ ngày 1). Bảng theo ngày chỉ hiện ngày có dòng **so được** (hộp hoặc phiếu của mã
+    đơn vị Hộp, hộp chưa chọn mã) — ngày chỉ có mã khác đơn vị / dòng phiếu không mã không thành dòng "0 · 0 · 0".
+    Ngay trên ba thẻ ghi tháng của khối ("Tháng MM/YYYY · từ … đến …"); trang tổng lỗi thì ô chọn tháng vẫn giữ tháng vừa
+    chọn — ô chọn, khối và nút làm mới luôn cùng một tháng.
   - **Đơn vị**: ghi hộp đếm hộp, phiếu nhập đếm theo đơn vị kho của mã. Mã có đơn vị kho khác "Hộp" (hoặc không còn
-    trong danh mục) vẫn liệt kê với nhãn **ĐVT khác** (cột chênh lệch "—") nhưng ra khỏi cả hai vế của mọi tổng và mọi
-    dòng ngày. Hộp **chưa chọn mã** vẫn vào ghi hộp, không phiếu nào khớp được nên nằm trong phần "chưa nhập kho"; dòng
+    trong danh mục) vẫn liệt kê với nhãn **ĐVT khác** (cột chênh lệch "—"; API trả `lech: null` để Trợ lý AI không trích
+    "Kg trừ hộp" như lệch hộp) nhưng ra khỏi cả hai vế của mọi tổng và mọi dòng ngày. Hộp **chưa chọn mã** vẫn vào ghi hộp, không phiếu nào khớp được nên nằm trong phần "chưa nhập kho"; dòng
     phiếu không mã không cộng. Ghi chú dưới bảng nói số hộp / số mã bị loại khi có.
   - Thẻ **Chưa nhập kho** / **Nhập vượt số ghi** = cộng phần âm / phần dương theo từng mã (nên lệch tổng = nhập vượt −
-    chưa nhập), kèm số mã; chip lọc bảng theo mã theo hai nhóm đó.
+    chưa nhập), kèm số mã; chip lọc bảng theo mã theo hai nhóm đó. Mã xếp nhóm theo lệch **đã làm tròn 2 số lẻ** — đúng số
+    trên bảng: lệch 0,004 là "0 · khớp" ở thẻ, bảng lẫn chip (số mã ở thẻ = số đếm ở chip); mã không có hộp mà nhập làm
+    tròn 0 không thành dòng. Mọi số lượng làm tròn 2 số lẻ một lần từ số gốc (cả hai số "hiện tại" lấy từ Nhập TP: Nhập TP
+    hiện 3 số lẻ, ở đây 2 số lẻ từ cùng số gốc — 0,3749 là 0,37, không 0,38).
+  - Trên điện thoại bảng ngày đối chiếu là thẻ 2 cột (số 6 chữ số có phần lẻ không đè nhau), bảng theo mã cũng thành thẻ
+    (tên ở hàng đầu, Ghi hộp · Nhập kho · Chênh lệch có nhãn — cột chênh lệch không bị đẩy khuất).
   - Dải **Hiện tại** (tới hôm nay, KHÔNG theo tháng chọn), mỗi số tính riêng (một số hỏng thì hiện "—"): **Đã ghi hộp,
     chưa nhập kho** = khối "đã vào hộp chưa nhập kho" của Nhập TP (`kho_nhap._vao_hop`, port `sx.api.khotp.tran_con_lai`
     / `cho_nhan`: 30 ngày gần nhất, trừ phần phiếu nháp Tết), **Phiếu nhập chờ thủ kho duyệt** = khối phiếu chờ duyệt của
     Nhập TP (`kho_nhap._cho_duyet`), **Kho nhận vượt số ghi hộp** = sổ nợ vào hộp sx tự ghi khi phiếu nhận vượt số chấm
-    (`SX No Vao Hop` đang "Chờ chấm", như `khotp.so_no_vao_hop`; thiếu bảng → "—"). Hai số đầu bấm sang Nhập TP. Phần
-    tháng hỏng (`error: true`) thì vẫn hiện dải này.
+    (`SX No Vao Hop` đang "Chờ chấm", như `khotp.so_no_vao_hop`; thiếu bảng → "—"). Số nợ theo đơn vị kho của từng mã
+    (sx ghi nợ cả mã Kg / Gói) nên ô này chỉ cộng mã đơn vị **Hộp** (số, số mã, lâu nhất) và nói thêm "n mã đơn vị khác
+    không cộng" — như sx `so_no_vao_hop` không bao giờ cộng lẫn mã. Phiếu chờ duyệt lẫn đơn vị → "nhiều đơn vị kho, không
+    cộng" thay vì một số hộp. Hai số đầu bấm sang Nhập TP. Phần tháng hỏng (`error: true`) thì vẫn hiện dải này.
   - Site không cài sx → khối ẩn (phần trên đã báo); có sx mà thiếu bảng phiếu nhập → "Chưa đối chiếu được"; tháng không
     có cả hai → "Tháng này chưa có số ghi hộp lẫn nhập kho". Không đọc người lập / duyệt, ghi chú, lý do, tên phiếu.
 - Site không cài sx / thiếu bảng → "Chưa có số liệu ghi hộp" (không lỗi, không Error Log); tháng không có số → "Chưa có

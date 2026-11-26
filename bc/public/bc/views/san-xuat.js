@@ -323,10 +323,15 @@ function cmpNow(c) {
     const na = (why) => [dash, why ? `<span class="bc-muted">${escapeHtml(why)}</span>` : ''];
     const [v1, s1] = v.available ? [`${qn(v.qty)} hộp`, `${fmtNum(v.items)} mã · ${fmtNum(v.so_ngay ?? c.meta?.so_ngay_cho ?? 30)} ngày gần nhất`]
         : na(v.error ? 'Không tính được' : '');
-    const [v2, s2] = q.available ? [`${fmtNum(q.count)} phiếu`, `${qn(q.qty)} ${escapeHtml(q.uom || 'hộp')}${q.count_tet ? ` · ${fmtNum(q.count_tet)} phiếu Tết` : ''}`]
+    // Phiếu nháp lẫn đơn vị kho (Hộp + Kg…): máy chủ trả qty null như màn Nhập TP — nói thẳng, không hiện "— hộp".
+    const q2 = q.qty === null || q.qty === undefined ? 'nhiều đơn vị kho, không cộng' : `${qn(q.qty)} ${escapeHtml(q.uom || 'hộp')}`;
+    const [v2, s2] = q.available ? [`${fmtNum(q.count)} phiếu`, `${q2}${q.count_tet ? ` · ${fmtNum(q.count_tet)} phiếu Tết` : ''}`]
         : na(q.error ? 'Không tính được' : '');
-    const [v3, s3] = n.available ? [`${qn(n.qty)} hộp`, n.count
-        ? `${fmtNum(n.so_ma)} mã · lâu nhất ${fmtNum(n.oldest_age_days)} ngày` : 'Không có khoản nào đang chờ chấm']
+    // Nợ vào hộp: máy chủ chỉ cộng mã đơn vị Hộp (con_lai theo đơn vị kho của từng mã); mã khác đơn vị chỉ được nhắc.
+    const khac = n.so_ma_khac_dvt ? ` · ${fmtNum(n.so_ma_khac_dvt)} mã đơn vị khác không cộng` : '';
+    const [v3, s3] = n.available ? [`${qn(n.qty)} hộp`, (n.count
+        ? `${fmtNum(n.so_ma)} mã · lâu nhất ${fmtNum(n.oldest_age_days)} ngày`
+        : `Không có khoản ${khac ? 'hộp ' : ''}nào đang chờ chấm`) + khac]
         : na(n.error ? 'Không tính được' : '');
     const asOf = c.meta?.as_of ? ` ${escapeHtml(fmtDate(c.meta.as_of))}` : '';
     return `<div class="sh-now" id="sh-cmp-now">
@@ -412,7 +417,9 @@ function cmpHtml(c) {
     if (empty) {
         return `${emptyState({ icon: '📭', title: 'Tháng này chưa có số ghi hộp lẫn nhập kho', message: `Tháng ${ym(c.meta.thang)}` })}${now}`;
     }
-    return `${cmpTiles(c)}${now}
+    // Tháng của khối ghi ngay trên ba thẻ (từ meta của CHÍNH khối này) — không đọc nhầm sang tháng của ô chọn.
+    return `<div class="sh-cmp-month" id="sh-cmp-month">Tháng ${escapeHtml(ym(c.meta.thang))} · từ ${escapeHtml(fmtDate(c.meta.from))} đến ${escapeHtml(fmtDate(c.meta.to))}</div>
+        ${cmpTiles(c)}${now}
         <div class="sh-cmp-sub">Theo ngày</div>
         <div class="bc-chart-wrap" id="sh-cmp-wrap" style="height:220px"><canvas id="sh-cmp-chart"></canvas></div>
         <div class="bc-note sh-legend">Cột tím = ghi hộp, cột xanh = nhập kho, đường cam = luỹ kế chênh lệch; ngày <b class="sh-sun-txt">đỏ</b> là Chủ nhật.</div>
@@ -500,7 +507,7 @@ async function load(isCurrent, thang = state.thang, chon = false, refresh = fals
         if (!alive()) return;
         if (!d || !d.available || (d.meta && d.meta.sx === false)) {
             if (d?.meta?.thang) bindSwitcher(d.meta.thang, d.meta.as_of, '', isCurrent);
-            else bindSwitcher(state.thang, '', '', isCurrent);
+            else bindSwitcher(thang || state.thang, '', '', isCurrent);  // tháng VỪA chọn — cùng tháng khối đối chiếu đang tải
             // Chỉ nói "chưa cài" khi máy chủ báo đúng thế (meta.sx === false). error = sx có mà tính hỏng (cột đổi sau khi sx
             // nâng cấp…): máy chủ đã ghi Error Log — báo lỗi tải, không bảo lãnh đạo là nhà máy chưa có hệ thống.
             fill('sh-kpis', d?.meta?.sx === false
@@ -536,7 +543,9 @@ async function load(isCurrent, thang = state.thang, chon = false, refresh = fals
         }
     } catch (err) {
         if (!alive()) return;
-        bindSwitcher(state.thang, '', '', isCurrent);  // vẫn chọn lại được tháng — không kẹt ở màn lỗi
+        // Ô chọn giữ tháng VỪA chọn (không lùi về tháng tải được trước đó): khối đối chiếu tải song song đang hiện đúng tháng
+        // này, ↻ cũng tải lại tháng này — ô chọn, khối và nút luôn cùng một tháng.
+        bindSwitcher(thang || state.thang, '', '', isCurrent);  // vẫn chọn lại được tháng — không kẹt ở màn lỗi
         fill('sh-kpis', errorState(err));
         SECTIONS.slice(1).forEach((id) => fill(id, ''));
     }

@@ -236,6 +236,29 @@ async function cmpItemRows(page, rows, f, tag) {
     check(`${tag} ${rows.length} dòng = API (tên, nhóm, "ĐVT khác", ghi hộp, nhập kho, chênh lệch có dấu)`, !why, why);
 }
 
+/** Thẻ (dòng bảng dạng lưới) có ô đè nhau, ô tràn chữ (scrollWidth > clientWidth) hay ô ra ngoài màn → danh sách lỗi. */
+async function cardBad(page, sel) {
+    return page.evaluate((s) => {
+        const out = [];
+        for (const tr of document.querySelectorAll(s)) {
+            const tds = [...tr.children].filter((td) => getComputedStyle(td).display !== 'none');
+            const rs = tds.map((td) => td.getBoundingClientRect());
+            const name = (td) => td.textContent.replace(/\s+/g, ' ').trim().slice(0, 30);
+            tds.forEach((td, i) => {
+                if (td.scrollWidth > td.clientWidth + 1) out.push(`tràn: ${name(td)} (${td.scrollWidth} > ${td.clientWidth})`);
+                if (rs[i].right > window.innerWidth + 0.5 || rs[i].left < -0.5) out.push(`ngoài màn: ${name(td)}`);
+                for (let j = i + 1; j < tds.length; j++) {
+                    const a = rs[i], b = rs[j];
+                    if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) {
+                        out.push(`đè: ${name(td)} × ${name(tds[j])}`);
+                    }
+                }
+            });
+        }
+        return out;
+    }, sel);
+}
+
 async function cmpCheck(page, c, f, tag, mobile = false) {
     const order = await page.evaluate(() => {
         const a = document.getElementById('sh-days'), b = document.getElementById('sh-cmp-sec'), i = document.getElementById('sh-items');
@@ -295,6 +318,8 @@ async function cmpCheck(page, c, f, tag, mobile = false) {
             const card = await page.evaluate(() => ({ thead: getComputedStyle(document.querySelector('#sh-cmp-day-table thead')).display,
                 tr: getComputedStyle(document.querySelector('#sh-cmp-day-table tr.sh-cmp-day')).display }));
             check(`${tag} 390px: bảng ngày đối chiếu thành thẻ`, card.thead === 'none' && card.tr === 'grid', JSON.stringify(card));
+            const bad = await cardBad(page, '#sh-cmp-day-table tbody tr');
+            check(`${tag} 390px: thẻ ngày đối chiếu + Cả tháng — không số nào đè / tràn sang ô bên`, !bad.length, bad.slice(0, 4).join(' | '));
         }
         // Biểu đồ: ngày cũ bên trái, cột ghi hộp + nhập kho (không chồng) + đường luỹ kế, Chủ nhật đỏ
         await waitChart(page, 'sh-cmp-chart');
@@ -321,6 +346,10 @@ async function cmpCheck(page, c, f, tag, mobile = false) {
             && !(await txt(page, '#sh-cmp-item-table')).includes('HX-AN'));
         const chips = await page.$$eval('#sh-cmp-chips [data-cmp-chip]', (e) => e.map((x) => `${x.dataset.cmpChip}=${x.textContent.replace(/\s+/g, ' ').trim()}`));
         const nAll = items.length, nC = items.filter(CHIPS.chua).length, nV = items.filter(CHIPS.vuot).length;
+        // Thẻ và chip đếm mã theo CÙNG một ngưỡng (lệch đã làm tròn): mã lệch 0,004 không được vừa "khớp" ở bảng vừa "nhập
+        // vượt (1 mã)" ở thẻ. (Mã ẩn của seed đều khớp nên không lệch số đếm hai nhóm này.)
+        check(`${tag} số mã ở thẻ = số ở chip: chưa nhập ${t.so_ma_chua_nhap} = ${nC}, nhập vượt ${t.so_ma_nhap_vuot} = ${nV}`,
+            t.so_ma_chua_nhap === nC && t.so_ma_nhap_vuot === nV, JSON.stringify(t));
         const [a1, a2, a3] = await f.num([nAll, nC, nV]);
         check(`${tag} chip: Tất cả ${a1} · Chưa nhập kho ${a2} · Nhập vượt ${a3}`, J(chips) === J([`all=Tất cả${a1}`, `chua=Chưa nhập kho${a2}`, `vuot=Nhập vượt${a3}`]), chips.join(' · '));
         await cmpItemRows(page, items.slice(0, 10), f, `${tag} bảng đối chiếu theo mã trang 1:`);
@@ -330,6 +359,12 @@ async function cmpCheck(page, c, f, tag, mobile = false) {
                 pager === `Trang 1/${Math.ceil(items.length / 10)} · ${items.length} dòng`, pager);
             await page.click('#sh-cmp-item-table [data-dt-page][data-dir="1"]');
             await cmpItemRows(page, items.slice(10, 20), f, `${tag} bảng đối chiếu theo mã trang 2:`);
+        }
+        if (mobile) {
+            // 390px: bảng theo mã thành thẻ — mọi ô (kể cả Chênh lệch) trong khung màn, không ô nào đè / tràn ô khác.
+            const bad = await cardBad(page, '#sh-cmp-item-table tbody tr');
+            check(`${tag} 390px: bảng đối chiếu theo mã thành thẻ, cột Chênh lệch luôn thấy, không ô nào đè / tràn`, !bad.length
+                && await page.$eval('#sh-cmp-item-table thead', (e) => getComputedStyle(e).display) === 'none', bad.slice(0, 4).join(' | '));
         }
         for (const key of ['chua', 'vuot', 'all']) {
             await page.click(`#sh-cmp-chips [data-cmp-chip="${key}"]`);
@@ -367,10 +402,21 @@ async function nowCheck(page, c, f, tag) {
     const [vi, qc, qt, nm, na] = await f.num([v.items, q.count, q.count_tet, n.so_ma, n.oldest_age_days]);
     check(`${tag} Đã ghi hộp, chưa nhập kho: ${vq} hộp · ${vi} mã · 30 ngày gần nhất`, v.available
         && t1 === `Đã ghi hộp, chưa nhập kho${vq} hộp ${vi} mã · 30 ngày gần nhất`, t1);
-    check(`${tag} Phiếu nhập chờ thủ kho duyệt: ${qc} phiếu · ${q2} ${q.uom}`, q.available
-        && t2 === `Phiếu nhập chờ thủ kho duyệt${qc} phiếu ${q2} ${q.uom}${q.count_tet ? ` · ${qt} phiếu Tết` : ''}`, t2);
-    check(`${tag} Kho nhận vượt số ghi hộp: ${nq} hộp · ${nm} mã · lâu nhất ${na} ngày`, n.available
-        && t3 === `Kho nhận vượt số ghi hộp${nq} hộp ${nm} mã · lâu nhất ${na} ngày`, t3);
+    const qWant = q.qty === null ? 'nhiều đơn vị kho, không cộng' : `${q2} ${q.uom}`;
+    check(`${tag} Phiếu nhập chờ thủ kho duyệt: ${qc} phiếu · ${qWant}`, q.available
+        && t2 === `Phiếu nhập chờ thủ kho duyệt${qc} phiếu ${qWant}${q.count_tet ? ` · ${qt} phiếu Tết` : ''}`, t2);
+    const [nk] = await f.num([n.so_ma_khac_dvt || 0]);
+    const khac = n.so_ma_khac_dvt ? ` · ${nk} mã đơn vị khác không cộng` : '';
+    check(`${tag} Kho nhận vượt số ghi hộp: ${nq} hộp · ${nm} mã · lâu nhất ${na} ngày${khac}`, n.available
+        && t3 === `Kho nhận vượt số ghi hộp${nq} hộp ${nm} mã · lâu nhất ${na} ngày${khac}`, t3);
+    // Nợ vào hộp tính theo đơn vị kho của từng mã: số "hộp" của ô = Σ nợ của mã đơn vị Hộp (seed: HX-KG nợ 9,5 Kg không
+    // cộng) — dựng lại độc lập từ dòng API + danh mục (không tin tổng của máy chủ).
+    const boxRows = (n.rows || []).filter((r) => r.khac_dvt === false);
+    const kgRow = (n.rows || []).find((r) => r.item_code === 'HX-KG');
+    check(`${tag} nợ vào hộp: chỉ cộng mã đơn vị Hộp (HX-KG 9,5 Kg đứng riêng, cuối), ô ghi "1 mã đơn vị khác không cộng"`,
+        !!kgRow && kgRow.khac_dvt === true && kgRow.qty === 9.5 && n.rows[n.rows.length - 1] === kgRow && n.so_ma_khac_dvt === 1
+        && Math.abs(boxRows.reduce((a, r) => a + r.qty, 0) + 8 - n.qty) < 0.005 && n.so_ma === boxRows.length + 1  // + mã ẩn HX-AN (8 hộp, không có dòng)
+        && t3.endsWith('· 1 mã đơn vị khác không cộng'), JSON.stringify([n.qty, n.so_ma, n.so_ma_khac_dvt, n.rows.map((r) => [r.item_code, r.qty, r.khac_dvt])]));
     const hrefs = await page.$$eval('#sh-cmp-now a.sh-now-tile', (e) => e.map((a) => `${a.id}:${a.getAttribute('href')}`));
     check(`${tag} hai ô đầu mở #/nhap-tp, ô nợ vào hộp không phải liên kết`, JSON.stringify(hrefs)
         === JSON.stringify(['sh-now-chonhap:#/nhap-tp', 'sh-now-choduyet:#/nhap-tp']), hrefs.join(','));
@@ -517,6 +563,17 @@ async function scenario(page, mobile, role) {
     await page.selectOption('#sh-thang', d.meta.thang);
     await waitMonth(page, d.meta.thang);
     check(`${tag} chọn lại tháng hiện tại: › tắt`, await page.$eval('#sh-next', (e) => e.disabled));
+    // ── Tháng 6/2026: số 6 chữ số có phần lẻ (987.670,99), mã lệch +0,004 → khớp ở thẻ, bảng lẫn chip ──
+    await page.selectOption('#sh-thang', '2026-06');
+    await waitMonth(page, '2026-06');
+    const c6 = await apiCmp(page, '2026-06');
+    const tt2 = c6.items.find((r) => r.item_code === 'HX-TT2');
+    check(`${tag}[2026-06] API: HX-TT2 ghi 10 nhập 10,004 → lệch 0, đếm là khớp (không "nhập vượt 1 mã")`, !!tt2 && tt2.lech === 0
+        && c6.total.so_ma_nhap_vuot === 1 && c6.total.so_ma_khop === 1 && c6.total.nhap === 987680.99, JSON.stringify(c6.total));
+    await cmpCheck(page, c6, f, `${tag}[2026-06]`, mobile);
+    check(`${tag}[2026-06] khối ghi tháng của nó: "Tháng 06/2026"`, (await txt(page, '#sh-cmp-month')).startsWith('Tháng 06/2026'));
+    await page.selectOption('#sh-thang', d.meta.thang);
+    await waitMonth(page, d.meta.thang);
 
     const all = await page.textContent('.bc-main');
     check(`${tag} không lộ tên / mã nhân viên, đơn giá, tiền`, !SECRET.some((x) => all.includes(x)), SECRET.filter((x) => all.includes(x)).join(','));
@@ -632,6 +689,39 @@ if (MODE === 'nosx') {
     } catch (e) { check('API lỗi: kịch bản chạy hết', false, e.message.split('\n')[0]); }
     await E.context().close();
 
+    // ── Tổng lỗi đúng tháng vừa chọn: ô chọn tháng, khối đối chiếu và ↻ phải cùng MỘT tháng (không lùi ô chọn về tháng cũ
+    //    trong khi khối hiện số của tháng mới) ──
+    console.log('\n— Tổng lỗi khi đổi tháng');
+    for (const mobile of [false, true]) {
+        const M = await (await ctxOf(mobile)).newPage();
+        const tg = `[tổng lỗi tháng 09${mobile ? ' 390' : ''}]`;
+        await M.route('**/api/method/bc.api.sx_hop.get_overview*', (route) => (/thang=2026-09/.test(route.request().postData() || '')
+            ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ exc_type: 'Exception', exception: 'Exception: tổng tháng 9 hỏng' }) })
+            : route.continue()));
+        await M.goto(`${viewer}/bc#/san-xuat`);
+        try {
+            await settle(M);
+            const f = await F(M);
+            await M.selectOption('#sh-thang', '2026-09');
+            await M.waitForFunction(() => document.querySelector('#sh-kpis .bc-empty') && document.querySelector('#sh-cmp-kpis')
+                && !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+            const c9 = await apiCmp(M, '2026-09');
+            const lw = await lechText(f, c9.total.lech);
+            const sel = await M.$eval('#sh-thang', (e) => e.value);
+            const mon = await txt(M, '#sh-cmp-month');
+            check(`${tg} tổng báo lỗi; ô chọn vẫn 09/2026 = tháng khối đối chiếu đang hiện ("${lw}"), khối ghi "Tháng 09/2026"`,
+                (await txt(M, '#sh-kpis')).includes('tổng tháng 9 hỏng') && sel === '2026-09' && mon.startsWith('Tháng 09/2026')
+                && (await txt(M, '#sh-cmp-lech')) === lw, `${sel} | ${mon} | ${await txt(M, '#sh-cmp-lech')}`);
+            const creq = M.waitForRequest((r) => r.url().includes('sx_hop.get_compare'), { timeout: 15000 });
+            await M.click('#sh-refresh');
+            const body = (await creq).postData() || '';
+            await M.waitForFunction(() => document.querySelector('#sh-cmp-kpis') && !document.querySelector('.bc-main .bc-skeleton'), null, { timeout: 20000 });
+            check(`${tg} ↻ tải lại khối đúng tháng 09/2026 (refresh=1), ô chọn vẫn 09/2026`, /thang=2026-09/.test(body) && /(^|&)refresh=1(&|$)/.test(body)
+                && await M.$eval('#sh-thang', (e) => e.value) === '2026-09' && (await txt(M, '#sh-cmp-month')).startsWith('Tháng 09/2026'), body);
+        } catch (e) { check(`${tg} kịch bản chạy hết`, false, e.message.split('\n')[0]); }
+        await M.context().close();
+    }
+
     // ── Máy chủ tính hỏng (safe_block: available False + error, sx CÓ cài) ≠ "app sx chưa cài" ──
     console.log('\n— Máy chủ tính hỏng (error: true)');
     const R = await (await ctxOf(true)).newPage();
@@ -736,8 +826,14 @@ if (MODE === 'nosx') {
         ['hiện tại không tính được', (m) => { m.cho_nhap = { available: false }; m.cho_duyet = { available: false, error: true }; m.no_vao_hop = { available: false }; },
             async (P) => (await txt(P, '#sh-now-chonhap')) === 'Đã ghi hộp, chưa nhập kho—' && (await txt(P, '#sh-now-choduyet')) === 'Phiếu nhập chờ thủ kho duyệt— Không tính được'
                 && (await txt(P, '#sh-now-novaohop')) === 'Kho nhận vượt số ghi hộp—' && !!(await P.$('#sh-cmp-kpis'))],
-        ['không nợ vào hộp', (m) => { Object.assign(m.no_vao_hop, { count: 0, so_ma: 0, qty: 0, oldest_age_days: null, rows: [] }); },
+        ['không nợ vào hộp', (m) => { Object.assign(m.no_vao_hop, { count: 0, so_ma: 0, qty: 0, so_ma_khac_dvt: 0, oldest_age_days: null, rows: [] }); },
             async (P) => (await txt(P, '#sh-now-novaohop')) === 'Kho nhận vượt số ghi hộp0 hộp Không có khoản nào đang chờ chấm'],
+        ['chỉ nợ mã khác đơn vị', (m) => { Object.assign(m.no_vao_hop, { count: 0, so_ma: 0, qty: 0, so_ma_khac_dvt: 2, oldest_age_days: null }); },
+            async (P) => (await txt(P, '#sh-now-novaohop')) === 'Kho nhận vượt số ghi hộp0 hộp Không có khoản hộp nào đang chờ chấm · 2 mã đơn vị khác không cộng'],
+        // Phiếu nháp lẫn đơn vị (Hộp + Kg): máy chủ trả qty / uom null như Nhập TP → không được hiện "— hộp" như một số hộp.
+        ['chờ duyệt lẫn đơn vị', (m) => { m.cho_duyet.qty = null; m.cho_duyet.uom = null; },
+            async (P) => { const t = await txt(P, '#sh-now-choduyet');
+                return /^Phiếu nhập chờ thủ kho duyệt\d+ phiếu nhiều đơn vị kho, không cộng/.test(t) && !t.includes('—'); }],
         ['sx False', (m) => { m.available = false; m.meta.sx = false; },
             async (P) => await P.$eval('#sh-cmp-sec', (e) => e.hidden) && !(await txt(P, '#sh-cmp')) && await restIntact(P)],
         // Máy chủ: phần tháng hỏng vẫn tính riêng ba khối hiện tại (safe_block từng khối) → báo lỗi + dải hiện tại vẫn có số.

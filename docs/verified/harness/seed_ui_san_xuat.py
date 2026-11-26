@@ -99,6 +99,8 @@ def seed(sx=True):
 	# ── Tháng 8 và tháng 3/2026 (12 tháng); tháng 7 trống ──
 	for date, so in (("2026-08-05", 500), ("2026-08-19", 350), ("2026-03-11", 220)):
 		bang(ngay(date), [("HX-TT1", so, "k")])
+	# ── Tháng 6/2026: số 6 chữ số có phần lẻ (thẻ điện thoại không được đè số) + mã lệch +0,004 (khớp ở thẻ lẫn chip) ──
+	bang(ngay("2026-06-11"), [("HX-TT1", 987664, "k"), ("HX-TT2", 10, "k")])
 	nhap_kho()
 	print("seeded san-xuat" + ("" if sx else " (không sx)"))
 
@@ -137,12 +139,14 @@ def nhap_kho():
 	phieu("2026-10-21", [("HX-TET1", 210)], docstatus=0)            # nháp: chưa nhập kho
 	phieu("2026-10-26", [("HX-TT2", 33)], docstatus=0, nguon="Tết")  # nháp Tết
 	phieu("2026-10-09", [("HX-TET1", 999), ("HX-P03", 30)], docstatus=2)  # đã huỷ: không tính
+	phieu("2026-06-11", [("HX-TT1", 987670.99), ("HX-TT2", 10.004)])  # tháng 6: số lớn có phần lẻ; lệch 0,004 = khớp
 	# Nợ vào hộp (sx ghi khi kho nhận vượt số ghi): đang chờ chấm / đã chấm bù / bỏ qua; một khoản của mã ẩn
 	for i, (item, sl, con, tt, ngay) in enumerate((
 			("HX-TT3", 50, 50, "Chờ chấm", "2026-10-12"), ("HX-P02", 15, 15, "Chờ chấm", "2026-10-12"),
 			("HX-TT1", 10, 6, "Chờ chấm", "2026-10-16"), ("HX-P02", 5, 5, "Chờ chấm", "2026-10-20"),
 			("HX-AN", 8, 8, "Chờ chấm", "2026-10-02"), ("HX-TET1", 30, 0, "Đã chấm bù", "2026-10-03"),
-			("HX-TT2", 12, 12, "Bỏ qua", "2026-10-05")), 1):
+			("HX-TT2", 12, 12, "Bỏ qua", "2026-10-05"),
+			("HX-KG", 9.5, 9.5, "Chờ chấm", "2026-10-09")), 1):   # nợ mã Kg: không cộng vào số "hộp" của ô
 		insert("SX No Vao Hop", name=f"NV-BIMAT-{i:04d}", item=item, ten=item, so_luong=sl, con_lai=con, trang_thai=tt, ngay=ngay,
 			phieu_nhap="SXNTP-BIMAT-001", ly_do=SECRET_LYDO, xu_ly_boi=SECRET_USER if tt != "Chờ chấm" else None,
 			xu_ly_luc=f"{ngay} 09:00:00" if tt != "Chờ chấm" else None, owner=SECRET_USER)
