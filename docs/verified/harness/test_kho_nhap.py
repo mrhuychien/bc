@@ -401,6 +401,43 @@ def moc_cases(c):
 		c(f"D230 {ten}: qty / moc / mang_sang / from / to / khoá", (v.get("qty"), v.get("moc"), v.get("mang_sang"), v.get("from"),
 			v.get("to"), v.get("so_ngay"), ok_keys) == (qty, moc_ra, mang_ra, TU0, HOM_NAY, 30, True),
 			(v.get("qty"), v.get("moc"), v.get("mang_sang"), v.get("from"), sorted(set(v) ^ (OLD_KEYS | {"moc", "mang_sang"}))))
+	# getdate kiểu Frappe THẬT (frappe.utils.GETDATE_THAT): chuỗi rác → frappe.throw ghi lời vào message_log rồi mới ném;
+	# '0000-00-00' → None không ném. Ô hỏng không được để lại lời nhắn trong request, không làm tắt khối / ghi Error Log,
+	# dòng '0000-00-00' chỉ bỏ mã đó (CONTRACT3 §1.1).
+	ca_that = [
+		("mốc rác", "rác-không-phải-ngày", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None),
+		("mốc 30/02", "2026-02-30", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None),
+		("mốc 0000-00-00", "0000-00-00", MANG, {MA: 2, MB: 32, MC: 8}, 42, None, None),
+		("dòng 'xx'", "2026-10-15", {MA: [["xx", 1], ["2026-10-10", 6]], MO: [["2026-10-12", 9]]},
+			{MA: 35, MB: 2, MO: 9}, 46, "2026-10-15", 9),
+		("dòng '0000-00-00'", "2026-10-15", {MA: [["0000-00-00", 1], ["2026-10-10", 6]], MO: [["2026-10-12", 9]]},
+			{MA: 35, MB: 2, MO: 9}, 46, "2026-10-15", 9),
+		("dòng '0001-01-01'", "2026-10-15", {MA: [["0001-01-01", 1], ["2026-10-10", 6]], MO: [["2026-10-12", 9]]},
+			{MA: 35, MB: 2, MO: 9}, 46, "2026-10-15", 9),
+		("dòng 30/02", "2026-10-15", {MA: [["2026-02-30", 1], ["2026-10-10", 6]], MO: [["2026-10-12", 9]]},
+			{MA: 35, MB: 2, MO: 9}, 46, "2026-10-15", 9),
+	]
+	from bc.api import sx_hop as _sx_hop
+	frappe.utils.GETDATE_THAT = True
+	try:
+		for ten, moc, mang, mong, qty, moc_ra, mang_ra in ca_that:
+			set_moc(moc, mang)
+			frappe.local.message_log = []
+			frappe.local.response.pop("exc_type", None)
+			n_log = len(frappe.LOGGED)
+			v, allc = bc_tran()
+			frappe.local.__dict__.pop("sx_nho", None)
+			cn = _sx_hop.get_compare(refresh=1).get("cho_nhap") or {}
+			c(f"D230 getdate Frappe thật, {ten}: từng mã + qty / moc / mang_sang, khối không lỗi",
+				(allc, v.get("qty"), v.get("moc"), v.get("mang_sang"), v.get("available"), cn.get("available"), cn.get("moc"))
+				== (mong, qty, moc_ra, mang_ra, True, True, moc_ra), (allc, v))
+			c(f"D230 getdate Frappe thật, {ten}: không lời nhắn trong message_log / exc_type, không Error Log",
+				not frappe.local.message_log and "exc_type" not in frappe.local.response and len(frappe.LOGGED) == n_log,
+				(frappe.local.message_log, frappe.local.response.get("exc_type"), frappe.LOGGED[n_log:][:2]))
+	finally:
+		frappe.utils.GETDATE_THAT = False
+		frappe.local.message_log = []
+		frappe.local.response.pop("exc_type", None)
 	# Mốc 15/10: hàng hiển thị (mã ẩn không thành dòng), Kg riêng cuối; tổng hộp kể cả mã ẩn; items đếm cả mã ẩn
 	set_moc("2026-10-15", MANG)
 	v, _a = bc_tran()

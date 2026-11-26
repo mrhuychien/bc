@@ -9,6 +9,31 @@ FAKE_TODAY = datetime.date(2026, 10, 27)
 FAKE_NOW_TIME = datetime.time(10, 30, 0)
 
 
+# GETDATE_THAT = True: getdate cư xử như frappe.utils.data.getdate THẬT (v15/v16) với chuỗi lạ — '0000-00-00' /
+# '0001-01-01…' → None (is_invalid_date_string, KHÔNG ném); chuỗi không đọc được thành ngày → frappe.throw: msgprint
+# ghi lời "… is not a valid date string." vào frappe.local.message_log + response["exc_type"] RỒI mới ném
+# ValidationError (bắt lỗi rồi, lời nhắn vẫn theo phản hồi 200 ra `_server_messages`). Mặc định False: fromisoformat
+# ném ValueError ngay (như các bộ thử cũ). Bộ thử bật để soi đường đó (test_kho_nhap: D230 ngày rác kiểu Frappe thật).
+GETDATE_THAT = False
+
+
+def _getdate_that(v):
+	s = str(v)
+	if s.startswith(("0001-01-01", "0000-00-00")):
+		return None
+	try:
+		return datetime.date.fromisoformat(s[:10]) if len(s) >= 10 else datetime.date.fromisoformat(s)
+	except ValueError:
+		import frappe
+		log = getattr(frappe.local, "message_log", None)
+		if log is None:
+			log = frappe.local.message_log = []
+		log.append({"message": f"<strong>{s}</strong> is not a valid date string.", "title": "Invalid Date",
+			"raise_exception": 1})
+		frappe.local.response["exc_type"] = "ValidationError"
+		raise frappe.ValidationError(f"{s} is not a valid date string.")
+
+
 def getdate(v=None):
 	if v is None or v == "":
 		return FAKE_TODAY
@@ -16,6 +41,8 @@ def getdate(v=None):
 		return v.date()
 	if isinstance(v, datetime.date):
 		return v
+	if GETDATE_THAT:
+		return _getdate_that(v)
 	return datetime.date.fromisoformat(str(v)[:10])
 
 

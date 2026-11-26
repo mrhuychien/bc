@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 
 import frappe
 from frappe.utils import add_days, flt, getdate
@@ -365,18 +366,39 @@ def _cho_duyet(p: dict, raw: dict | None = None) -> dict:
 
 
 # ─── K11 · Đã vào hộp, chưa nhập kho (port khotp.tran_con_lai) ───────────────
+_NGAY_ISO = re.compile(r"(\d{4}-\d{2}-\d{2})(?:[ T][0-9:.]*)?")
+
+
+def _ngay(v) -> datetime.date | None:
+	"""Ngày ISO 'YYYY-MM-DD' (có thể kèm giờ) → date; còn lại → None. CỐ Ý không qua frappe.utils.getdate: trên Frappe
+	thật, chuỗi không phải ngày ('rác', '2026-02-30') đi frappe.throw → msgprint ghi "… is not a valid date string" vào
+	message_log của request (bắt lỗi rồi vẫn theo phản hồi ra `_server_messages`), còn '0000-00-00' / '0001-01-01…' trả
+	None KHÔNG ném (so sánh ngày sau đó mới nổ TypeError). Hai ô D230 do lệnh sx ghi luôn là ISO."""
+	if isinstance(v, datetime.datetime):
+		return v.date()
+	if isinstance(v, datetime.date):
+		return v
+	m = _NGAY_ISO.fullmatch(v.strip()) if isinstance(v, str) else None
+	if not m:
+		return None
+	try:
+		d = datetime.date.fromisoformat(m.group(1))
+	except ValueError:   # tháng 13, 30/02, năm 0000
+		return None
+	return d if d.year > 1 else None   # Frappe coi 0001-01-01 là "không có ngày"
+
+
 def _moc_vh() -> tuple:
 	"""(mốc tính nợ vào hộp: date | None, {mã: [(ngày chấm, số)]}) — port sx khotp._moc_vh (D230), đọc MỀM.
 
 	Một câu SELECT thẳng tabSingles, không qua meta / get_single_value: site sx cũ chưa có hai ô → (None, {}), không throw.
-	Mốc rỗng / không phải ngày → (None, {}); JSON hỏng hoặc không phải dict → {}; dòng hỏng của một mã → bỏ mã đó."""
+	Mốc rỗng / không phải ngày → (None, {}); JSON hỏng hoặc không phải dict → {}; dòng hỏng của một mã (ngày không phải
+	ngày ISO thật, kể cả '0000-00-00') → bỏ mã đó. Ngày đọc bằng _ngay (không frappe getdate → không lời nhắn rơi vào
+	message_log của request, không ngày None lọt vào phép so sánh)."""
 	vals = dict(frappe.db.sql("SELECT field, value FROM `tabSingles` WHERE doctype = 'SX Settings' AND field IN (%s, %s)",
 		(MOC_VH, MANG_SANG)))
-	try:
-		moc = getdate(vals.get(MOC_VH)) if vals.get(MOC_VH) else None
-	except Exception:
-		moc = None
-	if not isinstance(moc, datetime.date):
+	moc = _ngay(vals.get(MOC_VH))
+	if moc is None:
 		return None, {}
 	try:
 		mang = json.loads(vals.get(MANG_SANG) or "{}")
@@ -385,9 +407,11 @@ def _moc_vh() -> tuple:
 	ra = {}
 	for item, ds in (mang.items() if isinstance(mang, dict) else []):
 		try:
-			ra[item] = [(getdate(d), flt(q)) for d, q in ds]
-		except Exception:
+			dong = [(_ngay(d), flt(q)) for d, q in ds]
+		except Exception:   # không phải danh sách cặp [ngày, số]
 			continue
+		if all(d is not None for d, _q in dong):
+			ra[item] = dong
 	return moc, ra
 
 
