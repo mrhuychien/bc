@@ -679,10 +679,11 @@ if __name__ == "__main__":
 		{"hop": 0, "nhap": 25.0, "lech": 25.0, "khac_dvt": False}, {"hop": 0, "nhap": 15.0, "lech": 15.0, "khac_dvt": False},
 		{"hop": 30, "nhap": 0.0, "lech": -30.0, "khac_dvt": False}, {"hop": 10, "nhap": 7.25, "lech": -2.75, "khac_dvt": False},
 		{"hop": 40, "nhap": 40.0, "lech": 0.0, "khac_dvt": False}], [by(ci, "item_code", x) for x in (CC, CD, CE, CF, CB)])
-	c("so sánh: K (đơn vị Kg) và Z (không còn trong danh mục) liệt kê với khac_dvt, tên Z lấy trên dòng",
+	# lech None: nhập theo Kg trừ số hộp không phải lệch hộp (Trợ lý AI đọc payload — không được có số để trích)
+	c("so sánh: K (đơn vị Kg) và Z (không còn trong danh mục) liệt kê với khac_dvt, tên Z lấy trên dòng, lệch None",
 		[pick(by(ci, "item_code", x), "uom", "khac_dvt", "hop", "nhap", "lech", "item_name") for x in (CK, CZ)] == [
-		{"uom": "Kg", "khac_dvt": True, "hop": 10, "nhap": 3.5, "lech": -6.5, "item_name": "Kẹo cân CMP K"},
-		{"uom": None, "khac_dvt": True, "hop": 4, "nhap": 0.0, "lech": -4.0, "item_name": f"tên dòng {CZ}"}],
+		{"uom": "Kg", "khac_dvt": True, "hop": 10, "nhap": 3.5, "lech": None, "item_name": "Kẹo cân CMP K"},
+		{"uom": None, "khac_dvt": True, "hop": 4, "nhap": 0.0, "lech": None, "item_name": f"tên dòng {CZ}"}],
 		[by(ci, "item_code", x) for x in (CK, CZ)])
 
 	# ── Hộp ghi cuối tháng trước, nhập tháng sau: tháng 9 ──
@@ -727,15 +728,15 @@ if __name__ == "__main__":
 	# Mở ('Chờ chấm', còn > 0): C 25 (01/10) · E 4 (01/10) · D 10 (04/10) + 5 (20/10) · H 3 (ẩn) · F 1,5 (26/10) = 6 dòng, 5 mã,
 	#   48,5; không tính: 'Đã chấm bù', 'Bỏ qua', 'Đã huỷ', 'Chờ chấm' còn 0
 	c("no_vao_hop: dòng đang mở gom theo mã, tuổi từ ngày nợ cũ nhất; mã ẩn chỉ mất khỏi dòng", nv == {"available": True,
-		"count": 6, "so_ma": 5, "qty": 48.5, "oldest_date": "2026-10-01", "oldest_age_days": 26, "rows": [
+		"count": 6, "so_ma": 5, "qty": 48.5, "so_ma_khac_dvt": 0, "oldest_date": "2026-10-01", "oldest_age_days": 26, "rows": [
 		{"item_code": CC, "item_name": "Bánh CMP C", "short_name": "Bánh CMP C", "qty": 25.0, "so_dong": 1, "ngay": "2026-10-01",
-		"age_days": 26},
+		"age_days": 26, "khac_dvt": False},
 		{"item_code": CE, "item_name": "Bánh CMP E", "short_name": "Bánh CMP E", "qty": 4.0, "so_dong": 1, "ngay": "2026-10-01",
-		"age_days": 26},
+		"age_days": 26, "khac_dvt": False},
 		{"item_code": CD, "item_name": "Bánh CMP D", "short_name": "Bánh CMP D", "qty": 15.0, "so_dong": 2, "ngay": "2026-10-04",
-		"age_days": 23},
+		"age_days": 23, "khac_dvt": False},
 		{"item_code": CF, "item_name": "Bánh CMP F lẻ", "short_name": "Bánh CMP F lẻ", "qty": 1.5, "so_dong": 1,
-		"ngay": "2026-10-26", "age_days": 1}]}, nv)
+		"ngay": "2026-10-26", "age_days": 1, "khac_dvt": False}]}, nv)
 	c("hiện tại không theo tháng chọn (tháng 9 cùng ba khối)", all(c9[x] == cp[x] for x in ("cho_nhap", "cho_duyet",
 		"no_vao_hop")))
 
@@ -773,6 +774,69 @@ if __name__ == "__main__":
 	c("vi sai Nhập TP sau khi bỏ dòng Kg / không mã: tổng tháng và MỌI ngày bằng nhau", kn2["nhap"]["total"]["qty"] ==
 		cp2["total"]["nhap"] == 219.25 and all({x["date"]: x for x in cp2["days"]}[r["date"]]["nhap"] == r["qty"]
 		for r in kn2["nhap"]["by_day"]), (kn2["nhap"]["total"]["qty"], cp2["total"]["nhap"]))
+
+	# ── Đơn vị, làm tròn một lần, ngưỡng lệch (seed riêng CMX-, hôm nay 27/10) ──
+	reset()
+	bc_settings()
+	XA, XK, XG, XC, XT, XR = "CMX-A", "CMX-K", "CMX-G", "CMX-C", "CMX-T", "CMX-R"
+	for code in (XA, XC, XT, XR):
+		item(code, f"Bánh {code}", "Hàng truyền thống")
+	for code, u in ((XK, "Kg"), (XG, "Gói")):
+		insert("Item", name=code, item_code=code, item_name=f"Hàng {code}", item_group="Hàng truyền thống", stock_uom=u,
+			is_stock_item=1)
+	for nm, d, rows in (("CMX-N02", "2026-10-02", [(XA, 10, "k"), (XK, 5, "k")]),
+			("CMX-N03", "2026-10-03", [(XG, 7, "k")]),                  # ngày chỉ có hộp của mã Gói
+			("CMX-N08", "2026-10-08", [(XT, 10, "k")]),
+			("CMX-N20", "2026-10-20", [(XR, 1, "k")])):
+		ngay(nm, d)
+		bang(nm, rows)
+	cmp_slip("CMX-P1", "2026-10-02", 1, [(XA, 10), (XC, 0.001)])        # XC: nhập 0,001, không hộp
+	cmp_slip("CMX-P2", "2026-10-04", 1, [(None, 3)])                     # ngày chỉ có dòng phiếu không mã
+	cmp_slip("CMX-P3", "2026-10-05", 1, [(XK, 2.5)])                     # ngày chỉ có phiếu mã Kg
+	cmp_slip("CMX-P4", "2026-10-08", 1, [(XT, 10.004)])                  # lệch +0,004 → làm tròn 0 = khớp
+	cmp_slip("CMX-P5", "2026-10-21", 1, [(XR, 0.6251)])                  # còn 0,3749 → 0,37 (không 0,375 → 0,38)
+	cmp_slip("CMX-P6", "2026-10-22", 0, [(XA, 0.3749)], creation="2026-10-22 08:00:00")   # nháp 0,3749 → 0,37
+	cmp_no("CMX-V1", XK, 40, "2026-10-05")                               # nợ Kg
+	cmp_no("CMX-V2", XG, 2.5, "2026-10-06")                              # nợ Gói
+	cmp_no("CMX-V3", XA, 3, "2026-10-07")                                # nợ hộp
+	cx = cmp_run()
+	nv = cx["no_vao_hop"]
+	c("no_vao_hop: chỉ cộng nợ của mã đơn vị Hộp (Kg 40, Gói 2,5 không thành '45,5 hộp'); mã khác đơn vị đếm riêng, cuối dòng",
+		(nv["qty"], nv["so_ma"], nv["count"], nv["oldest_date"], nv["oldest_age_days"], nv.get("so_ma_khac_dvt"),
+		[(r["item_code"], r["qty"], r.get("khac_dvt")) for r in nv["rows"]]) == (3.0, 1, 1, "2026-10-07", 20, 2,
+		[(XA, 3.0, False), (XK, 40.0, True), (XG, 2.5, True)]), nv)
+	from sx.api import khotp as sx_khotp
+	g0 = sx_khotp.guard_card
+	sx_khotp.guard_card = lambda *a, **k: None
+	try:
+		sxn = {g_["item"]: g_["con_lai"] for g_ in sx_khotp.so_no_vao_hop()["nhom"]}
+	finally:
+		sx_khotp.guard_card = g0
+	c("no_vao_hop vi sai sx.api.khotp.so_no_vao_hop THẬT: từng mã bằng nhau, phần hộp = qty", sxn == {r["item_code"]: r["qty"]
+		for r in nv["rows"]} and sum(v for k_, v in sxn.items() if k_ == XA) == nv["qty"], (sxn, nv["rows"]))
+	kn = kho_nhap.get_overview(refresh=1)
+	c("cho_nhap.qty làm tròn MỘT lần từ số gốc (0,3749 → 0,37; không 0,375 → 0,38); dòng cũng vậy", (cx["cho_nhap"]["qty"],
+		[r["qty"] for r in cx["cho_nhap"]["rows"]], kn["vao_hop"]["qty"]) == (0.37, [0.37], 0.375), (cx["cho_nhap"],
+		kn["vao_hop"]["qty"]))
+	c("cho_duyet.qty làm tròn MỘT lần từ số gốc (0,3749 → 0,37); số phiếu = màn Nhập TP", (cx["cho_duyet"]["qty"],
+		cx["cho_duyet"]["count"], kn["cho_duyet"]["count"]) == (0.37, 1, 1), (cx["cho_duyet"], kn["cho_duyet"]["qty"]))
+	xi = {x["item_code"]: x for x in cx["items"]}
+	xt = cx["total"]
+	c("ngưỡng lệch một chỗ: XT +0,004 là khớp ở thẻ lẫn bảng; XC nhập 0,001 không thành dòng, không đếm",
+		(XC in xi, xi[XT]["lech"], xt["so_ma_nhap_vuot"], xt["nhap_vuot"], xt["so_ma_khop"], xt["so_ma_chua_nhap"],
+		xt["chua_nhap"]) == (False, 0.0, 0, 0.0, 2, 1, 0.37), (xt, list(xi)))
+	c("ngưỡng lệch: số mã trong thẻ = số dòng bảng theo lệch đã làm tròn (như chip của màn)", (xt["so_ma_chua_nhap"],
+		xt["so_ma_nhap_vuot"], xt["so_ma_khop"]) == (sum(1 for x in cx["items"] if not x["khac_dvt"] and x["lech"] < 0),
+		sum(1 for x in cx["items"] if not x["khac_dvt"] and x["lech"] > 0),
+		sum(1 for x in cx["items"] if not x["khac_dvt"] and x["lech"] == 0)), xt)
+	c("mã khác đơn vị: lech None (Kg / Gói trừ hộp không phải lệch hộp), vẫn có hộp / nhập", [(x["item_code"], x["hop"],
+		x["nhap"], x["lech"]) for x in cx["items"] if x["khac_dvt"]] == [(XG, 7, 0.0, None), (XK, 5, 2.5, None)],
+		[x for x in cx["items"] if x["khac_dvt"]])
+	xd = {x["date"]: x for x in cx["days"]}
+	c("ngày chỉ có dòng không so được (hộp mã Gói 03/10, phiếu không mã 04/10, phiếu mã Kg 05/10) không 'co'",
+		[(d, xd[d]["co"]) for d in ("2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-08")] == [
+		("2026-10-02", True), ("2026-10-03", False), ("2026-10-04", False), ("2026-10-05", False), ("2026-10-08", True)],
+		{d: xd[d] for d in ("2026-10-03", "2026-10-04", "2026-10-05")})
 
 	# ── Riêng tư ──
 	full_cmp()

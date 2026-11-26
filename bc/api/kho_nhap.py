@@ -307,7 +307,8 @@ def _nhap(p: dict) -> dict:
 
 
 # ─── K11 · Hàng đợi: phiếu chờ duyệt ────────────────────────────────────────
-def _cho_duyet(p: dict) -> dict:
+def _cho_duyet(p: dict, raw: dict | None = None) -> dict:
+	"""`raw` (tuỳ chọn): nhận {"qty": {mã: số CHƯA làm tròn}} của mọi phiếu chờ — cho nơi tự làm tròn một lần (sx_hop)."""
 	if not _has("SX Phieu Nhap TP", "SX Phieu Nhap TP Item"):
 		return {"available": False}
 	nguon = "IFNULL(p.nguon, '')" if frappe.db.has_column("SX Phieu Nhap TP", "nguon") else "''"
@@ -349,6 +350,8 @@ def _cho_duyet(p: dict) -> dict:
 	out.sort(key=lambda x: (-x["age_days"], x["name"]))
 	oldest = out[0] if out else None
 	tq, uom = _sum1(info, all_qty)
+	if raw is not None:
+		raw["qty"] = dict(all_qty)
 	return {
 		"available": True, "count": len(out), "count_tet": sum(1 for x in out if x["tet"]), "qty": tq, "uom": uom,
 		"no_bom_qty": _q(sum(flt(x["no_bom_qty"]) for x in out)) if tq is not None else None,
@@ -358,7 +361,9 @@ def _cho_duyet(p: dict) -> dict:
 
 
 # ─── K11 · Đã vào hộp, chưa nhập kho (port khotp.tran_con_lai) ───────────────
-def _vao_hop(p: dict) -> dict:
+def _vao_hop(p: dict, raw: dict | None = None) -> dict:
+	"""`raw` (tuỳ chọn): nhận {"box": {mã: số còn lại CHƯA làm tròn}} của phần đơn vị Hộp — cho nơi tự làm tròn một lần
+	(sx_hop: 2 số lẻ thẳng từ số gốc, không qua 3 số lẻ rồi 2 số lẻ)."""
 	if not _has("SX Phieu Nhap TP", "SX Phieu Nhap TP Item", "SX Bang Vao Hop", "SX Bang Vao Hop Item",
 			"SX Ngay San Xuat"):
 		return {"available": False}
@@ -394,6 +399,8 @@ def _vao_hop(p: dict) -> dict:
 	factors = carton_factors(con)
 	box = {c: v for c, v in con.items() if (info.get(c) or {}).get("stock_uom") == BOX_UOM}
 	other = {c: v for c, v in con.items() if c not in box}
+	if raw is not None:
+		raw["box"] = dict(box)
 	rows = drop_hidden([_item_row(info, c, qty=_q(v), cartons=_cartons({c: v}, factors)["cartons"] if c in box else None,
 		khac_dvt=c not in box) for c, v in con.items()])
 	rows.sort(key=lambda r: (r["khac_dvt"], -r["qty"], r["item_code"]))

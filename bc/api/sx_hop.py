@@ -52,7 +52,12 @@ lương, phiếu nhập sinh tồn); ở đây chỉ đặt cạnh nhau, theo đ
   với khối "đã vào hộp chưa nhập kho" của màn Nhập TP; cho_duyet = kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ
   kho); no_vao_hop = sổ SX No Vao Hop sx tự ghi khi phiếu nhận vượt số ghi (khotp.ghi_no_vao_hop /
   doi_soat_no_vao_hop / so_no_vao_hop): dòng đang mở trang_thai 'Chờ chấm' còn con_lai > EPS, gom theo mã, tuổi tính
-  từ ngày nợ cũ nhất (đọc mềm — thiếu bảng / cột → khối đó available False).
+  từ ngày nợ cũ nhất (đọc mềm — thiếu bảng / cột → khối đó available False). con_lai theo đơn vị kho của từng mã → số,
+  số mã, số dòng, cũ nhất chỉ trên mã đơn vị Hộp; mã khác đơn vị đếm riêng (so_ma_khac_dvt), đứng cuối danh sách.
+- Làm tròn 2 số lẻ MỘT lần từ số gốc ở mọi số lượng (kể cả cho_nhap / cho_duyet: lấy số chưa làm tròn của kho_nhap, không
+  làm tròn 3 số lẻ rồi 2 số lẻ). Số đếm mã (chưa nhập / nhập vượt / khớp) xếp theo lệch ĐÃ làm tròn — cùng ngưỡng với màn;
+  mã khác đơn vị có lech None (nhập theo Kg / Gói trừ số hộp không phải lệch hộp). Ngày chỉ có dòng không so được (mã khác
+  đơn vị, dòng phiếu không mã) không "co".
 - Riêng tư như trên: chỉ mã, ngày, số lượng. Không đọc người lập / duyệt / xử lý, chú thích tự do, lý do, tên chứng
   từ; không trả tên phiếu hay tên dòng nợ.
 """
@@ -459,53 +464,60 @@ def _compare(p: dict) -> dict:
 	g_items: dict = {}
 	per_day: dict = {}
 	hop_chua_ma = 0
+	# Ngày chỉ "có" (co) khi có dòng SO ĐƯỢC — ngày chỉ có mã khác đơn vị / dòng phiếu không mã không thành dòng 0 · 0 · 0
+	# trông như "khớp" trên bảng Theo ngày.
+	def day(v) -> dict:
+		return per_day.setdefault(_as_date(v), {"hop": 0, "nhap": 0.0})
+
 	for r in hop_raw:
-		d = _as_date(r.d)
-		x = per_day.setdefault(d, {"hop": 0, "nhap": 0.0})
 		if not r.item:
 			hop_chua_ma += _int(r.hop)
-			x["hop"] += _int(r.hop)
+			day(r.d)["hop"] += _int(r.hop)
 			continue
 		g = g_items.setdefault(r.item, {"hop": 0, "nhap": 0.0, "ten": None})
 		g["hop"] += _int(r.hop)
 		g["ten"] = g["ten"] or r.ten
 		if box(r.item):
-			x["hop"] += _int(r.hop)
+			day(r.d)["hop"] += _int(r.hop)
 	for r in nhap_raw:
-		d = _as_date(r.d)
-		x = per_day.setdefault(d, {"hop": 0, "nhap": 0.0})
 		if not r.item:
 			continue  # dòng phiếu không mã: không đối chiếu được
 		g = g_items.setdefault(r.item, {"hop": 0, "nhap": 0.0, "ten": None})
 		g["nhap"] += flt(r.qty)
 		if box(r.item):
-			x["nhap"] += flt(r.qty)
+			day(r.d)["nhap"] += flt(r.qty)
 
-	# Tổng (gồm mã ẩn) — số đếm mã chỉ trên mã có số
+	# Tổng (gồm mã ẩn), cộng trên số CHƯA làm tròn, làm tròn một lần lúc trả. Mã xếp nhóm theo lệch ĐÃ làm tròn 2 số lẻ —
+	# đúng số màn hiện ở bảng / chip: mã lệch 0,004 là "0 · khớp" ở mọi chỗ (không vừa "khớp" trong bảng vừa "nhập vượt
+	# (1 mã)" ở thẻ); chua_nhap / nhap_vuot cộng lệch gốc của đúng các mã trong nhóm đó. Mã có hộp 0 và nhập làm tròn 0 không
+	# thành dòng, không vào số đếm (số nhập của nó vẫn trong tổng nhập kho như màn Nhập TP). Vì thế lech = nhap_vuot −
+	# chua_nhap chỉ lệch được phần lẻ dưới 0,005 của các mã "khớp".
 	tot = {"hop": hop_chua_ma, "nhap": 0.0, "chua_nhap": float(hop_chua_ma), "so_ma_chua_nhap": 0, "nhap_vuot": 0.0,
 		"so_ma_nhap_vuot": 0, "so_ma_khop": 0, "ma_khac_dvt": 0, "hop_khac_dvt": 0}
 	items = []
 	for code, g in g_items.items():
-		if g["hop"] == 0 and abs(g["nhap"]) <= EPS:
-			continue
 		lech = g["nhap"] - g["hop"]
 		khac = not box(code)
+		if not khac:  # tổng số lượng: mọi dòng so được, kể cả mã không thành dòng
+			tot["hop"] += g["hop"]
+			tot["nhap"] += g["nhap"]
+		if g["hop"] == 0 and _r2(g["nhap"]) == 0:
+			continue
+		l2 = _r2(lech)
 		if khac:
 			tot["ma_khac_dvt"] += 1
 			tot["hop_khac_dvt"] += g["hop"]
+		elif l2 < 0:
+			tot["so_ma_chua_nhap"] += 1
+			tot["chua_nhap"] += -lech
+		elif l2 > 0:
+			tot["so_ma_nhap_vuot"] += 1
+			tot["nhap_vuot"] += lech
 		else:
-			tot["hop"] += g["hop"]
-			tot["nhap"] += g["nhap"]
-			if lech < -EPS:
-				tot["chua_nhap"] += -lech
-				tot["so_ma_chua_nhap"] += 1
-			elif lech > EPS:
-				tot["nhap_vuot"] += lech
-				tot["so_ma_nhap_vuot"] += 1
-			else:
-				tot["so_ma_khop"] += 1
+			tot["so_ma_khop"] += 1
+		# Mã khác đơn vị: nhập (Kg / Gói…) trừ hộp không phải số hộp lệch → lech None (màn "—", Trợ lý AI không trích được).
 		items.append({**_describe(code, g, info), "uom": uoms.get(code), "khac_dvt": khac, "hop": g["hop"],
-			"nhap": _r2(g["nhap"]), "lech": _r2(lech), "_lech": lech})
+			"nhap": _r2(g["nhap"]), "lech": None if khac else l2, "_lech": 0.0 if khac else lech})
 	items = drop_hidden(items)
 	items.sort(key=lambda x: (x["khac_dvt"], -abs(x["_lech"]), -x["hop"], x["item_code"]))  # thứ tự sx: |lệch| lớn trước
 	for x in items:
@@ -532,23 +544,29 @@ def _compare(p: dict) -> dict:
 
 def _cho_nhap(p: dict) -> dict:
 	"""kho_nhap._vao_hop rút gọn: cùng con số với khối "đã vào hộp chưa nhập kho" của màn Nhập TP; chỉ dòng đơn vị Hộp."""
-	v = _vao_hop(p)
+	raw: dict = {}
+	v = _vao_hop(p, raw)
 	if not v.get("available"):
 		return {"available": False}
+	box = raw.get("box") or {}  # số còn lại CHƯA làm tròn (kho_nhap trả 3 số lẻ) — làm tròn 2 số lẻ một lần ở đây
 	rows = [r for r in v["rows"] if not r.get("khac_dvt")][:LIST_MAX]
 	info = kho.item_info([r["item_code"] for r in rows])
-	return {"available": True, "from": v["from"], "to": v["to"], "so_ngay": v["so_ngay"], "qty": _r2(v["qty"]),
+	return {"available": True, "from": v["from"], "to": v["to"], "so_ngay": v["so_ngay"], "qty": _r2(sum(box.values())),
 		"items": v["items"],
 		"rows": [{"item_code": r["item_code"], "item_name": (info.get(r["item_code"]) or {}).get("item_name") or r["item_code"],
-			"short_name": r["short_name"], "qty": _r2(r["qty"])} for r in rows]}
+			"short_name": r["short_name"], "qty": _r2(box.get(r["item_code"], r["qty"]))} for r in rows]}
 
 
 def _cho_duyet_gon(p: dict) -> dict:
 	"""kho_nhap._cho_duyet rút gọn (phiếu nháp chờ thủ kho duyệt) — chỉ số đếm, không danh sách, không tên phiếu."""
-	v = _cho_duyet(p)
+	raw: dict = {}
+	v = _cho_duyet(p, raw)
 	if not v.get("available"):
 		return {"available": False}
-	return {"available": True, **{k: v[k] for k in ("count", "count_tet", "qty", "uom", "oldest_age_days")}}
+	out = {"available": True, **{k: v[k] for k in ("count", "count_tet", "qty", "uom", "oldest_age_days")}}
+	if out["qty"] is not None:  # lẫn đơn vị → None như màn Nhập TP; cùng đơn vị → 2 số lẻ từ số gốc, làm tròn một lần
+		out["qty"] = _r2(sum(flt(q) for q in (raw.get("qty") or {}).values() if abs(flt(q)) > EPS))
+	return out
 
 
 def _no_vao_hop(p: dict) -> dict:
@@ -569,12 +587,16 @@ def _no_vao_hop(p: dict) -> dict:
 		it = info.get(r.item) or {}
 		rows.append({"item_code": r.item, "item_name": it.get("item_name") or r.item,
 			"short_name": it.get("short_name") or r.item, "qty": flt(r.qty), "so_dong": cint(r.so_dong), "ngay": ngay,
-			"age_days": max((today - ngay).days, 0)})
-	oldest = min((x["ngay"] for x in rows), default=None)
-	qty = sum(x["qty"] for x in rows)
+			"age_days": max((today - ngay).days, 0), "khac_dvt": it.get("stock_uom") != BOX_UOM})
+	# con_lai theo đơn vị kho của TỪNG mã (sx so so_dem với số hộp chấm cả với mã Kg / Gói): như sx so_no_vao_hop không cộng
+	# lẫn mã — ở đây số / số mã / số dòng / cũ nhất chỉ trên mã đơn vị Hộp (như cho_nhap); mã khác đơn vị chỉ đếm riêng và
+	# đứng cuối danh sách (khac_dvt).
+	box = [x for x in rows if not x["khac_dvt"]]
+	oldest = min((x["ngay"] for x in box), default=None)
 	lst = drop_hidden(rows)
-	lst.sort(key=lambda x: (-x["age_days"], -x["qty"], x["item_code"]))
-	return {"available": True, "count": sum(x["so_dong"] for x in rows), "so_ma": len(rows), "qty": _r2(qty),
+	lst.sort(key=lambda x: (x["khac_dvt"], -x["age_days"], -x["qty"], x["item_code"]))
+	return {"available": True, "count": sum(x["so_dong"] for x in box), "so_ma": len(box),
+		"qty": _r2(sum(x["qty"] for x in box)), "so_ma_khac_dvt": len(rows) - len(box),
 		"oldest_date": iso(oldest), "oldest_age_days": max((today - oldest).days, 0) if oldest else None,
 		"rows": [{**x, "qty": _r2(x["qty"]), "ngay": iso(x["ngay"])} for x in lst[:LIST_MAX]]}
 
@@ -588,11 +610,12 @@ def get_compare(thang=None, refresh=0):
 	 total: {hop, nhap, lech, lech_pct, chua_nhap, so_ma_chua_nhap, nhap_vuot, so_ma_nhap_vuot, so_ma_khop, hop_chua_ma,
 	         ma_khac_dvt, hop_khac_dvt} — chỉ phần so được; lech = nhap − hop = nhap_vuot − chua_nhap,
 	 days: [{date, weekday (T2 = 0), hop, nhap, lech, luy_ke, co}] — mỗi ngày từ `to` lùi về `from` (mới nhất trước),
-	 items: [{item_code, item_name, short_name, group, uom, khac_dvt, hop, nhap, lech}] — khác đơn vị cuối, |lệch| giảm dần,
+	 items: [{item_code, item_name, short_name, group, uom, khac_dvt, hop, nhap, lech}] — khác đơn vị cuối (lech None),
+        |lệch| giảm dần,
 	 cho_nhap: {available, from, to, so_ngay, qty, items, rows: [{item_code, item_name, short_name, qty}]},
 	 cho_duyet: {available, count, count_tet, qty, uom, oldest_age_days},
-	 no_vao_hop: {available, count, so_ma, qty, oldest_date, oldest_age_days,
-	              rows: [{item_code, item_name, short_name, qty, so_dong, ngay, age_days}]}}"""
+	 no_vao_hop: {available, count, so_ma, qty, so_ma_khac_dvt, oldest_date, oldest_age_days — chỉ mã đơn vị Hộp,
+	              rows: [{item_code, item_name, short_name, qty, so_dong, ngay, age_days, khac_dvt}] — khác đơn vị cuối}}"""
 	_guard("san-xuat")
 	f, t, label = kho.month_period(thang)
 	today = kho.today()
